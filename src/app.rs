@@ -48,6 +48,7 @@ pub enum AppEvent {
     UiRejectCall,
     UiHangup,
     UiHangupGroup,
+    UiToggleMute,
     /// Encoded uplink speech frame (call id, 274 codec bits) from the mic thread.
     UplinkAudio(u32, Vec<u8>),
     UiOpenLogs,
@@ -119,6 +120,8 @@ struct AppState {
     ptt_held: Option<u32>,
     /// Calls we hung up ourselves (suppresses the "Call ended" toast).
     local_end: std::collections::HashSet<u32>,
+    /// Microphone muted for the current call (gates uplink transmission).
+    mic_muted: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
@@ -317,6 +320,7 @@ pub fn run(
         grp_call: None,
         ptt_held: None,
         local_end: std::collections::HashSet::new(),
+        mic_muted: false,
     };
 
     for event in rx.iter() {
@@ -674,6 +678,12 @@ pub fn run(
                 if app.dialing.as_ref().map(|d| d.group).unwrap_or(false) {
                     app.dialing = None;
                 }
+                sync_uplink(&app, audio.as_ref());
+                push_calls(&app, &weak);
+            }
+            AppEvent::UiToggleMute => {
+                app.mic_muted = !app.mic_muted;
+                tracing::info!(muted = app.mic_muted, "UI: toggle mic mute");
                 sync_uplink(&app, audio.as_ref());
                 push_calls(&app, &weak);
             }
@@ -1095,8 +1105,11 @@ fn apply_call_event(
     let body = call_body(payload).clone();
 
     if variant == "TnccReleaseIndication" || variant == "TnccReleaseConfirm" {
-        let was_group = app.calls.get(&cid).map(|c| c.group).unwrap_or(false);
-        app.calls.remove(&cid);
+        // Take the call out of the map (if still present). The stack sends
+        // several release frames per call, so only the first - when the call is
+        // still known - is a real end; later duplicates find nothing and are
+        // ignored, preventing repeated "Call ended" toasts.
+        let removed = app.calls.remove(&cid);
         if app.dialing.as_ref().map(|d| d.peer_ssi).is_some() {
             app.dialing = None;
         }
@@ -1106,6 +1119,10 @@ fn apply_call_event(
         if app.ptt_held == Some(cid) {
             app.ptt_held = None;
         }
+        // Clear the mic-mute latch once no individual call remains.
+        if !app.calls.values().any(|c| !c.group) {
+            app.mic_muted = false;
+        }
         // Drop a group context that never bound to a real call (e.g. our setup
         // was rejected before a confirm arrived) so the panel doesn't stick.
         if active_group_call(app).is_none()
@@ -1113,14 +1130,18 @@ fn apply_call_event(
         {
             app.grp_call = None;
         }
-        // "Call ended" toast unless we hung up ourselves.
-        if !app.local_end.remove(&cid) && !was_group {
-            let cause = body
-                .get("disconnect_cause")
-                .and_then(Value::as_str)
-                .map(pretty_cause)
-                .unwrap_or_else(|| "The call was released.".to_string());
-            app.notify(weak, "Call ended", &cause, 0);
+        // "Call ended" toast only when a known individual call ends and we did
+        // NOT hang it up ourselves (we clear local_end here either way).
+        let local = app.local_end.remove(&cid);
+        if let Some(c) = removed {
+            if !local && !c.group {
+                let cause = body
+                    .get("disconnect_cause")
+                    .and_then(Value::as_str)
+                    .map(pretty_cause)
+                    .unwrap_or_else(|| "The call was released.".to_string());
+                app.notify(weak, "Call ended", &cause, 0);
+            }
         }
         return;
     }
@@ -1466,6 +1487,11 @@ fn tx_blocks_playback(app: &AppState, cid: u32) -> bool {
 /// physically hold the PTT on an active call (individual or group).
 fn sync_uplink(app: &AppState, audio: Option<&crate::audio::AudioEngine>) {
     let Some(a) = audio else { return };
+    // Muted mic: never transmit, whatever the floor state.
+    if app.mic_muted {
+        a.set_uplink(false, 0);
+        return;
+    }
     if let Some(cid) = app.ptt_held {
         if app.calls.get(&cid).map(|c| c.state == CallState::Active).unwrap_or(false) {
             a.set_uplink(true, cid);
@@ -2056,6 +2082,7 @@ fn push_calls(app: &AppState, weak: &slint::Weak<MainWindow>) {
         0
     };
 
+    let call_muted = app.mic_muted;
     let _ = weak.upgrade_in_event_loop(move |w| {
         w.set_call_live(call_live);
         w.set_call_dir(call_dir.into());
@@ -2065,6 +2092,7 @@ fn push_calls(app: &AppState, weak: &slint::Weak<MainWindow>) {
         w.set_call_clock(call_clock.into());
         w.set_call_can_ptt(call_can_ptt);
         w.set_call_ptt_state(call_ptt_state);
+        w.set_call_muted(call_muted);
         w.set_call_incoming(call_incoming);
         w.set_incoming_peer(inc_peer.into());
         w.set_incoming_sub(inc_sub.into());

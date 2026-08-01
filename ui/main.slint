@@ -98,6 +98,7 @@ global Icons {
     out property <string> login: "M14 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 8L14 12L10 16M14 12L3 12";
     out property <string> logout: "M10 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4M16 8L20 12L16 16M20 12L9 12";
     out property <string> mic: "M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3M6 11a6 6 0 0 0 12 0M12 17v4M8.5 21h7";
+    out property <string> mic-off: "M9 6a3 3 0 0 1 6 0v3M15 12v-1M6 11a6 6 0 0 0 9 5.2M12 17v4M8.5 21h7M4 4l16 16";
     out property <string> backspace: "M9 5.5h11a1.5 1.5 0 0 1 1.5 1.5v10a1.5 1.5 0 0 1-1.5 1.5H9L2.5 12zM12 9.5L17 14.5M17 9.5L12 14.5";
     out property <string> users: "M9 8a3 3 0 1 0 0.01 0M3.6 19c0-3 2.5-5.2 5.4-5.2S14.4 16 14.4 19M16.5 5.5a3 3 0 0 1 0 5.8M17.6 13.9c2 .6 3.3 2.5 3.3 5.1";
     out property <string> alert: "M12 3.5L22 20H2zM12 10v4.5M12 17.4v0.01";
@@ -1163,9 +1164,9 @@ component FoldersScreen inherits Rectangle {
 component Toggle inherits Rectangle {
     in property <bool> on;
     callback toggled(bool);
-    width: 54px;
-    height: 32px;
-    border-radius: 16px;
+    width: 66px;
+    height: 38px;
+    border-radius: 19px;
     border-width: 1px;
     border-color: root.on ? #37c06a80 : Palette.line2;
     background: root.on ? #37c06a3d : #ffffff10;
@@ -1175,11 +1176,11 @@ component Toggle inherits Rectangle {
         }
     }
     Rectangle {
-        width: 24px;
-        height: 24px;
-        border-radius: 12px;
+        width: 30px;
+        height: 30px;
+        border-radius: 15px;
         x: root.on ? parent.width - self.width - 4px : 4px;
-        y: 4px;
+        y: (parent.height - self.height) / 2;
         background: root.on ? #79dfa0 : #8fa3b8;
         animate x { duration: 120ms; easing: ease; }
     }
@@ -1508,27 +1509,30 @@ component SurveyScreen inherits Rectangle {
 
             // Manual/Auto toggle.
             Rectangle {
-                height: 66px;
+                height: 76px;
                 border-radius: 14px;
                 border-width: 1px;
                 border-color: Palette.line;
                 background: Palette.surface;
                 HorizontalLayout {
-                    padding-left: 16px;
-                    padding-right: 16px;
+                    padding-left: 18px;
+                    padding-right: 18px;
                     spacing: 12px;
                     Text {
                         text: "Manual cell selection";
                         color: Palette.txt;
-                        font-size: 17px;
+                        font-size: 19px;
                         font-weight: 600;
                         vertical-alignment: center;
                     }
                     Rectangle { horizontal-stretch: 1; }
-                    Toggle {
-                        on: root.manual;
-                        toggled(v) => {
-                            root.toggle-mode();
+                    VerticalLayout {
+                        alignment: center;
+                        Toggle {
+                            on: root.manual;
+                            toggled(v) => {
+                                root.toggle-mode();
+                            }
                         }
                     }
                 }
@@ -2063,6 +2067,7 @@ export component MainWindow inherits Window {
     in property <string> call-clock: "";
     in property <bool> call-can-ptt;
     in property <int> call-ptt-state;
+    in property <bool> call-muted;
     in property <bool> call-incoming;
     in property <string> incoming-peer: "";
     in property <string> incoming-sub: "";
@@ -2102,6 +2107,7 @@ export component MainWindow inherits Window {
     callback reject-call;
     callback hangup-call;
     callback hangup-group;
+    callback toggle-mute;
 
     // Detail of the event currently open on the LogDetail screen.
     property <string> detail-variant;
@@ -2423,13 +2429,13 @@ export component MainWindow inherits Window {
                 }
                 if root.screen != Screen.Home && root.screen != Screen.InCall: Rectangle { horizontal-stretch: 2; }
 
-                // In-call: Home (left) + Hang up (right, danger), like the web UI.
+                // In-call: Mute (left) + Hang up (right, danger).
                 if root.screen == Screen.InCall: Softkey {
-                    text: "Home";
-                    icon: Icons.back;
+                    text: root.call-muted ? "Unmute" : "Mute";
+                    icon: root.call-muted ? Icons.mic-off : Icons.mic;
                     horizontal-stretch: 1;
                     clicked => {
-                        root.screen = Screen.Home;
+                        root.toggle-mute();
                     }
                 }
                 if root.screen == Screen.InCall: Rectangle { horizontal-stretch: 1; }

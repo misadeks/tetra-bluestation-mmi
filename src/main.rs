@@ -297,6 +297,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let _ = tx.send(app::AppEvent::UiHangupGroup);
         });
     }
+    {
+        let tx = events_tx.clone();
+        window.on_toggle_mute(move || {
+            let _ = tx.send(app::AppEvent::UiToggleMute);
+        });
+    }
 
     // The app loop owns state and is the sole UI writer.
     {
