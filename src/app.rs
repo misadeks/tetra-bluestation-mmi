@@ -46,6 +46,8 @@ pub enum AppEvent {
     UiGroupAttach(i32, i32),
     UiGroupDetach(i32),
     UiScanlistToggle(String, bool),
+    UiApplyConfig,
+    UiRefresh,
 }
 
 struct AppState {
@@ -82,6 +84,8 @@ struct AppState {
     events: VecDeque<LogEntry>,
     /// Unread event count since the log was last opened.
     unread: i32,
+    /// Last full MS config TOML from GetConfig.
+    last_config_toml: String,
 }
 
 struct LogEntry {
@@ -204,6 +208,7 @@ pub fn run(
         last_service: ServiceStatus::OutOfService,
         events: VecDeque::new(),
         unread: 0,
+        last_config_toml: String::new(),
     };
 
     for event in rx.iter() {
@@ -452,6 +457,21 @@ pub fn run(
                     app.send(protocol::get_state(h));
                 }
             }
+            AppEvent::UiApplyConfig => {
+                if app.require_online(&weak) {
+                    let h = app.next_handle();
+                    tracing::info!("UI: apply config");
+                    app.send(protocol::apply_config(h));
+                }
+            }
+            AppEvent::UiRefresh => {
+                if app.control_connected {
+                    let h = app.next_handle();
+                    app.send(protocol::get_state(h));
+                    let h = app.next_handle();
+                    app.send(protocol::get_config(h));
+                }
+            }
         }
     }
 }
@@ -503,6 +523,11 @@ fn handle_control(app: &mut AppState, message: &Value, weak: &slint::Weak<MainWi
                     if let Some(toml) = body.get("toml").and_then(Value::as_str) {
                         if !toml.trim().is_empty() {
                             app.have_config = true;
+                            app.last_config_toml = toml.to_string();
+                            let t = toml.to_string();
+                            let weak2 = weak.clone();
+                            let _ = weak2
+                                .upgrade_in_event_loop(move |w| w.set_config_toml(t.into()));
                             match Codeplug::parse(toml) {
                                 Some(cp) => {
                                     tracing::info!(

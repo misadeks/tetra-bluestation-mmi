@@ -203,6 +203,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let _ = tx.send(app::AppEvent::UiScanlistToggle(name.to_string(), active));
         });
     }
+    {
+        let tx = events_tx.clone();
+        window.on_apply_config(move || {
+            let _ = tx.send(app::AppEvent::UiApplyConfig);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_refresh(move || {
+            let _ = tx.send(app::AppEvent::UiRefresh);
+        });
+    }
 
     // The app loop owns state and is the sole UI writer.
     {

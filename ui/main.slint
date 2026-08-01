@@ -14,7 +14,7 @@ import "fonts/Inter-Bold.ttf";
 import "fonts/Inter-ExtraBold.ttf";
 
 export enum DeviceInput { Touch, Keypad }
-enum Screen { Home, Menu, Info, Folders, Dialer, Logs, LogDetail, Groups }
+enum Screen { Home, Menu, Info, Folders, Dialer, Logs, LogDetail, Groups, Config }
 
 export struct FolderRow {
     name: string,
@@ -97,6 +97,9 @@ global Icons {
     out property <string> logs: "M8 7L20 7M8 12L20 12M8 17L20 17M4 7v0.01M4 12v0.01M4 17v0.01";
     out property <string> plus: "M12 5L12 19M5 12L19 12";
     out property <string> minus: "M5 12L19 12";
+    out property <string> refresh: "M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4";
+    out property <string> gear: "M12 2.5v3.5M12 18v3.5M2.5 12h3.5M18 12h3.5M12 15a3 3 0 1 0 0-6a3 3 0 0 0 0 6";
+    out property <string> radio: "M6.3 6.3a8 8 0 0 0 0 11.4M17.7 6.3a8 8 0 0 1 0 11.4M9.2 9.2a4 4 0 0 0 0 5.6M14.8 9.2a4 4 0 0 1 0 5.6M12 12v0.01";
 }
 
 // 5 signal bars, heights scaled up, bottom-aligned (web UI .sig).
@@ -451,18 +454,18 @@ component InfoRow inherits HorizontalLayout {
     in property <string> label;
     in property <string> value;
     in property <color> value-color: Palette.txt;
-    height: 40px;
+    height: 46px;
     Text {
         text: root.label;
         color: Palette.muted;
-        font-size: 15px;
+        font-size: 17px;
         vertical-alignment: center;
     }
     Rectangle { horizontal-stretch: 1; }
     Text {
         text: root.value;
         color: root.value-color;
-        font-size: 15px;
+        font-size: 17px;
         font-weight: 600;
         vertical-alignment: center;
         horizontal-alignment: right;
@@ -693,6 +696,7 @@ component MenuScreen inherits Rectangle {
     callback open-info;
     callback open-logs;
     callback open-groups;
+    callback open-config;
     callback register;
     callback deregister;
     background: transparent;
@@ -722,6 +726,14 @@ component MenuScreen inherits Rectangle {
             icon: Icons.logs;
             clicked => {
                 root.open-logs();
+            }
+        }
+        ListRow {
+            title: "Config";
+            subtitle: "View and apply the device configuration";
+            icon: Icons.gear;
+            clicked => {
+                root.open-config();
             }
         }
         ListRow {
@@ -1221,6 +1233,87 @@ component GroupsScreen inherits Rectangle {
     }
 }
 
+component SecondaryButton inherits Rectangle {
+    in property <string> text;
+    in property <string> icon;
+    callback clicked;
+    height: 58px;
+    border-radius: 14px;
+    border-width: 1px;
+    border-color: Palette.line2;
+    background: touch.pressed ? #1b2836 : Palette.surface;
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+    HorizontalLayout {
+        alignment: center;
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            if root.icon != "": Icon { d: root.icon; tint: Palette.txt; size: 20px; }
+        }
+        Text {
+            text: root.text;
+            color: Palette.txt;
+            font-size: 17px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+}
+
+component ConfigScreen inherits Rectangle {
+    in property <string> toml;
+    callback apply;
+    callback refresh;
+    background: transparent;
+    VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+        Rectangle {
+            vertical-stretch: 1;
+            border-radius: 14px;
+            border-width: 1px;
+            border-color: Palette.line;
+            background: #070d14;
+            Flickable {
+                viewport-height: body.preferred-height + 24px;
+                body := Text {
+                    x: 14px;
+                    y: 12px;
+                    width: parent.width - 28px;
+                    text: root.toml == "" ? "No config loaded yet" : root.toml;
+                    color: #b9ccd8;
+                    font-size: 13px;
+                    font-family: "Consolas";
+                    wrap: word-wrap;
+                }
+            }
+        }
+        HorizontalLayout {
+            spacing: 10px;
+            SecondaryButton {
+                text: "Refresh";
+                icon: Icons.refresh;
+                horizontal-stretch: 1;
+                clicked => {
+                    root.refresh();
+                }
+            }
+            PrimaryButton {
+                text: "Apply Config";
+                icon: Icons.check;
+                horizontal-stretch: 1;
+                clicked => {
+                    root.apply();
+                }
+            }
+        }
+    }
+}
+
 component DialKey inherits Rectangle {
     in property <string> text;
     in property <string> sub;
@@ -1454,6 +1547,7 @@ export component MainWindow inherits Window {
     in property <string> alert-title;
     in property <string> alert-message;
     in property <int> alert-kind;
+    in property <string> config-toml: "";
 
     callback register;
     callback deregister;
@@ -1470,6 +1564,8 @@ export component MainWindow inherits Window {
     callback group-attach(int, int);
     callback group-detach(int);
     callback scanlist-toggle(string, bool);
+    callback apply-config;
+    callback refresh;
 
     // Detail of the event currently open on the LogDetail screen.
     property <string> detail-variant;
@@ -1498,12 +1594,15 @@ export component MainWindow inherits Window {
         if (root.screen == Screen.Groups) {
             return "Talkgroups";
         }
+        if (root.screen == Screen.Config) {
+            return "Config";
+        }
         return root.clock + "   " + root.date;
     }
 
     // Parent screen for the Back softkey.
     function back-target() -> Screen {
-        if (root.screen == Screen.Info || root.screen == Screen.Logs || root.screen == Screen.Groups) {
+        if (root.screen == Screen.Info || root.screen == Screen.Logs || root.screen == Screen.Groups || root.screen == Screen.Config) {
             return Screen.Menu;
         }
         if (root.screen == Screen.LogDetail) {
@@ -1574,6 +1673,10 @@ export component MainWindow inherits Window {
                 root.open-logs();
                 root.screen = Screen.Logs;
             }
+            open-config => {
+                root.refresh();
+                root.screen = Screen.Config;
+            }
             register => {
                 root.register();
                 root.screen = Screen.Home;
@@ -1642,6 +1745,17 @@ export component MainWindow inherits Window {
             rssi: root.rssi;
             attached-count: root.attached-count;
             restart-required: root.restart-required;
+        }
+
+        if root.device-input == DeviceInput.Touch && root.screen == Screen.Config: ConfigScreen {
+            vertical-stretch: 1;
+            toml: root.config-toml;
+            apply => {
+                root.apply-config();
+            }
+            refresh => {
+                root.refresh();
+            }
         }
 
         if root.device-input == DeviceInput.Touch && root.screen == Screen.Dialer: DialerScreen {
