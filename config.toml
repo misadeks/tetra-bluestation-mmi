@@ -27,7 +27,7 @@ enabled       = true          # two-way voice (ACELP decode/encode)
 # Directory holding the prebuilt ACELP codec libraries (ETSI-copyrighted, never
 # committed). Windows: tetra_acelp.dll + tetra_acelp_enc.dll; Linux (Pi):
 # libtetra_acelp.so + libtetra_acelp_enc.so. Must match the running arch.
-codec_dir     = 'C:\Users\mihaj\PycharmProjects\tnmm_ui\native'
+codec_dir     = 'native'
 output_device = "default"
 input_device  = "default"
 sample_rate   = 8000
