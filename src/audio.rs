@@ -306,6 +306,7 @@ pub struct AudioEngine {
     decoder: Option<Decoder>,
     playback: Arc<Mutex<VecDeque<i16>>>, // output-rate mono
     out_rate: u32,
+    prebuffer: usize,
     uplink_active: Arc<AtomicBool>,
     uplink_cid: Arc<AtomicU32>,
     _out_stream: cpal::Stream,
@@ -334,12 +335,30 @@ impl AudioEngine {
         let in_channels = in_cfg.channels() as usize;
         tracing::info!(out_rate, in_rate, out_channels, in_channels, "audio: devices opened");
 
+        // Jitter buffer: the stack delivers downlink frames in bursts with gaps
+        // (esp. duplex, when both directions load the link), so hold ~jitter_ms of
+        // decoded audio before starting playback and rebuffer on underrun. 0
+        // disables it (immediate playback). Default is clamped to >= 1 frame.
+        let prebuffer = if cfg.jitter_ms == 0 {
+            0
+        } else {
+            (out_rate as usize * cfg.jitter_ms as usize / 1000).max(out_rate as usize * 60 / 1000)
+        };
+        tracing::info!(jitter_ms = cfg.jitter_ms, prebuffer_samples = prebuffer, "audio: jitter buffer");
+
         let playback: Arc<Mutex<VecDeque<i16>>> = Arc::new(Mutex::new(VecDeque::new()));
+        let playing = Arc::new(AtomicBool::new(false));
         let uplink_active = Arc::new(AtomicBool::new(false));
         let uplink_cid = Arc::new(AtomicU32::new(0));
 
-        let out_stream =
-            build_output_stream(&out_dev, &out_cfg, out_channels, playback.clone())?;
+        let out_stream = build_output_stream(
+            &out_dev,
+            &out_cfg,
+            out_channels,
+            playback.clone(),
+            playing.clone(),
+            prebuffer,
+        )?;
         out_stream.play().ok()?;
 
         // Encoder thread: PCM frames -> ACELP bits -> MsUplinkSpeech via app loop.
@@ -395,6 +414,7 @@ impl AudioEngine {
             decoder,
             playback,
             out_rate,
+            prebuffer,
             uplink_active,
             uplink_cid,
             _out_stream: out_stream,
@@ -412,11 +432,16 @@ impl AudioEngine {
         let mut out = Vec::with_capacity((FRAME_SAMPLES * self.out_rate as usize) / 8000 + 4);
         rs.process(&input, &mut out);
         let mut q = self.playback.lock().unwrap();
-        // Cap the buffer so a stalled reader can't grow it without bound (~1 s).
-        let cap = self.out_rate as usize;
         for v in out {
             q.push_back(v.clamp(-32768.0, 32767.0) as i16);
         }
+        // Bound latency: keep at most ~4x the jitter cushion (or ~1 s if none),
+        // dropping the oldest audio if we ever get far ahead.
+        let cap = if self.prebuffer > 0 {
+            self.prebuffer * 4
+        } else {
+            self.out_rate as usize
+        };
         while q.len() > cap {
             q.pop_front();
         }
@@ -438,23 +463,48 @@ fn build_output_stream(
     cfg: &cpal::SupportedStreamConfig,
     channels: usize,
     playback: Arc<Mutex<VecDeque<i16>>>,
+    playing: Arc<AtomicBool>,
+    prebuffer: usize,
 ) -> Option<cpal::Stream> {
     let sample_format = cfg.sample_format();
     let config: cpal::StreamConfig = cfg.clone().into();
     let err = |e| tracing::warn!(error = %e, "audio: output stream error");
     macro_rules! out {
         ($t:ty, $conv:expr) => {{
+            let playback = playback.clone();
+            let playing = playing.clone();
             dev.build_output_stream(
                 &config,
                 move |data: &mut [$t], _| {
                     let mut q = playback.lock().unwrap();
+                    // Gate on the prebuffer: only start draining once enough audio
+                    // has accumulated, and rebuffer after an underrun, so bursty
+                    // delivery doesn't inject silence mid-word. prebuffer == 0
+                    // means play immediately (buffer disabled).
+                    let mut is_playing = playing.load(Ordering::Relaxed) || prebuffer == 0;
+                    if !is_playing && q.len() >= prebuffer {
+                        is_playing = true;
+                    }
                     for frame in data.chunks_mut(channels) {
-                        let s = q.pop_front().unwrap_or(0);
+                        let s = if is_playing {
+                            match q.pop_front() {
+                                Some(v) => v,
+                                None => {
+                                    if prebuffer > 0 {
+                                        is_playing = false;
+                                    }
+                                    0
+                                }
+                            }
+                        } else {
+                            0
+                        };
                         let v = $conv(s);
                         for slot in frame.iter_mut() {
                             *slot = v;
                         }
                     }
+                    playing.store(is_playing, Ordering::Relaxed);
                 },
                 err,
                 None,

@@ -37,7 +37,7 @@ output_device = "default"
 input_device  = "default"
 sample_rate   = 8000
 frame_ms      = 60
-jitter_ms     = 120
+jitter_ms     = 180           # downlink cushion (ms) for bursty delivery; 0 = off
 
 [ui]
 # Select a device model from the catalog below (or the built-in models:
