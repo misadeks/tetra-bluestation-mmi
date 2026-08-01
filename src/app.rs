@@ -514,6 +514,9 @@ pub fn run(
                     "back" => {
                         app.dial_number.pop();
                     }
+                    "clear" => {
+                        app.dial_number.clear();
+                    }
                     d if app.dial_number.chars().count() < 24 => {
                         app.dial_number.push_str(d);
                     }
