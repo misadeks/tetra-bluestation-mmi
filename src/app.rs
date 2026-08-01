@@ -84,6 +84,7 @@ struct LogEntry {
     time: String,
     variant: String,
     summary: String,
+    detail: String,
 }
 
 impl AppState {
@@ -533,6 +534,7 @@ fn handle_telemetry(app: &mut AppState, message: &Value, weak: &slint::Weak<Main
         time,
         variant: variant.to_string(),
         summary: summarize_event(variant, payload),
+        detail: serde_json::to_string_pretty(message).unwrap_or_else(|_| message.to_string()),
     });
     while app.events.len() > 200 {
         app.events.pop_front();
@@ -620,6 +622,7 @@ fn push_logs(app: &AppState, weak: &slint::Weak<MainWindow>) {
             time: e.time.clone().into(),
             variant: e.variant.clone().into(),
             summary: e.summary.clone().into(),
+            detail: e.detail.clone().into(),
         })
         .collect();
     let unread = app.unread;

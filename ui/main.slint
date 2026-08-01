@@ -14,7 +14,7 @@ import "fonts/Inter-Bold.ttf";
 import "fonts/Inter-ExtraBold.ttf";
 
 export enum DeviceInput { Touch, Keypad }
-enum Screen { Home, Menu, Info, Folders, Dialer, Logs }
+enum Screen { Home, Menu, Info, Folders, Dialer, Logs, LogDetail }
 
 export struct FolderRow {
     name: string,
@@ -26,6 +26,7 @@ export struct LogRow {
     time: string,
     variant: string,
     summary: string,
+    detail: string,
 }
 
 // Palette lifted from the web UI's :root custom properties.
@@ -154,8 +155,7 @@ component StatusBar inherits Rectangle {
     in property <bool> scan;
     in property <bool> control-on;
     in property <bool> telemetry-on;
-    in property <string> clock;
-    height: 62px;
+    height: 70px;
     background: @linear-gradient(180deg, #0e1822 0%, #0b131b 100%);
 
     HorizontalLayout {
@@ -170,11 +170,13 @@ component StatusBar inherits Rectangle {
             Text {
                 text: root.network;
                 color: Palette.muted;
-                font-size: 14px;
+                font-size: 15px;
                 font-weight: 500;
                 vertical-alignment: center;
             }
         }
+        VerticalLayout { alignment: center; LinkBadge { label: "C"; on: root.control-on; } }
+        VerticalLayout { alignment: center; LinkBadge { label: "T"; on: root.telemetry-on; } }
         if root.scan: VerticalLayout {
             alignment: center;
             Text {
@@ -186,23 +188,10 @@ component StatusBar inherits Rectangle {
                 vertical-alignment: center;
             }
         }
+
         Rectangle { horizontal-stretch: 1; }
-        VerticalLayout { alignment: center; LinkBadge { label: "C"; on: root.control-on; } }
-        VerticalLayout { alignment: center; LinkBadge { label: "T"; on: root.telemetry-on; } }
-        // Fixed-width clock so nothing to its right shifts as the time changes.
-        VerticalLayout {
-            width: 46px;
-            alignment: center;
-            Text {
-                text: root.clock;
-                color: #cdd9e2;
-                font-size: 16px;
-                font-weight: 700;
-                horizontal-alignment: right;
-                vertical-alignment: center;
-            }
-        }
-        // Battery pinned to the far right.
+
+        // Battery pinned to the far right (time lives in the header below).
         VerticalLayout { alignment: center; Battery { } }
     }
 }
@@ -210,12 +199,12 @@ component StatusBar inherits Rectangle {
 component Header inherits Rectangle {
     in property <string> title;
     in property <bool> muted;
-    height: 52px;
+    height: 60px;
     background: @linear-gradient(180deg, #0e1822 0%, #0b131b 100%);
     Text {
         text: root.title;
         color: root.muted ? Palette.muted : Palette.txt;
-        font-size: 18px;
+        font-size: 19px;
         font-weight: root.muted ? 500 : 600;
         letter-spacing: root.muted ? 1px : 0.3px;
         horizontal-alignment: center;
@@ -459,18 +448,22 @@ component InfoRow inherits HorizontalLayout {
     }
 }
 
+// Unified list row used across Menu, Folders and the Event Log.
 component ListRow inherits Rectangle {
     in property <string> title;
     in property <string> subtitle;
     in property <string> icon;
     in property <color> icon-tint: Palette.accent;
     in property <bool> danger;
+    in property <string> trailing-text;
+    in property <bool> selected;
+    in property <bool> show-chevron: true;
     callback clicked;
-    height: 68px;
-    border-radius: 14px;
+    height: 78px;
+    border-radius: 16px;
     border-width: 1px;
-    border-color: Palette.line;
-    background: touch.pressed ? #16202b : Palette.surface;
+    border-color: root.selected ? #33a7dd80 : Palette.line;
+    background: touch.pressed ? #16202b : (root.selected ? #33a7dd1a : Palette.surface);
     touch := TouchArea {
         clicked => {
             root.clicked();
@@ -480,39 +473,57 @@ component ListRow inherits Rectangle {
         padding-left: 16px;
         padding-right: 16px;
         spacing: 14px;
-        VerticalLayout {
+        if root.icon != "": VerticalLayout {
             alignment: center;
             Rectangle {
-                width: 42px;
-                height: 42px;
-                border-radius: 12px;
+                width: 48px;
+                height: 48px;
+                border-radius: 13px;
                 background: root.danger ? #f0555a1f : #33a7dd1f;
                 Icon {
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
                     d: root.icon;
                     tint: root.danger ? Palette.red : root.icon-tint;
-                    size: 20px;
+                    size: 24px;
                 }
             }
         }
         VerticalLayout {
             alignment: center;
-            spacing: 2px;
+            spacing: 3px;
+            horizontal-stretch: 1;
             Text {
                 text: root.title;
                 color: root.danger ? #ff9a9d : Palette.txt;
-                font-size: 17px;
+                font-size: 19px;
                 font-weight: 600;
+                overflow: elide;
             }
             if root.subtitle != "": Text {
                 text: root.subtitle;
                 color: Palette.muted;
-                font-size: 13px;
+                font-size: 14px;
+                overflow: elide;
             }
         }
-        Rectangle { horizontal-stretch: 1; }
-        VerticalLayout { alignment: center; Icon { d: Icons.chevron; tint: Palette.faint; size: 18px; } }
+        if root.trailing-text != "": VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.trailing-text;
+                color: Palette.faint;
+                font-size: 14px;
+                font-weight: 600;
+            }
+        }
+        if root.selected: VerticalLayout {
+            alignment: center;
+            Icon { d: Icons.check; tint: Palette.accent; size: 24px; }
+        }
+        if root.show-chevron && !root.selected && root.trailing-text == "": VerticalLayout {
+            alignment: center;
+            Icon { d: Icons.chevron; tint: Palette.faint; size: 20px; }
+        }
     }
 }
 
@@ -702,59 +713,98 @@ component MenuScreen inherits Rectangle {
 
 component LogsScreen inherits Rectangle {
     in property <[LogRow]> logs;
+    callback open(string, string, string);
     background: transparent;
     VerticalLayout {
-        padding: 14px;
+        padding: 16px;
         if root.logs.length == 0: VerticalLayout {
             alignment: center;
             Text {
                 text: "No events yet";
                 color: Palette.muted;
-                font-size: 15px;
+                font-size: 16px;
                 horizontal-alignment: center;
             }
         }
         Flickable {
             viewport-height: col.preferred-height;
             col := VerticalLayout {
-                spacing: 8px;
-                for e in root.logs: Rectangle {
-                    height: 58px;
-                    border-radius: 12px;
-                    border-width: 1px;
-                    border-color: Palette.line;
-                    background: Palette.surface;
-                    HorizontalLayout {
-                        padding-left: 14px;
-                        padding-right: 14px;
-                        spacing: 12px;
-                        VerticalLayout {
-                            alignment: center;
-                            spacing: 2px;
-                            horizontal-stretch: 1;
-                            Text {
-                                text: e.variant;
-                                color: Palette.txt;
-                                font-size: 15px;
-                                font-weight: 600;
-                                overflow: elide;
-                            }
-                            if e.summary != "": Text {
-                                text: e.summary;
-                                color: Palette.muted;
-                                font-size: 12px;
-                                overflow: elide;
-                            }
-                        }
-                        VerticalLayout {
-                            alignment: center;
-                            Text {
-                                text: e.time;
-                                color: Palette.faint;
-                                font-size: 12px;
-                            }
-                        }
+                spacing: 10px;
+                for e in root.logs: ListRow {
+                    title: e.variant;
+                    subtitle: e.summary;
+                    icon: Icons.logs;
+                    trailing-text: e.time;
+                    clicked => {
+                        root.open(e.variant, e.time, e.detail);
                     }
+                }
+            }
+        }
+    }
+}
+
+component LogDetailScreen inherits Rectangle {
+    in property <string> variant;
+    in property <string> time;
+    in property <string> body;
+    background: transparent;
+    VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+        HorizontalLayout {
+            spacing: 12px;
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 48px;
+                    height: 48px;
+                    border-radius: 13px;
+                    background: #33a7dd1f;
+                    Icon {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        d: Icons.logs;
+                        tint: Palette.accent;
+                        size: 24px;
+                    }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+                horizontal-stretch: 1;
+                Text {
+                    text: root.variant;
+                    color: Palette.txt;
+                    font-size: 20px;
+                    font-weight: 700;
+                    overflow: elide;
+                }
+                Text {
+                    text: "Received " + root.time;
+                    color: Palette.muted;
+                    font-size: 14px;
+                }
+            }
+        }
+        Rectangle {
+            vertical-stretch: 1;
+            border-radius: 14px;
+            border-width: 1px;
+            border-color: Palette.line;
+            background: #070d14;
+            Flickable {
+                viewport-height: body-text.preferred-height + 24px;
+                body-text := Text {
+                    x: 14px;
+                    y: 12px;
+                    width: parent.width - 28px;
+                    text: root.body;
+                    color: #b9ccd8;
+                    font-size: 14px;
+                    font-family: "Consolas";
+                    wrap: word-wrap;
                 }
             }
         }
@@ -897,64 +947,6 @@ component InfoScreen inherits Rectangle {
     }
 }
 
-component FolderRowView inherits Rectangle {
-    in property <string> name;
-    in property <int> count;
-    in property <bool> selected;
-    callback clicked;
-    height: 70px;
-    border-radius: 16px;
-    border-width: 1px;
-    border-color: root.selected ? #33a7dd80 : Palette.line;
-    background: touch.pressed ? #16202b : (root.selected ? #33a7dd1a : Palette.surface);
-    touch := TouchArea {
-        clicked => {
-            root.clicked();
-        }
-    }
-    HorizontalLayout {
-        padding-left: 16px;
-        padding-right: 16px;
-        spacing: 14px;
-        VerticalLayout {
-            alignment: center;
-            Rectangle {
-                width: 44px;
-                height: 44px;
-                border-radius: 12px;
-                background: #33a7dd24;
-                Icon {
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    d: Icons.folder;
-                    tint: Palette.accent;
-                    size: 22px;
-                }
-            }
-        }
-        VerticalLayout {
-            alignment: center;
-            spacing: 2px;
-            Text {
-                text: root.name;
-                color: Palette.txt;
-                font-size: 18px;
-                font-weight: 600;
-            }
-            Text {
-                text: root.count + (root.count == 1 ? " talkgroup" : " talkgroups");
-                color: Palette.muted;
-                font-size: 13px;
-            }
-        }
-        Rectangle { horizontal-stretch: 1; }
-        if root.selected: VerticalLayout {
-            alignment: center;
-            Icon { d: Icons.check; tint: Palette.accent; size: 22px; }
-        }
-    }
-}
-
 component FoldersScreen inherits Rectangle {
     in property <[FolderRow]> folders;
     callback select-folder(int);
@@ -963,9 +955,10 @@ component FoldersScreen inherits Rectangle {
         padding: 18px;
         spacing: 12px;
         alignment: start;
-        for f[idx] in root.folders: FolderRowView {
-            name: f.name;
-            count: f.count;
+        for f[idx] in root.folders: ListRow {
+            title: f.name;
+            subtitle: f.count + (f.count == 1 ? " talkgroup" : " talkgroups");
+            icon: Icons.folder;
             selected: f.selected;
             clicked => {
                 root.select-folder(idx);
@@ -1218,6 +1211,11 @@ export component MainWindow inherits Window {
     callback open-logs;
     callback alert-dismiss;
 
+    // Detail of the event currently open on the LogDetail screen.
+    property <string> detail-variant;
+    property <string> detail-time;
+    property <string> detail-body;
+
     function screen-title() -> string {
         if (root.screen == Screen.Menu) {
             return "Menu";
@@ -1234,7 +1232,21 @@ export component MainWindow inherits Window {
         if (root.screen == Screen.Logs) {
             return "Event Log";
         }
-        return root.date;
+        if (root.screen == Screen.LogDetail) {
+            return "Event";
+        }
+        return root.clock + "   " + root.date;
+    }
+
+    // Parent screen for the Back softkey.
+    function back-target() -> Screen {
+        if (root.screen == Screen.Info || root.screen == Screen.Logs) {
+            return Screen.Menu;
+        }
+        if (root.screen == Screen.LogDetail) {
+            return Screen.Logs;
+        }
+        return Screen.Home;
     }
 
     VerticalLayout {
@@ -1246,7 +1258,6 @@ export component MainWindow inherits Window {
             scan: root.scan-active;
             control-on: root.control-connected;
             telemetry-on: root.telemetry-connected;
-            clock: root.clock;
         }
 
         Header {
@@ -1310,6 +1321,19 @@ export component MainWindow inherits Window {
         if root.device-input == DeviceInput.Touch && root.screen == Screen.Logs: LogsScreen {
             vertical-stretch: 1;
             logs: root.logs;
+            open(v, t, d) => {
+                root.detail-variant = v;
+                root.detail-time = t;
+                root.detail-body = d;
+                root.screen = Screen.LogDetail;
+            }
+        }
+
+        if root.device-input == DeviceInput.Touch && root.screen == Screen.LogDetail: LogDetailScreen {
+            vertical-stretch: 1;
+            variant: root.detail-variant;
+            time: root.detail-time;
+            body: root.detail-body;
         }
 
         if root.device-input == DeviceInput.Touch && root.screen == Screen.Folders: FoldersScreen {
@@ -1385,7 +1409,7 @@ export component MainWindow inherits Window {
                     icon: Icons.back;
                     horizontal-stretch: 1;
                     clicked => {
-                        root.screen = Screen.Home;
+                        root.screen = root.back-target();
                     }
                 }
                 if root.screen != Screen.Home: Rectangle { horizontal-stretch: 2; }
