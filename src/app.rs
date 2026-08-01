@@ -1349,34 +1349,38 @@ fn handle_speech_frame(
     let bad = payload.get("bad_frame").and_then(Value::as_bool).unwrap_or(false);
     let frame_bits = payload.get("frame_bits").and_then(Value::as_u64);
 
-    // Attribute the talker onto the live call (floor housekeeping).
-    if let Some(t) = talker {
-        if let Some(c) = app.calls.get_mut(&cid) {
-            if t != app.state.own_issi {
-                c.talker_ssi = Some(t);
-                c.can_request_tx = false;
+    // Decode + play FIRST so the audio path is never delayed by UI work.
+    if matches!(frame_bits, None | Some(274)) {
+        if let Some(a) = audio {
+            let data: Vec<u8> = payload
+                .get("data")
+                .and_then(Value::as_array)
+                .map(|arr| {
+                    arr.iter()
+                        .map(|v| if v.as_u64().unwrap_or(0) != 0 { 1u8 } else { 0u8 })
+                        .collect()
+                })
+                .unwrap_or_default();
+            if data.len() == 274 {
+                a.play_downlink(&data, bad);
             }
         }
     }
-    push_calls(app, weak);
 
-    // Only 274-bit TCH/S speech is decodable.
-    if !matches!(frame_bits, None | Some(274)) {
-        return;
-    }
-    if let Some(a) = audio {
-        let data: Vec<u8> = payload
-            .get("data")
-            .and_then(Value::as_array)
-            .map(|arr| {
-                arr.iter()
-                    .map(|v| if v.as_u64().unwrap_or(0) != 0 { 1u8 } else { 0u8 })
-                    .collect()
-            })
-            .unwrap_or_default();
-        if data.len() == 274 {
-            a.play_downlink(&data, bad);
+    // Attribute the talker onto the live call (floor housekeeping). Only refresh
+    // the call UI when it actually changes, not on every 60 ms frame.
+    let mut changed = false;
+    if let Some(t) = talker {
+        if let Some(c) = app.calls.get_mut(&cid) {
+            if t != app.state.own_issi && (c.talker_ssi != Some(t) || c.can_request_tx) {
+                c.talker_ssi = Some(t);
+                c.can_request_tx = false;
+                changed = true;
+            }
         }
+    }
+    if changed {
+        push_calls(app, weak);
     }
 }
 
