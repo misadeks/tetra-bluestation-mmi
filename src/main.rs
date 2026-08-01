@@ -168,12 +168,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let _ = tx.send(app::AppEvent::UiDialCall);
         });
     }
+    {
+        let tx = events_tx.clone();
+        window.on_open_logs(move || {
+            let _ = tx.send(app::AppEvent::UiOpenLogs);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_alert_dismiss(move || {
+            let _ = tx.send(app::AppEvent::UiAlertDismiss);
+        });
+    }
 
     // The app loop owns state and is the sole UI writer.
     {
         let weak = window.as_weak();
         let reg_type = cfg.registration.registration_type.clone();
-        thread::spawn(move || app::run(events_rx, weak, reg_type));
+        let rx = events_rx;
+        let self_tx = events_tx.clone();
+        thread::spawn(move || app::run(rx, self_tx, weak, reg_type));
     }
 
     tracing::info!("starting Slint event loop");

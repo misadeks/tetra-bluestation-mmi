@@ -5,13 +5,16 @@
 // onto the Slint event loop with `upgrade_in_event_loop`. Commands to the stack
 // go out through the current control connection's outbound sink.
 
+use std::collections::{HashMap, VecDeque};
+use std::time::{Duration, Instant};
+
 use crossbeam_channel::{Receiver, Sender};
 use serde_json::Value;
 use slint::{ModelRc, VecModel};
 
 use crate::codeplug::Codeplug;
-use crate::protocol::{self, MsRuntimeState};
-use crate::{FolderRow, MainWindow};
+use crate::protocol::{self, MsRuntimeState, ServiceStatus};
+use crate::{FolderRow, LogRow, MainWindow};
 
 /// Events fed into the app loop from net threads, timers, and the UI.
 pub enum AppEvent {
@@ -36,6 +39,9 @@ pub enum AppEvent {
     UiPtt,
     UiDialKey(String),
     UiDialCall,
+    UiOpenLogs,
+    UiAlertDismiss,
+    AlertExpire(u64),
 }
 
 struct AppState {
@@ -56,6 +62,28 @@ struct AppState {
     selected_tx: Option<u32>,
     /// Number being entered on the dialer.
     dial_number: String,
+    /// Outbound sink + timer scheduling: a clone of the app event sender.
+    self_tx: Sender<AppEvent>,
+    /// Alert generation for auto-dismiss (only the latest wins).
+    alert_gen: u64,
+    /// Throttle for the repeated "Radio offline" alert.
+    last_offline_alert: Option<Instant>,
+    /// Outstanding commands by handle, for timeout detection.
+    pending: HashMap<u32, Instant>,
+    /// Whether we already notified about the current stall.
+    timeout_notified: bool,
+    /// Last service status seen (to detect transitions to OutOfService).
+    last_service: ServiceStatus,
+    /// Rolling telemetry event log (newest last).
+    events: VecDeque<LogEntry>,
+    /// Unread event count since the log was last opened.
+    unread: i32,
+}
+
+struct LogEntry {
+    time: String,
+    variant: String,
+    summary: String,
 }
 
 impl AppState {
@@ -64,7 +92,10 @@ impl AppState {
         self.next_handle
     }
 
-    fn send(&self, message: Value) -> bool {
+    fn send(&mut self, message: Value) -> bool {
+        if let Some(h) = command_handle(&message) {
+            self.pending.insert(h, Instant::now());
+        }
         if let Some(tx) = &self.control_out {
             if let Ok(bytes) = serde_json::to_vec(&message) {
                 return tx.send(bytes).is_ok();
@@ -72,10 +103,67 @@ impl AppState {
         }
         false
     }
+
+    /// Show a modal alert (kind: 0 amber, 1 red, 2 green) and schedule its
+    /// auto-dismiss after ~2.2s. Only the most recent alert dismisses itself.
+    fn notify(&mut self, weak: &slint::Weak<MainWindow>, title: &str, message: &str, kind: i32) {
+        self.alert_gen = self.alert_gen.wrapping_add(1);
+        let gen = self.alert_gen;
+        let (t, m) = (title.to_string(), message.to_string());
+        let _ = weak.upgrade_in_event_loop(move |w| {
+            w.set_alert_title(t.into());
+            w.set_alert_message(m.into());
+            w.set_alert_kind(kind);
+            w.set_alert_visible(true);
+        });
+        let tx = self.self_tx.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(2200));
+            let _ = tx.send(AppEvent::AlertExpire(gen));
+        });
+    }
+
+    /// Guard for user actions: refuse when the control link is down and show a
+    /// throttled "Radio offline" alert. Returns true when it is safe to send.
+    fn require_online(&mut self, weak: &slint::Weak<MainWindow>) -> bool {
+        if self.control_connected {
+            return true;
+        }
+        let now = Instant::now();
+        let recent = self
+            .last_offline_alert
+            .map(|t| now.duration_since(t) < Duration::from_millis(2500))
+            .unwrap_or(false);
+        if !recent {
+            self.last_offline_alert = Some(now);
+            self.notify(
+                weak,
+                "Radio offline",
+                "Control channel is down - connect the MS before sending commands.",
+                1,
+            );
+        }
+        false
+    }
+}
+
+/// Extract the correlation handle from an outbound command or inbound response.
+fn command_handle(v: &Value) -> Option<u32> {
+    let (_, payload) = protocol::variant_of(v)?;
+    if let Some(h) = payload.get("handle").and_then(Value::as_u64) {
+        return Some(h as u32);
+    }
+    let (_, inner) = protocol::variant_of(payload)?;
+    inner.get("handle").and_then(Value::as_u64).map(|h| h as u32)
 }
 
 /// Run the app event loop until the channel closes. Blocks the calling thread.
-pub fn run(rx: Receiver<AppEvent>, weak: slint::Weak<MainWindow>, reg_type: String) {
+pub fn run(
+    rx: Receiver<AppEvent>,
+    self_tx: Sender<AppEvent>,
+    weak: slint::Weak<MainWindow>,
+    reg_type: String,
+) {
     let mut app = AppState {
         control_out: None,
         control_connected: false,
@@ -90,6 +178,14 @@ pub fn run(rx: Receiver<AppEvent>, weak: slint::Weak<MainWindow>, reg_type: Stri
         cycle_gssi: None,
         selected_tx: None,
         dial_number: String::new(),
+        self_tx,
+        alert_gen: 0,
+        last_offline_alert: None,
+        pending: HashMap::new(),
+        timeout_notified: false,
+        last_service: ServiceStatus::OutOfService,
+        events: VecDeque::new(),
+        unread: 0,
     };
 
     for event in rx.iter() {
@@ -111,6 +207,8 @@ pub fn run(rx: Receiver<AppEvent>, weak: slint::Weak<MainWindow>, reg_type: Stri
             AppEvent::ControlDisconnected => {
                 app.control_out = None;
                 app.control_connected = false;
+                app.pending.clear();
+                app.timeout_notified = false;
                 tracing::info!("control: stack disconnected");
                 push_ui(&app, &weak);
             }
@@ -128,7 +226,7 @@ pub fn run(rx: Receiver<AppEvent>, weak: slint::Weak<MainWindow>, reg_type: Stri
                 push_ui(&app, &weak);
             }
             AppEvent::TelemetryMessage(value) => {
-                handle_telemetry(&mut app, &value);
+                handle_telemetry(&mut app, &value, &weak);
             }
             AppEvent::PollTick => {
                 if app.control_connected {
@@ -139,6 +237,18 @@ pub fn run(rx: Receiver<AppEvent>, weak: slint::Weak<MainWindow>, reg_type: Stri
                         app.send(protocol::get_config(h));
                     }
                 }
+                // Expire commands the stack never answered.
+                let now = Instant::now();
+                let stalled = app
+                    .pending
+                    .iter()
+                    .any(|(_, t)| now.duration_since(*t) > Duration::from_secs(6));
+                app.pending
+                    .retain(|_, t| now.duration_since(*t) <= Duration::from_secs(6));
+                if stalled && !app.timeout_notified {
+                    app.timeout_notified = true;
+                    app.notify(&weak, "No response", "The stack didn't respond in time.", 0);
+                }
             }
             AppEvent::ClockTick { time, date } => {
                 let weak = weak.clone();
@@ -148,19 +258,40 @@ pub fn run(rx: Receiver<AppEvent>, weak: slint::Weak<MainWindow>, reg_type: Stri
                 });
             }
             AppEvent::UiRegister => {
+                if !app.require_online(&weak) {
+                    continue;
+                }
+                let issi = app.state.own_issi;
+                let mcc = app.state.home_mcc;
+                let mnc = app.state.home_mnc;
+                let detaching =
+                    app.state.registration_state == protocol::RegistrationState::Detaching;
+                if issi == 0 {
+                    app.notify(
+                        &weak,
+                        "No identity",
+                        "Waiting for the MS to report its ISSI.",
+                        0,
+                    );
+                    continue;
+                }
+                if detaching {
+                    app.notify(
+                        &weak,
+                        "Detaching",
+                        "The MS is still detaching; it may reject a new registration until the network confirms.",
+                        0,
+                    );
+                }
                 let h = app.next_handle();
-                let st = &app.state;
-                let msg = protocol::tnmm_registration(
-                    h,
-                    &app.reg_type,
-                    st.own_issi,
-                    st.home_mcc,
-                    st.home_mnc,
-                );
-                tracing::info!(issi = st.own_issi, "UI: sending TnmmRegistration");
+                let msg = protocol::tnmm_registration(h, &app.reg_type, issi, mcc, mnc);
+                tracing::info!(issi, "UI: sending TnmmRegistration");
                 app.send(msg);
             }
             AppEvent::UiDeregister => {
+                if !app.require_online(&weak) {
+                    continue;
+                }
                 let h = app.next_handle();
                 let issi = app.state.own_issi;
                 tracing::info!(issi, "UI: sending TnmmDeregistration");
@@ -186,6 +317,9 @@ pub fn run(rx: Receiver<AppEvent>, weak: slint::Weak<MainWindow>, reg_type: Stri
                 push_ui(&app, &weak);
             }
             AppEvent::UiSelectTalkgroup => {
+                if !app.require_online(&weak) {
+                    continue;
+                }
                 if let Some((gssi, cou)) = cycle_target(&app) {
                     let h = app.next_handle();
                     tracing::info!(gssi, cou, "UI: switching TX talkgroup");
@@ -197,7 +331,18 @@ pub fn run(rx: Receiver<AppEvent>, weak: slint::Weak<MainWindow>, reg_type: Stri
                 }
             }
             AppEvent::UiPtt => {
-                // Voice calls land in M5/M6; for now just note the press.
+                // Guards mirror the web UI; voice keying lands in M5/M6.
+                if !app.require_online(&weak) {
+                    continue;
+                }
+                if app.state.registration_state != protocol::RegistrationState::Registered {
+                    app.notify(&weak, "Not registered", "Register the radio before transmitting.", 0);
+                    continue;
+                }
+                if effective_tx(&app).is_none() {
+                    app.notify(&weak, "No talkgroup", "Attach a talkgroup before transmitting.", 0);
+                    continue;
+                }
                 let gssi = effective_tx(&app);
                 tracing::info!(?gssi, "UI: PTT pressed (voice calls arrive in a later milestone)");
             }
@@ -216,10 +361,37 @@ pub fn run(rx: Receiver<AppEvent>, weak: slint::Weak<MainWindow>, reg_type: Stri
                 let _ = weak.upgrade_in_event_loop(move |w| w.set_dial_number(n.into()));
             }
             AppEvent::UiDialCall => {
+                if !app.require_online(&weak) {
+                    continue;
+                }
+                let valid = app.dial_number.parse::<u32>().map(|n| n >= 1).unwrap_or(false);
+                if !valid {
+                    app.notify(
+                        &weak,
+                        "Invalid number",
+                        "Enter a valid private number (ISSI) to call.",
+                        0,
+                    );
+                    continue;
+                }
                 tracing::info!(
                     number = %app.dial_number,
                     "UI: dial call (voice calls arrive in a later milestone)"
                 );
+            }
+            AppEvent::UiOpenLogs => {
+                app.unread = 0;
+                push_logs(&app, &weak);
+            }
+            AppEvent::UiAlertDismiss => {
+                // Invalidate any pending auto-dismiss and hide now.
+                app.alert_gen = app.alert_gen.wrapping_add(1);
+                let _ = weak.upgrade_in_event_loop(|w| w.set_alert_visible(false));
+            }
+            AppEvent::AlertExpire(gen) => {
+                if gen == app.alert_gen {
+                    let _ = weak.upgrade_in_event_loop(|w| w.set_alert_visible(false));
+                }
             }
         }
     }
@@ -230,6 +402,11 @@ fn handle_control(app: &mut AppState, message: &Value, weak: &slint::Weak<MainWi
         tracing::warn!(?message, "control: undecodable/none-variant frame");
         return;
     };
+    // A response clears its pending command and any active stall.
+    if let Some(h) = command_handle(message) {
+        app.pending.remove(&h);
+        app.timeout_notified = false;
+    }
     match variant {
         "Management" => {
             let Some((inner, body)) = protocol::variant_of(payload) else {
@@ -283,19 +460,60 @@ fn handle_control(app: &mut AppState, message: &Value, weak: &slint::Weak<MainWi
                         }
                     }
                 }
-                "Ack" => tracing::info!(?body, "management ack"),
-                "Error" => tracing::warn!(?body, "management error"),
+                "Ack" => {
+                    tracing::info!(?body, "management ack");
+                    if body.get("accepted").and_then(Value::as_bool) == Some(false) {
+                        let detail = body
+                            .get("message")
+                            .and_then(Value::as_str)
+                            .unwrap_or("The stack rejected the request.");
+                        app.notify(weak, "Command rejected", detail, 0);
+                    } else if body.get("restart_required").and_then(Value::as_bool) == Some(true) {
+                        app.notify(
+                            weak,
+                            "Restart required",
+                            "Configuration staged - restart the stack to apply.",
+                            0,
+                        );
+                    }
+                }
+                "Error" => {
+                    tracing::warn!(?body, "management error");
+                    let msg = body
+                        .get("message")
+                        .and_then(Value::as_str)
+                        .unwrap_or("Management command failed.");
+                    app.notify(weak, "Error", msg, 1);
+                }
                 other => tracing::info!(variant = other, "management response (unhandled)"),
             }
         }
-        "TnmmAck" => tracing::info!(?payload, "TnmmAck"),
-        "TnccAck" => tracing::info!(?payload, "TnccAck"),
+        "TnmmAck" => {
+            tracing::info!(?payload, "TnmmAck");
+            if payload.get("accepted").and_then(Value::as_bool) == Some(false) {
+                let detail = payload
+                    .get("detail")
+                    .and_then(Value::as_str)
+                    .unwrap_or("The stack rejected the request.");
+                app.notify(weak, "Command rejected", detail, 0);
+            }
+        }
+        "TnccAck" => {
+            tracing::info!(?payload, "TnccAck");
+            if payload.get("accepted").and_then(Value::as_bool) == Some(false) {
+                let detail = payload
+                    .get("detail")
+                    .and_then(Value::as_str)
+                    .unwrap_or("The stack rejected the call request.");
+                app.notify(weak, "Call rejected", detail, 0);
+            }
+        }
         other => tracing::info!(variant = other, "control response (unhandled)"),
     }
 }
 
-fn handle_telemetry(app: &mut AppState, message: &Value) {
-    let Some((variant, _payload)) = protocol::variant_of(message) else {
+fn handle_telemetry(app: &mut AppState, message: &Value, weak: &slint::Weak<MainWindow>) {
+    let Some((variant, payload)) = protocol::variant_of(message) else {
         tracing::warn!("telemetry: undecodable/none-variant frame");
         return;
     };
@@ -304,6 +522,53 @@ fn handle_telemetry(app: &mut AppState, message: &Value) {
         return;
     }
     tracing::info!(variant, "telemetry event");
+
+    // Record it in the event log (newest last, capped) and bump unread.
+    let time = chrono::Local::now().format("%H:%M:%S").to_string();
+    app.events.push_back(LogEntry {
+        time,
+        variant: variant.to_string(),
+        summary: summarize_event(variant, payload),
+    });
+    while app.events.len() > 200 {
+        app.events.pop_front();
+    }
+    app.unread = (app.unread + 1).min(999);
+    push_logs(app, weak);
+
+    // Important, actionable telemetry raises a notification (routine attach/detach
+    // and registration success are reflected by the UI state itself).
+    match variant {
+        "TnmmRegistrationConfirm" | "TnmmRegistrationIndication" => {
+            let status = payload.get("registration_status").and_then(Value::as_str);
+            if status != Some("Success") {
+                let cause = payload
+                    .get("registration_reject_cause")
+                    .and_then(Value::as_str)
+                    .unwrap_or("The network rejected registration.");
+                app.notify(weak, "Registration failed", cause, 1);
+            }
+        }
+        "TnmmServiceIndication" => {
+            if let Some(now) = payload
+                .get("service_status")
+                .and_then(|v| serde_json::from_value::<ServiceStatus>(v.clone()).ok())
+            {
+                if now == ServiceStatus::OutOfService && app.last_service != ServiceStatus::OutOfService
+                {
+                    app.notify(
+                        weak,
+                        "No service",
+                        "Downlink lost - the radio has left coverage.",
+                        1,
+                    );
+                }
+                app.last_service = now;
+            }
+        }
+        _ => {}
+    }
+
     // A state change means MsRuntimeState just moved; pull it right away instead
     // of waiting for the next poll tick.
     if protocol::is_state_changing_event(variant) && app.control_connected {
@@ -314,6 +579,50 @@ fn handle_telemetry(app: &mut AppState, message: &Value) {
             app.send(protocol::get_config(h));
         }
     }
+}
+
+/// A short human summary of a telemetry event for the log.
+fn summarize_event(_variant: &str, payload: &Value) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(issi) = payload.get("issi").and_then(Value::as_u64) {
+        parts.push(format!("issi {issi}"));
+    }
+    if let Some(gssis) = payload.get("gssis").and_then(Value::as_array) {
+        let list: Vec<String> = gssis
+            .iter()
+            .filter_map(Value::as_u64)
+            .map(|g| g.to_string())
+            .collect();
+        if !list.is_empty() {
+            parts.push(format!("gssis [{}]", list.join(", ")));
+        }
+    }
+    if let Some(s) = payload.get("service_status").and_then(Value::as_str) {
+        parts.push(s.to_string());
+    }
+    if let Some(s) = payload.get("registration_status").and_then(Value::as_str) {
+        parts.push(s.to_string());
+    }
+    parts.join(" - ")
+}
+
+/// Push the event log + unread count onto the Slint event loop (newest first).
+fn push_logs(app: &AppState, weak: &slint::Weak<MainWindow>) {
+    let rows: Vec<LogRow> = app
+        .events
+        .iter()
+        .rev()
+        .map(|e| LogRow {
+            time: e.time.clone().into(),
+            variant: e.variant.clone().into(),
+            summary: e.summary.clone().into(),
+        })
+        .collect();
+    let unread = app.unread;
+    let _ = weak.upgrade_in_event_loop(move |w| {
+        w.set_logs(ModelRc::new(VecModel::from(rows)));
+        w.set_unread(unread);
+    });
 }
 
 /// The effective TX talkgroup: the last one switched to if still attached,

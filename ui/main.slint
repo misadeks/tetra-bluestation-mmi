@@ -14,12 +14,18 @@ import "fonts/Inter-Bold.ttf";
 import "fonts/Inter-ExtraBold.ttf";
 
 export enum DeviceInput { Touch, Keypad }
-enum Screen { Home, Menu, Info, Folders, Dialer }
+enum Screen { Home, Menu, Info, Folders, Dialer, Logs }
 
 export struct FolderRow {
     name: string,
     count: int,
     selected: bool,
+}
+
+export struct LogRow {
+    time: string,
+    variant: string,
+    summary: string,
 }
 
 // Palette lifted from the web UI's :root custom properties.
@@ -70,6 +76,8 @@ global Icons {
     out property <string> mic: "M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3M6 11a6 6 0 0 0 12 0M12 17v4M8.5 21h7";
     out property <string> backspace: "M9 5.5h11a1.5 1.5 0 0 1 1.5 1.5v10a1.5 1.5 0 0 1-1.5 1.5H9L2.5 12zM12 9.5L17 14.5M17 9.5L12 14.5";
     out property <string> users: "M9 8a3 3 0 1 0 0.01 0M3.6 19c0-3 2.5-5.2 5.4-5.2S14.4 16 14.4 19M16.5 5.5a3 3 0 0 1 0 5.8M17.6 13.9c2 .6 3.3 2.5 3.3 5.1";
+    out property <string> alert: "M12 3.5L22 20H2zM12 10v4.5M12 17.4v0.01";
+    out property <string> logs: "M8 7L20 7M8 12L20 12M8 17L20 17M4 7v0.01M4 12v0.01M4 17v0.01";
 }
 
 // 5 signal bars, heights scaled up, bottom-aligned (web UI .sig).
@@ -371,6 +379,7 @@ component Softkey inherits Rectangle {
     in property <string> icon;
     in property <bool> danger;
     in property <bool> enabled: true;
+    in property <int> badge-count;
     callback clicked;
     border-radius: 14px;
     border-width: 1px;
@@ -401,6 +410,24 @@ component Softkey inherits Rectangle {
             color: root.danger ? #ffffff : Palette.txt;
             font-size: 15px;
             font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+    if root.badge-count > 0: Rectangle {
+        x: parent.width - self.width + 8px;
+        y: -8px;
+        width: max(20px, txt.preferred-width + 10px);
+        height: 20px;
+        border-radius: 10px;
+        background: Palette.red;
+        border-width: 2px;
+        border-color: #0b1017;
+        txt := Text {
+            text: root.badge-count > 99 ? "99+" : root.badge-count;
+            color: #ffffff;
+            font-size: 11px;
+            font-weight: 700;
+            horizontal-alignment: center;
             vertical-alignment: center;
         }
     }
@@ -625,7 +652,9 @@ component HomeScreen inherits Rectangle {
 
 component MenuScreen inherits Rectangle {
     in property <bool> registered;
+    in property <int> unread;
     callback open-info;
+    callback open-logs;
     callback register;
     callback deregister;
     background: transparent;
@@ -642,6 +671,14 @@ component MenuScreen inherits Rectangle {
             }
         }
         ListRow {
+            title: "Event Log";
+            subtitle: root.unread > 0 ? root.unread + " new events" : "Telemetry events";
+            icon: Icons.logs;
+            clicked => {
+                root.open-logs();
+            }
+        }
+        ListRow {
             title: root.registered ? "Deregister" : "Register";
             subtitle: root.registered ? "Detach from the network" : "Attach to the network";
             icon: root.registered ? Icons.logout : Icons.login;
@@ -652,6 +689,147 @@ component MenuScreen inherits Rectangle {
                     root.deregister();
                 } else {
                     root.register();
+                }
+            }
+        }
+    }
+}
+
+component LogsScreen inherits Rectangle {
+    in property <[LogRow]> logs;
+    background: transparent;
+    VerticalLayout {
+        padding: 14px;
+        if root.logs.length == 0: VerticalLayout {
+            alignment: center;
+            Text {
+                text: "No events yet";
+                color: Palette.muted;
+                font-size: 15px;
+                horizontal-alignment: center;
+            }
+        }
+        Flickable {
+            viewport-height: col.preferred-height;
+            col := VerticalLayout {
+                spacing: 8px;
+                for e in root.logs: Rectangle {
+                    height: 58px;
+                    border-radius: 12px;
+                    border-width: 1px;
+                    border-color: Palette.line;
+                    background: Palette.surface;
+                    HorizontalLayout {
+                        padding-left: 14px;
+                        padding-right: 14px;
+                        spacing: 12px;
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 2px;
+                            Text {
+                                text: e.variant;
+                                color: Palette.txt;
+                                font-size: 15px;
+                                font-weight: 600;
+                            }
+                            if e.summary != "": Text {
+                                text: e.summary;
+                                color: Palette.muted;
+                                font-size: 12px;
+                            }
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                        Text {
+                            text: e.time;
+                            color: Palette.faint;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component AlertOverlay inherits Rectangle {
+    in property <string> title;
+    in property <string> message;
+    in property <int> kind; // 0 amber, 1 red, 2 green
+    callback dismiss;
+    width: 100%;
+    height: 100%;
+    background: #03070cc7;
+
+    property <color> tint: root.kind == 1 ? Palette.red : (root.kind == 2 ? Palette.green : Palette.amber);
+    property <string> glyph: root.kind == 1 ? Icons.alert : (root.kind == 2 ? Icons.check : Icons.info);
+
+    TouchArea {
+        clicked => {
+            root.dismiss();
+        }
+    }
+
+    Rectangle {
+        width: Math.min(parent.width - 48px, 340px);
+        height: card.preferred-height;
+        background: #131c26;
+        border-radius: 18px;
+        border-width: 1px;
+        border-color: Palette.line2;
+        card := VerticalLayout {
+            padding: 26px;
+            spacing: 12px;
+            alignment: start;
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 56px;
+                    height: 56px;
+                    border-radius: 28px;
+                    background: root.kind == 1 ? #f0555a29 : (root.kind == 2 ? #37c06a29 : #e7a72b29);
+                    Icon {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        d: root.glyph;
+                        tint: root.tint;
+                        size: 28px;
+                    }
+                }
+            }
+            Text {
+                text: root.title;
+                color: #ffffff;
+                font-size: 18px;
+                font-weight: 700;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+            if root.message != "": Text {
+                text: root.message;
+                color: Palette.muted;
+                font-size: 14px;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+            Rectangle {
+                height: 46px;
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: Palette.line;
+                background: okt.pressed ? #1b2836 : transparent;
+                okt := TouchArea {
+                    clicked => {
+                        root.dismiss();
+                    }
+                }
+                Text {
+                    text: "OK";
+                    color: #6ab0ff;
+                    font-size: 16px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
                 }
             }
         }
@@ -1007,6 +1185,12 @@ export component MainWindow inherits Window {
     in property <string> clock: "--:--:--";
     in property <string> date: "";
     in property <string> dial-number: "";
+    in property <[LogRow]> logs;
+    in property <int> unread;
+    in property <bool> alert-visible;
+    in property <string> alert-title;
+    in property <string> alert-message;
+    in property <int> alert-kind;
 
     callback register;
     callback deregister;
@@ -1017,6 +1201,8 @@ export component MainWindow inherits Window {
     callback ptt;
     callback dial-key(string);
     callback dial-call;
+    callback open-logs;
+    callback alert-dismiss;
 
     function screen-title() -> string {
         if (root.screen == Screen.Menu) {
@@ -1031,10 +1217,15 @@ export component MainWindow inherits Window {
         if (root.screen == Screen.Dialer) {
             return "Dialer";
         }
+        if (root.screen == Screen.Logs) {
+            return "Event Log";
+        }
         return root.date;
     }
 
     VerticalLayout {
+        width: 100%;
+        height: 100%;
         StatusBar {
             bars: root.signal-bars;
             network: root.network;
@@ -1083,8 +1274,13 @@ export component MainWindow inherits Window {
         if root.device-input == DeviceInput.Touch && root.screen == Screen.Menu: MenuScreen {
             vertical-stretch: 1;
             registered: root.registered;
+            unread: root.unread;
             open-info => {
                 root.screen = Screen.Info;
+            }
+            open-logs => {
+                root.open-logs();
+                root.screen = Screen.Logs;
             }
             register => {
                 root.register();
@@ -1094,6 +1290,11 @@ export component MainWindow inherits Window {
                 root.deregister();
                 root.screen = Screen.Home;
             }
+        }
+
+        if root.device-input == DeviceInput.Touch && root.screen == Screen.Logs: LogsScreen {
+            vertical-stretch: 1;
+            logs: root.logs;
         }
 
         if root.device-input == DeviceInput.Touch && root.screen == Screen.Folders: FoldersScreen {
@@ -1149,6 +1350,7 @@ export component MainWindow inherits Window {
                 if root.screen == Screen.Home: Softkey {
                     text: "Menu";
                     icon: Icons.menu;
+                    badge-count: root.unread;
                     horizontal-stretch: 1;
                     clicked => {
                         root.screen = Screen.Menu;
@@ -1174,6 +1376,15 @@ export component MainWindow inherits Window {
                 }
                 if root.screen != Screen.Home: Rectangle { horizontal-stretch: 2; }
             }
+        }
+    }
+
+    if root.alert-visible: AlertOverlay {
+        title: root.alert-title;
+        message: root.alert-message;
+        kind: root.alert-kind;
+        dismiss => {
+            root.alert-dismiss();
         }
     }
 }
