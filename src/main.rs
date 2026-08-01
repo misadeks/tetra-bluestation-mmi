@@ -50,17 +50,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::env::set_var("SLINT_SCALE_FACTOR", ui.scale.to_string());
 
     let window = MainWindow::new()?;
-    // Size the window so it occupies width x height device pixels on screen,
-    // regardless of the host monitor's scaling. With SLINT_SCALE_FACTOR forced to
-    // `scale`, physical = logical * scale, so request logical = width/scale.
-    window.window().set_size(slint::LogicalSize::new(
-        ui.width as f32 / ui.scale,
-        ui.height as f32 / ui.scale,
-    ));
+    // Fixed window size in logical pixels (physical = logical * scale). Binding
+    // the Window width/height makes it non-resizable so screen content never
+    // stretches it. SLINT_SCALE_FACTOR (set above) forces the device scale.
+    window.set_win_width(ui.width as f32 / ui.scale);
+    window.set_win_height(ui.height as f32 / ui.scale);
     window.set_device_input(match ui.input {
         InputKind::Touch => DeviceInput::Touch,
         InputKind::Keypad => DeviceInput::Keypad,
     });
+    window.set_show_event_log(ui.show_event_log);
 
     // --- Wire the network + app event loop --------------------------------
     let (events_tx, events_rx) = crossbeam_channel::unbounded::<app::AppEvent>();
@@ -103,7 +102,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         thread::spawn(move || loop {
             let now = chrono::Local::now();
             let tick = app::AppEvent::ClockTick {
-                time: now.format("%H:%M:%S").to_string(),
+                time: now.format("%H:%M").to_string(),
                 date: now.format("%a %d %b").to_string(),
             };
             if tx.send(tick).is_err() {

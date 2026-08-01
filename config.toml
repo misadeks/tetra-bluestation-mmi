@@ -41,6 +41,8 @@ model  = "pi-720x1280"
 scale  = 1.0
 # input selects the layout and interaction model: "touch" or "keypad".
 # input  = "touch"      # overrides the model's input kind
+# show_event_log controls whether the Event Log entry appears in the Menu.
+show_event_log = true
 theme  = "classic"
 
 # Device model catalog. Add your own panels here and select one via [ui].model.

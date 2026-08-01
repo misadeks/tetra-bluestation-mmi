@@ -364,6 +364,10 @@ pub fn run(
                 if !app.require_online(&weak) {
                     continue;
                 }
+                if app.state.registration_state != protocol::RegistrationState::Registered {
+                    app.notify(&weak, "Not registered", "Register the radio before placing a call.", 0);
+                    continue;
+                }
                 let valid = app.dial_number.parse::<u32>().map(|n| n >= 1).unwrap_or(false);
                 if !valid {
                     app.notify(
