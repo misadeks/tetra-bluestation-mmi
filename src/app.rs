@@ -2010,10 +2010,18 @@ fn push_calls(app: &AppState, weak: &slint::Weak<MainWindow>) {
     let group_name = group_gssi
         .map(|g| peer_name(Some(g), true))
         .unwrap_or_else(|| "Group call".to_string());
+    // Talker line: a programmed name when known, otherwise just "TALKING"; the
+    // raw talker id (if any) goes on its own line below (group_talker_id) instead
+    // of an inline "TG {id}" label.
+    let talker_name = other_talker
+        .and_then(|o| app.codeplug.as_ref().and_then(|cp| cp.known_name(o)));
     let group_status = if i_am_talking {
         "TALKING - You".to_string()
-    } else if let Some(o) = other_talker {
-        format!("TALKING - {}", peer_name(Some(o), true))
+    } else if other_talker.is_some() {
+        match &talker_name {
+            Some(n) => format!("TALKING - {n}"),
+            None => "TALKING".to_string(),
+        }
     } else if receiving {
         // Audio is flowing but the SwMI didn't give us a usable talker SSI.
         "TALKING".to_string()
@@ -2026,6 +2034,11 @@ fn push_calls(app: &AppState, weak: &slint::Weak<MainWindow>) {
             _ if gcall.is_none() => "Connecting...".to_string(),
             _ => "Floor free - push to talk".to_string(),
         }
+    };
+    let group_talker_id = if i_am_talking {
+        String::new()
+    } else {
+        other_talker.map(|o| o.to_string()).unwrap_or_default()
     };
     let group_ptt_state: i32 = if i_am_talking {
         let req = matches!(
@@ -2058,6 +2071,7 @@ fn push_calls(app: &AppState, weak: &slint::Weak<MainWindow>) {
         w.set_group_call_active(group_active);
         w.set_group_call_name(group_name.into());
         w.set_group_call_status(group_status.into());
+        w.set_group_talker_id(group_talker_id.into());
         w.set_group_ptt_state(group_ptt_state);
     });
 }

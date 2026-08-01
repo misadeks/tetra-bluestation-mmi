@@ -634,6 +634,7 @@ component HomeScreen inherits Rectangle {
     in property <bool> group-call-active;
     in property <string> group-call-name;
     in property <string> group-call-status;
+    in property <string> group-talker-id;
     in property <int> group-ptt-state;
     callback cycle-prev;
     callback cycle-next;
@@ -693,6 +694,13 @@ component HomeScreen inherits Rectangle {
                     text: root.group-call-status;
                     color: Palette.muted;
                     font-size: 17px;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                }
+                if root.group-talker-id != "": Text {
+                    text: root.group-talker-id;
+                    color: Palette.faint;
+                    font-size: 15px;
                     font-weight: 600;
                     horizontal-alignment: center;
                 }
@@ -2060,6 +2068,7 @@ export component MainWindow inherits Window {
     in property <bool> group-call-active;
     in property <string> group-call-name: "";
     in property <string> group-call-status: "";
+    in property <string> group-talker-id: "";
     in property <int> group-ptt-state;
 
     callback register;
@@ -2177,6 +2186,7 @@ export component MainWindow inherits Window {
             group-call-active: root.group-call-active;
             group-call-name: root.group-call-name;
             group-call-status: root.group-call-status;
+            group-talker-id: root.group-talker-id;
             group-ptt-state: root.group-ptt-state;
             cycle-prev => {
                 root.cycle-prev();

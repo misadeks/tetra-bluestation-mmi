@@ -196,6 +196,13 @@ impl Codeplug {
             .cloned()
             .unwrap_or_else(|| format!("TG {gssi}"))
     }
+
+    /// A programmed name for this identity, or None if it isn't in the codeplug
+    /// (no "TG {id}" fallback). Used for the talker line so an unknown talker
+    /// shows its raw id on its own line instead of a "TG {id}" label.
+    pub fn known_name(&self, gssi: u32) -> Option<String> {
+        self.names.get(&gssi).cloned()
+    }
 }
 
 #[cfg(test)]
