@@ -1348,9 +1348,15 @@ fn handle_speech_frame(
     let talker = payload.get("transmitting_party_ssi").and_then(Value::as_u64).map(|v| v as u32);
     let bad = payload.get("bad_frame").and_then(Value::as_bool).unwrap_or(false);
     let frame_bits = payload.get("frame_bits").and_then(Value::as_u64);
+    let own = app.state.own_issi;
 
-    // Decode + play FIRST so the audio path is never delayed by UI work.
-    if matches!(frame_bits, None | Some(274)) {
+    // Decode + play FIRST so the audio path is never delayed by UI work. Never
+    // play the SwMI's echo of our OWN transmission: while we key a group call or
+    // a simplex call the whole downlink is our echo (half-duplex, block it), and
+    // any frame whose talker is our own ISSI is our echo (also on a duplex call).
+    let is_own_echo = talker == Some(own) && own != 0;
+    let blocked = tx_blocks_playback(app, cid) || is_own_echo;
+    if !blocked && matches!(frame_bits, None | Some(274)) {
         if let Some(a) = audio {
             let data: Vec<u8> = payload
                 .get("data")
@@ -1368,11 +1374,12 @@ fn handle_speech_frame(
     }
 
     // Attribute the talker onto the live call (floor housekeeping). Only refresh
-    // the call UI when it actually changes, not on every 60 ms frame.
+    // the call UI when it actually changes, not on every 60 ms frame. Our own
+    // echo is not a real other talker, so ignore it here too.
     let mut changed = false;
     if let Some(t) = talker {
         if let Some(c) = app.calls.get_mut(&cid) {
-            if t != app.state.own_issi && (c.talker_ssi != Some(t) || c.can_request_tx) {
+            if t != own && (c.talker_ssi != Some(t) || c.can_request_tx) {
                 c.talker_ssi = Some(t);
                 c.can_request_tx = false;
                 changed = true;
@@ -1382,6 +1389,22 @@ fn handle_speech_frame(
     if changed {
         push_calls(app, weak);
     }
+}
+
+/// While WE transmit, the SwMI echoes our own voice back as downlink frames.
+/// Block playback then: keying a group call (half-duplex floor) or a simplex
+/// individual call while PTT is held. Duplex calls stay full-duplex (play on).
+fn tx_blocks_playback(app: &AppState, cid: u32) -> bool {
+    if app.grp_call.as_ref().map(|g| g.talking).unwrap_or(false) {
+        return true;
+    }
+    if app.ptt_held.is_some() {
+        // simplex (true) blocks; a duplex call keeps playing the far end.
+        if app.calls.get(&cid).map(|c| c.simplex).unwrap_or(true) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Reconcile the mic uplink with the current floor: transmit only while we
