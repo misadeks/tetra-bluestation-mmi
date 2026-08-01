@@ -1698,7 +1698,8 @@ component IncomingOverlay inherits Rectangle {
     callback reject;
     width: 100%;
     height: 100%;
-    background: #03070cc7;
+    // Full-screen opaque incoming-call view (matches the app background).
+    background: @linear-gradient(180deg, #0f1620 0%, #0a0f16 100%);
     VerticalLayout {
         padding: 26px;
         spacing: 16px;
