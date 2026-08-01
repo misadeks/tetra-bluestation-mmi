@@ -54,6 +54,13 @@ pub struct RegistrationConfig {
 #[allow(dead_code)] // fields consumed by the audio path in M5
 #[derive(Debug, Clone, Deserialize)]
 pub struct AudioConfig {
+    /// Enable the two-way voice path (decode downlink, encode uplink).
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Directory holding the prebuilt ACELP codec libraries
+    /// (`tetra_acelp*.dll` / `.so`). ETSI-copyrighted, never committed here.
+    #[serde(default = "default_codec_dir")]
+    pub codec_dir: String,
     #[serde(default = "default_device")]
     pub output_device: String,
     #[serde(default = "default_device")]
@@ -265,6 +272,15 @@ fn default_device() -> String {
     "default".to_string()
 }
 
+fn default_true() -> bool {
+    true
+}
+
+fn default_codec_dir() -> String {
+    // The reference UI keeps the prebuilt (ETSI-copyrighted) codec libraries here.
+    r"C:\Users\mihaj\PycharmProjects\tnmm_ui\native".to_string()
+}
+
 fn default_sample_rate() -> u32 {
     8000
 }
@@ -340,6 +356,8 @@ impl Default for RegistrationConfig {
 impl Default for AudioConfig {
     fn default() -> Self {
         AudioConfig {
+            enabled: true,
+            codec_dir: default_codec_dir(),
             output_device: default_device(),
             input_device: default_device(),
             sample_rate: default_sample_rate(),

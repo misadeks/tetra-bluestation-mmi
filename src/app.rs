@@ -48,6 +48,8 @@ pub enum AppEvent {
     UiRejectCall,
     UiHangup,
     UiHangupGroup,
+    /// Encoded uplink speech frame (call id, 274 codec bits) from the mic thread.
+    UplinkAudio(u32, Vec<u8>),
     UiOpenLogs,
     UiAlertDismiss,
     AlertExpire(u64),
@@ -272,7 +274,14 @@ pub fn run(
     self_tx: Sender<AppEvent>,
     weak: slint::Weak<MainWindow>,
     reg_type: String,
+    audio_cfg: crate::config::AudioConfig,
 ) {
+    // Voice engine (None when disabled, codec missing, or no audio device).
+    let audio = crate::audio::AudioEngine::new(&audio_cfg, self_tx.clone());
+    if audio.is_none() {
+        tracing::info!("audio: running without voice (codec or device unavailable)");
+    }
+
     let mut app = AppState {
         control_out: None,
         control_connected: false,
@@ -352,7 +361,8 @@ pub fn run(
                 push_ui(&app, &weak);
             }
             AppEvent::TelemetryMessage(value) => {
-                handle_telemetry(&mut app, &value, &weak);
+                handle_telemetry(&mut app, &value, &weak, audio.as_ref());
+                sync_uplink(&app, audio.as_ref());
             }
             AppEvent::PollTick => {
                 if app.control_connected {
@@ -540,6 +550,7 @@ pub fn run(
                     app.ptt_held = Some(cid);
                     let h = app.next_handle();
                     app.send(protocol::tncc_tx(h, cid, true));
+                    sync_uplink(&app, audio.as_ref());
                     push_calls(&app, &weak);
                 }
             }
@@ -547,6 +558,7 @@ pub fn run(
                 if let Some(cid) = app.ptt_held.take() {
                     let h = app.next_handle();
                     app.send(protocol::tncc_tx(h, cid, false));
+                    sync_uplink(&app, audio.as_ref());
                     push_calls(&app, &weak);
                 }
             }
@@ -585,6 +597,7 @@ pub fn run(
                         app.send(protocol::tncc_tx(h, cid, true));
                     }
                 }
+                sync_uplink(&app, audio.as_ref());
                 push_calls(&app, &weak);
             }
             AppEvent::UiGroupPttUp => {
@@ -599,6 +612,7 @@ pub fn run(
                         }
                     }
                 }
+                sync_uplink(&app, audio.as_ref());
                 push_calls(&app, &weak);
             }
             AppEvent::UiAnswerCall => {
@@ -642,6 +656,7 @@ pub fn run(
                     app.calls.remove(&cid);
                 }
                 app.dialing = None;
+                sync_uplink(&app, audio.as_ref());
                 push_calls(&app, &weak);
             }
             AppEvent::UiHangupGroup => {
@@ -656,7 +671,14 @@ pub fn run(
                 if app.dialing.as_ref().map(|d| d.group).unwrap_or(false) {
                     app.dialing = None;
                 }
+                sync_uplink(&app, audio.as_ref());
                 push_calls(&app, &weak);
+            }
+            AppEvent::UplinkAudio(cid, bits) => {
+                // Fire-and-forget uplink speech (no handle, not acked).
+                if app.control_connected {
+                    app.send(protocol::ms_uplink_speech(cid, bits, 274));
+                }
             }
             AppEvent::UiOpenLogs => {
                 app.unread = 0;
@@ -896,13 +918,20 @@ fn handle_control(app: &mut AppState, message: &Value, weak: &slint::Weak<MainWi
     }
 }
 
-fn handle_telemetry(app: &mut AppState, message: &Value, weak: &slint::Weak<MainWindow>) {
+fn handle_telemetry(
+    app: &mut AppState,
+    message: &Value,
+    weak: &slint::Weak<MainWindow>,
+    audio: Option<&crate::audio::AudioEngine>,
+) {
     let Some((variant, payload)) = protocol::variant_of(message) else {
         tracing::warn!("telemetry: undecodable/none-variant frame");
         return;
     };
-    // Downlink voice is high-rate; do not log each frame (decode lands in M5).
+    // Downlink voice is high-rate: decode + play it, attribute the talker, and
+    // refresh the call UI, but never log each frame.
     if variant == "MsSpeechFrame" {
+        handle_speech_frame(app, payload, weak, audio);
         return;
     }
     tracing::info!(variant, "telemetry event");
@@ -1287,6 +1316,72 @@ fn ptt_allowed(app: &AppState) -> bool {
         Some(c) => c.can_request_tx,
         None => true,
     }
+}
+
+/// Decode a downlink `MsSpeechFrame`, play it, and attribute the talker so the
+/// "other talker" UI lights up even independently of the audio path.
+fn handle_speech_frame(
+    app: &mut AppState,
+    payload: &Value,
+    weak: &slint::Weak<MainWindow>,
+    audio: Option<&crate::audio::AudioEngine>,
+) {
+    let Some(cid) = payload.get("call_identifier").and_then(Value::as_u64) else {
+        return;
+    };
+    let cid = cid as u32;
+    let talker = payload.get("transmitting_party_ssi").and_then(Value::as_u64).map(|v| v as u32);
+    let bad = payload.get("bad_frame").and_then(Value::as_bool).unwrap_or(false);
+    let frame_bits = payload.get("frame_bits").and_then(Value::as_u64);
+
+    // Attribute the talker onto the live call (floor housekeeping).
+    if let Some(t) = talker {
+        if let Some(c) = app.calls.get_mut(&cid) {
+            if t != app.state.own_issi {
+                c.talker_ssi = Some(t);
+                c.can_request_tx = false;
+            }
+        }
+    }
+    push_calls(app, weak);
+
+    // Only 274-bit TCH/S speech is decodable.
+    if !matches!(frame_bits, None | Some(274)) {
+        return;
+    }
+    if let Some(a) = audio {
+        let data: Vec<u8> = payload
+            .get("data")
+            .and_then(Value::as_array)
+            .map(|arr| {
+                arr.iter()
+                    .map(|v| if v.as_u64().unwrap_or(0) != 0 { 1u8 } else { 0u8 })
+                    .collect()
+            })
+            .unwrap_or_default();
+        if data.len() == 274 {
+            a.play_downlink(&data, bad);
+        }
+    }
+}
+
+/// Reconcile the mic uplink with the current floor: transmit only while we
+/// physically hold the PTT on an active call (individual or group).
+fn sync_uplink(app: &AppState, audio: Option<&crate::audio::AudioEngine>) {
+    let Some(a) = audio else { return };
+    if let Some(cid) = app.ptt_held {
+        if app.calls.get(&cid).map(|c| c.state == CallState::Active).unwrap_or(false) {
+            a.set_uplink(true, cid);
+            return;
+        }
+    }
+    if app.grp_call.as_ref().map(|g| g.talking).unwrap_or(false) {
+        if let Some(cid) = active_group_call(app) {
+            a.set_uplink(true, cid);
+            return;
+        }
+    }
+    a.set_uplink(false, 0);
 }
 
 /// A short human summary of a telemetry event for the log.

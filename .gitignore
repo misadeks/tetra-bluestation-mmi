@@ -19,3 +19,10 @@ Thumbs.db
 
 # Local screenshots
 *.png
+
+# ETSI-copyrighted ACELP codec libraries (loaded at runtime, never committed)
+*.dll
+*.so
+*.dylib
+tetra_acelp*
+native/etsi/

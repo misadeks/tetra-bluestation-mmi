@@ -11,6 +11,7 @@
 // app is the server.
 
 mod app;
+mod audio;
 mod codeplug;
 mod config;
 mod net;
@@ -298,9 +299,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let weak = window.as_weak();
         let reg_type = cfg.registration.registration_type.clone();
+        let audio_cfg = cfg.audio.clone();
         let rx = events_rx;
         let self_tx = events_tx.clone();
-        thread::spawn(move || app::run(rx, self_tx, weak, reg_type));
+        thread::spawn(move || app::run(rx, self_tx, weak, reg_type, audio_cfg));
     }
 
     tracing::info!("starting Slint event loop");
