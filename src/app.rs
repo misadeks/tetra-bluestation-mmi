@@ -35,6 +35,7 @@ pub enum AppEvent {
     UiCyclePrev,
     UiCycleNext,
     UiSelectTalkgroup,
+    UiCancelSelect,
     UiSelectFolder(i32),
     UiPtt,
     UiDialKey(String),
@@ -336,6 +337,22 @@ pub fn run(
                         // Reset the cycler to the folder's first talkgroup.
                         app.cycle_gssi = cp.folders[i].talkgroups.first().map(|t| t.gssi);
                     }
+                }
+                push_ui(&app, &weak);
+            }
+            AppEvent::UiCancelSelect => {
+                // Snap the cycler back to the active TX group (and its folder).
+                if let Some(tx) = effective_tx(&app) {
+                    if let Some(cp) = &app.codeplug {
+                        if let Some(fidx) = cp
+                            .folders
+                            .iter()
+                            .position(|f| f.talkgroups.iter().any(|t| t.gssi == tx))
+                        {
+                            app.sel_folder = fidx;
+                        }
+                    }
+                    app.cycle_gssi = Some(tx);
                 }
                 push_ui(&app, &weak);
             }
@@ -793,6 +810,7 @@ fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
     let mut badge_kind: i32 = 0; // 0 not-selected, 1 scanning, 2 on-air
     let mut can_cycle = false;
     let mut select_enabled = false;
+    let mut show_cancel = false;
     let mut sel_folder_idx: i32 = 0;
     let mut folder_rows: Vec<(String, i32, bool)> = Vec::new();
 
@@ -833,6 +851,9 @@ fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
             }
             .to_string();
             select_enabled = registered && !is_tx;
+            // Show Cancel only when a TX group is active and the cycler has
+            // browsed away from it, so it can snap back.
+            show_cancel = tx.is_some() && !is_tx;
         } else {
             tg_name = "No talkgroups".to_string();
         }
@@ -893,6 +914,7 @@ fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
         w.set_badge_kind(badge_kind);
         w.set_can_cycle(can_cycle);
         w.set_select_enabled(select_enabled);
+        w.set_show_cancel_select(show_cancel);
         w.set_sel_folder(sel_folder_idx);
         w.set_ptt_enabled(ptt_enabled);
         w.set_ptt_label(ptt_label.into());

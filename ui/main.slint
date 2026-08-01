@@ -351,6 +351,37 @@ component PrimaryButton inherits Rectangle {
     }
 }
 
+component SecondaryButton inherits Rectangle {
+    in property <string> text;
+    in property <string> icon;
+    callback clicked;
+    height: 58px;
+    border-radius: 14px;
+    border-width: 1px;
+    border-color: Palette.line2;
+    background: touch.pressed ? #1b2836 : Palette.surface;
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+    HorizontalLayout {
+        alignment: center;
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            if root.icon != "": Icon { d: root.icon; tint: Palette.txt; size: 20px; }
+        }
+        Text {
+            text: root.text;
+            color: Palette.txt;
+            font-size: 17px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+}
+
 // Docked push-to-talk button (voice lands in M5/M6; here it reflects state).
 component Ptt inherits Rectangle {
     in property <string> text;
@@ -563,11 +594,13 @@ component HomeScreen inherits Rectangle {
     in property <int> attached-count;
     in property <bool> scan-active;
     in property <bool> select-enabled;
+    in property <bool> show-cancel;
     in property <bool> ptt-enabled;
     in property <string> ptt-label;
     callback cycle-prev;
     callback cycle-next;
     callback select-tg;
+    callback cancel-select;
     callback open-folders;
     callback ptt;
 
@@ -646,12 +679,25 @@ component HomeScreen inherits Rectangle {
                     }
                 }
 
-                // Select-talkgroup action, directly below the cycler.
-                if root.has-codeplug: PrimaryButton {
-                    text: root.badge-kind == 2 ? "On air" : "Select talkgroup";
-                    enabled: root.select-enabled;
-                    clicked => {
-                        root.select-tg();
+                // Select-talkgroup action, directly below the cycler. A Cancel
+                // button appears beside it when a TX group is active, snapping
+                // the cycler back to that group.
+                if root.has-codeplug: HorizontalLayout {
+                    spacing: 10px;
+                    PrimaryButton {
+                        horizontal-stretch: 1;
+                        text: root.badge-kind == 2 ? "On air" : "Select talkgroup";
+                        enabled: root.select-enabled;
+                        clicked => {
+                            root.select-tg();
+                        }
+                    }
+                    if root.show-cancel: SecondaryButton {
+                        horizontal-stretch: 1;
+                        text: "Cancel";
+                        clicked => {
+                            root.cancel-select();
+                        }
                     }
                 }
 
@@ -1233,37 +1279,6 @@ component GroupsScreen inherits Rectangle {
     }
 }
 
-component SecondaryButton inherits Rectangle {
-    in property <string> text;
-    in property <string> icon;
-    callback clicked;
-    height: 58px;
-    border-radius: 14px;
-    border-width: 1px;
-    border-color: Palette.line2;
-    background: touch.pressed ? #1b2836 : Palette.surface;
-    touch := TouchArea {
-        clicked => {
-            root.clicked();
-        }
-    }
-    HorizontalLayout {
-        alignment: center;
-        spacing: 10px;
-        VerticalLayout {
-            alignment: center;
-            if root.icon != "": Icon { d: root.icon; tint: Palette.txt; size: 20px; }
-        }
-        Text {
-            text: root.text;
-            color: Palette.txt;
-            font-size: 17px;
-            font-weight: 600;
-            vertical-alignment: center;
-        }
-    }
-}
-
 component ConfigScreen inherits Rectangle {
     in property <string> toml;
     callback apply;
@@ -1530,6 +1545,7 @@ export component MainWindow inherits Window {
     in property <int> badge-kind;
     in property <bool> can-cycle;
     in property <bool> select-enabled;
+    in property <bool> show-cancel-select;
     in property <bool> ptt-enabled;
     in property <string> ptt-label: "Register to talk";
     in property <string> folder-name: "Talkgroups";
@@ -1554,6 +1570,7 @@ export component MainWindow inherits Window {
     callback cycle-prev;
     callback cycle-next;
     callback select-talkgroup;
+    callback cancel-select;
     callback select-folder(int);
     callback ptt;
     callback dial-key(string);
@@ -1639,6 +1656,7 @@ export component MainWindow inherits Window {
             attached-count: root.attached-count;
             scan-active: root.scan-active;
             select-enabled: root.select-enabled;
+            show-cancel: root.show-cancel-select;
             ptt-enabled: root.ptt-enabled;
             ptt-label: root.ptt-label;
             cycle-prev => {
@@ -1649,6 +1667,9 @@ export component MainWindow inherits Window {
             }
             select-tg => {
                 root.select-talkgroup();
+            }
+            cancel-select => {
+                root.cancel-select();
             }
             open-folders => {
                 root.screen = Screen.Folders;

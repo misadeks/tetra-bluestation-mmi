@@ -151,6 +151,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     {
         let tx = events_tx.clone();
+        window.on_cancel_select(move || {
+            let _ = tx.send(app::AppEvent::UiCancelSelect);
+        });
+    }
+    {
+        let tx = events_tx.clone();
         window.on_select_folder(move |i| {
             let _ = tx.send(app::AppEvent::UiSelectFolder(i));
         });
