@@ -1336,6 +1336,9 @@ fn ptt_allowed(app: &AppState) -> bool {
     }
 }
 
+/// Diagnostic counter for downlink speech frames (rate-limits the logging).
+static SPEECH_SEEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// Decode a downlink `MsSpeechFrame`, play it, and attribute the talker so the
 /// "other talker" UI lights up even independently of the audio path.
 fn handle_speech_frame(
@@ -1353,30 +1356,50 @@ fn handle_speech_frame(
     let frame_bits = payload.get("frame_bits").and_then(Value::as_u64);
     let own = app.state.own_issi;
 
-    // Decode + play FIRST so the audio path is never delayed by UI work. Don't
-    // play the SwMI's echo of our OWN transmission: while we key a group/simplex
-    // call the whole downlink is our echo (half-duplex, block it); and while we
-    // are transmitting (incl. a duplex call streaming the mic) a frame whose
-    // talker is our own ISSI is our echo. When we are NOT transmitting, a frame
-    // labelled with our ISSI is the SwMI mislabelling the real talker (group
-    // calls do this) - play it, or an incoming group call is silent.
     let transmitting = we_are_transmitting(app);
+    let tx_block = tx_blocks_playback(app, cid);
     let is_own_echo = transmitting && own != 0 && talker == Some(own);
-    let blocked = tx_blocks_playback(app, cid) || is_own_echo;
-    if !blocked && matches!(frame_bits, None | Some(274)) {
+    let blocked = tx_block || is_own_echo;
+
+    let data: Vec<u8> = payload
+        .get("data")
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .map(|v| if v.as_u64().unwrap_or(0) != 0 { 1u8 } else { 0u8 })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Diagnostics: dump the first few raw frames (to see the real field names/
+    // values) and then a periodic one-liner of the decode/gating decision.
+    let n = SPEECH_SEEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    if n < 5 {
+        tracing::info!(raw = %payload, "speech-frame raw (first 5)");
+    }
+    if n < 5 || n % 50 == 0 {
+        tracing::info!(
+            n,
+            cid,
+            ?talker,
+            own,
+            ?frame_bits,
+            data_len = data.len(),
+            transmitting,
+            tx_block,
+            is_own_echo,
+            blocked,
+            grp_talking = app.grp_call.as_ref().map(|g| g.talking).unwrap_or(false),
+            grp_cid = ?app.grp_call.as_ref().and_then(|g| g.cid),
+            ptt_held = ?app.ptt_held,
+            "speech-frame decision"
+        );
+    }
+
+    // Decode + play FIRST so the audio path is never delayed by UI work.
+    if !blocked && matches!(frame_bits, None | Some(274)) && data.len() == 274 {
         if let Some(a) = audio {
-            let data: Vec<u8> = payload
-                .get("data")
-                .and_then(Value::as_array)
-                .map(|arr| {
-                    arr.iter()
-                        .map(|v| if v.as_u64().unwrap_or(0) != 0 { 1u8 } else { 0u8 })
-                        .collect()
-                })
-                .unwrap_or_default();
-            if data.len() == 274 {
-                a.play_downlink(&data, bad);
-            }
+            a.play_downlink(&data, bad);
         }
     }
 

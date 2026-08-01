@@ -354,6 +354,7 @@ impl AudioEngine {
                         tracing::warn!("audio: encoder context init failed");
                         return;
                     };
+                    let mut sent: u64 = 0;
                     for frame in enc_rx.iter() {
                         if frame.len() != FRAME_SAMPLES {
                             continue;
@@ -363,6 +364,10 @@ impl AudioEngine {
                         if let Some(bits) = encoder.encode(&buf) {
                             let id = cid.load(Ordering::Relaxed);
                             if id != 0 {
+                                if sent % 50 == 0 {
+                                    tracing::info!(cid = id, sent, "audio: uplink frames encoded/sent");
+                                }
+                                sent += 1;
                                 let _ = app_tx.send(AppEvent::UplinkAudio(id, bits));
                             }
                         }
@@ -419,8 +424,12 @@ impl AudioEngine {
 
     /// Enable/disable uplink transmission for a call (floor-gated by the caller).
     pub fn set_uplink(&self, active: bool, cid: u32) {
-        self.uplink_cid.store(if active { cid } else { 0 }, Ordering::Relaxed);
-        self.uplink_active.store(active, Ordering::Relaxed);
+        let new_cid = if active { cid } else { 0 };
+        let prev = self.uplink_cid.swap(new_cid, Ordering::Relaxed);
+        let was = self.uplink_active.swap(active, Ordering::Relaxed);
+        if was != active || prev != new_cid {
+            tracing::info!(active, cid = new_cid, "audio: uplink state changed");
+        }
     }
 }
 
