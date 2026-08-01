@@ -119,8 +119,6 @@ struct AppState {
     ptt_held: Option<u32>,
     /// Calls we hung up ourselves (suppresses the "Call ended" toast).
     local_end: std::collections::HashSet<u32>,
-    /// Latched (talker-key, since) for the group current-talker timer.
-    talk_since: std::cell::RefCell<Option<(String, Instant)>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
@@ -316,7 +314,6 @@ pub fn run(
         grp_call: None,
         ptt_held: None,
         local_end: std::collections::HashSet::new(),
-        talk_since: std::cell::RefCell::new(None),
     };
 
     for event in rx.iter() {
@@ -1854,39 +1851,10 @@ fn push_calls(app: &AppState, weak: &slint::Weak<MainWindow>) {
     let group_name = group_gssi
         .map(|g| peer_name(Some(g), true))
         .unwrap_or_else(|| "Group call".to_string());
-    let group_folder = group_gssi.map(|g| folder_name_of_gssi(app, g)).unwrap_or_default();
-    let group_talker_you = i_am_talking;
-    let group_talker_name = other_talker.map(|s| peer_name(Some(s), true)).unwrap_or_default();
-    let group_talking = i_am_talking || other_talker.is_some();
-
-    // Current-talker timer: latch start time, reset when the talker changes.
-    let talk_key = if i_am_talking {
-        Some("you".to_string())
-    } else {
-        other_talker.map(|s| s.to_string())
-    };
-    let group_talk_time = match talk_key {
-        Some(k) => {
-            let mut ts = app.talk_since.borrow_mut();
-            let since = match &*ts {
-                Some((pk, t)) if *pk == k => *t,
-                _ => {
-                    let now = Instant::now();
-                    *ts = Some((k.clone(), now));
-                    now
-                }
-            };
-            fmt_dur(since.elapsed())
-        }
-        None => {
-            *app.talk_since.borrow_mut() = None;
-            String::new()
-        }
-    };
-
-    // Sub-line shown when nobody holds the floor.
-    let group_floor_sub = if group_talking {
-        String::new()
+    let group_status = if i_am_talking {
+        "TALKING - You".to_string()
+    } else if let Some(o) = other_talker {
+        format!("TALKING - {}", peer_name(Some(o), true))
     } else {
         let floor = gcall.and_then(|c| c.tx_status.as_deref());
         match floor {
@@ -1912,10 +1880,6 @@ fn push_calls(app: &AppState, weak: &slint::Weak<MainWindow>) {
     } else {
         0
     };
-    // Talkgroup sub-label under the home PTT (selected TX group).
-    let ptt_sub = effective_tx(app)
-        .map(|g| peer_name(Some(g), true))
-        .unwrap_or_default();
 
     let _ = weak.upgrade_in_event_loop(move |w| {
         w.set_call_live(call_live);
@@ -1931,28 +1895,9 @@ fn push_calls(app: &AppState, weak: &slint::Weak<MainWindow>) {
         w.set_incoming_sub(inc_sub.into());
         w.set_group_call_active(group_active);
         w.set_group_call_name(group_name.into());
-        w.set_group_folder(group_folder.into());
-        w.set_group_talking(group_talking);
-        w.set_group_talker_you(group_talker_you);
-        w.set_group_talker_name(group_talker_name.into());
-        w.set_group_talk_time(group_talk_time.into());
-        w.set_group_floor_sub(group_floor_sub.into());
+        w.set_group_call_status(group_status.into());
         w.set_group_ptt_state(group_ptt_state);
-        w.set_ptt_sub(ptt_sub.into());
     });
-}
-
-/// Folder (zone) name containing a GSSI, or "" if not in the codeplug.
-fn folder_name_of_gssi(app: &AppState, gssi: u32) -> String {
-    app.codeplug
-        .as_ref()
-        .and_then(|cp| {
-            cp.folders
-                .iter()
-                .find(|f| f.talkgroups.iter().any(|t| t.gssi == gssi))
-                .map(|f| f.name.clone())
-        })
-        .unwrap_or_default()
 }
 
 fn call_state_label(c: &Call) -> String {

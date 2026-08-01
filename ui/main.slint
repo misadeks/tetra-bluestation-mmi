@@ -392,39 +392,6 @@ component SecondaryButton inherits Rectangle {
     }
 }
 
-component DangerButton inherits Rectangle {
-    in property <string> text;
-    in property <string> icon;
-    callback clicked;
-    height: 64px;
-    border-radius: 16px;
-    border-width: 1px;
-    border-color: #b5343a;
-    background: touch.pressed
-        ? @linear-gradient(180deg, #a82a2f 0%, #7f1f23 100%)
-        : @linear-gradient(180deg, #d23b41 0%, #a82a2f 100%);
-    touch := TouchArea {
-        clicked => {
-            root.clicked();
-        }
-    }
-    HorizontalLayout {
-        alignment: center;
-        spacing: 10px;
-        VerticalLayout {
-            alignment: center;
-            if root.icon != "": Icon { d: root.icon; tint: #fff; size: 20px; }
-        }
-        Text {
-            text: root.text;
-            color: #fff;
-            font-size: 18px;
-            font-weight: 700;
-            vertical-alignment: center;
-        }
-    }
-}
-
 // Docked push-to-talk button. `state`: 0 idle, 1 requesting, 2 on air, 3 locked.
 component Ptt inherits Rectangle {
     in property <string> text;
@@ -664,15 +631,9 @@ component HomeScreen inherits Rectangle {
     in property <bool> show-cancel;
     in property <bool> ptt-enabled;
     in property <string> ptt-label;
-    in property <string> ptt-sub;
     in property <bool> group-call-active;
     in property <string> group-call-name;
-    in property <string> group-folder;
-    in property <bool> group-talking;
-    in property <bool> group-talker-you;
-    in property <string> group-talker-name;
-    in property <string> group-talk-time;
-    in property <string> group-floor-sub;
+    in property <string> group-call-status;
     in property <int> group-ptt-state;
     callback cycle-prev;
     callback cycle-next;
@@ -699,154 +660,41 @@ component HomeScreen inherits Rectangle {
             vertical-stretch: 1;
             if root.group-call-active: VerticalLayout {
                 alignment: center;
-                spacing: 6px;
-                // "GROUP IN USE" tag with a beating dot.
+                spacing: 14px;
                 HorizontalLayout {
                     alignment: center;
-                    spacing: 8px;
-                    VerticalLayout {
-                        alignment: center;
-                        Rectangle {
-                            width: 8px;
-                            height: 8px;
-                            border-radius: 4px;
-                            background: Palette.accent;
+                    Rectangle {
+                        height: 30px;
+                        border-radius: 999px;
+                        background: #d23b4133;
+                        HorizontalLayout {
+                            padding-left: 16px;
+                            padding-right: 16px;
+                            Text {
+                                text: "GROUP IN USE";
+                                color: #ff9a9d;
+                                font-size: 13px;
+                                font-weight: 800;
+                                letter-spacing: 2px;
+                                vertical-alignment: center;
+                            }
                         }
-                    }
-                    Text {
-                        text: "GROUP IN USE";
-                        color: Palette.accent;
-                        font-size: 12px;
-                        font-weight: 800;
-                        letter-spacing: 4px;
-                        vertical-alignment: center;
-                    }
-                }
-                // Folder (zone) line.
-                if root.group-folder != "": HorizontalLayout {
-                    alignment: center;
-                    spacing: 7px;
-                    padding-top: 6px;
-                    VerticalLayout {
-                        alignment: center;
-                        Icon { d: Icons.folder; tint: Palette.accent; size: 15px; }
-                    }
-                    Text {
-                        text: root.group-folder;
-                        color: #cfe0ec;
-                        font-size: 14px;
-                        font-weight: 600;
-                        vertical-alignment: center;
                     }
                 }
                 Text {
                     text: root.group-call-name;
                     color: #f2f7fb;
-                    font-size: 48px;
+                    font-size: 52px;
                     font-weight: 800;
                     horizontal-alignment: center;
                     wrap: word-wrap;
                 }
-                // Talker / floor status block.
-                Rectangle {
-                    height: 96px;
-                    VerticalLayout {
-                        alignment: center;
-                        spacing: 7px;
-                        if root.group-talking: HorizontalLayout {
-                            alignment: center;
-                            Rectangle {
-                                height: 26px;
-                                border-radius: 999px;
-                                background: #d23b4133;
-                                HorizontalLayout {
-                                    padding-left: 13px;
-                                    padding-right: 13px;
-                                    Text {
-                                        text: "TALKING";
-                                        color: #ff9a9d;
-                                        font-size: 11px;
-                                        font-weight: 800;
-                                        letter-spacing: 1.4px;
-                                        vertical-alignment: center;
-                                    }
-                                }
-                            }
-                        }
-                        if root.group-talking: Text {
-                            text: "CURRENT TALKER";
-                            color: Palette.faint;
-                            font-size: 11px;
-                            letter-spacing: 3px;
-                            font-weight: 700;
-                            horizontal-alignment: center;
-                        }
-                        if root.group-talking: HorizontalLayout {
-                            alignment: center;
-                            spacing: 10px;
-                            VerticalLayout {
-                                alignment: center;
-                                Rectangle {
-                                    width: 12px;
-                                    height: 12px;
-                                    border-radius: 6px;
-                                    background: #37c06a;
-                                }
-                            }
-                            Text {
-                                text: root.group-talker-you ? "You" : root.group-talker-name;
-                                color: #ffffff;
-                                font-size: 22px;
-                                font-weight: 700;
-                                vertical-alignment: center;
-                            }
-                        }
-                        if root.group-talking: Text {
-                            text: root.group-talk-time;
-                            color: #9fe3b6;
-                            font-size: 15px;
-                            font-weight: 700;
-                            letter-spacing: 1px;
-                            horizontal-alignment: center;
-                        }
-                        if !root.group-talking: HorizontalLayout {
-                            alignment: center;
-                            Rectangle {
-                                height: 26px;
-                                border-radius: 999px;
-                                background: #33a7dd29;
-                                HorizontalLayout {
-                                    padding-left: 13px;
-                                    padding-right: 13px;
-                                    Text {
-                                        text: "GROUP CALL ACTIVE";
-                                        color: #7ecbef;
-                                        font-size: 11px;
-                                        font-weight: 800;
-                                        letter-spacing: 1.4px;
-                                        vertical-alignment: center;
-                                    }
-                                }
-                            }
-                        }
-                        if !root.group-talking: Text {
-                            text: root.group-floor-sub;
-                            color: Palette.muted;
-                            font-size: 14px;
-                            horizontal-alignment: center;
-                        }
-                    }
-                }
-                HorizontalLayout {
-                    alignment: center;
-                    padding-top: 6px;
-                    DangerButton {
-                        text: "Hang up";
-                        icon: Icons.phone-off;
-                        clicked => {
-                            root.hangup-group();
-                        }
-                    }
+                Text {
+                    text: root.group-call-status;
+                    color: Palette.muted;
+                    font-size: 17px;
+                    font-weight: 600;
+                    horizontal-alignment: center;
                 }
             }
 
@@ -965,7 +813,6 @@ component HomeScreen inherits Rectangle {
                 : root.group-ptt-state == 1 ? "Requesting..."
                 : root.group-ptt-state == 3 ? "Floor busy"
                 : root.ptt-label;
-            sub: root.ptt-sub;
             enabled: root.ptt-enabled;
             state: root.group-ptt-state;
             press-down => {
@@ -2212,14 +2059,8 @@ export component MainWindow inherits Window {
     in property <string> incoming-sub: "";
     in property <bool> group-call-active;
     in property <string> group-call-name: "";
-    in property <string> group-folder: "";
-    in property <bool> group-talking;
-    in property <bool> group-talker-you;
-    in property <string> group-talker-name: "";
-    in property <string> group-talk-time: "";
-    in property <string> group-floor-sub: "";
+    in property <string> group-call-status: "";
     in property <int> group-ptt-state;
-    in property <string> ptt-sub: "";
 
     callback register;
     callback deregister;
@@ -2333,15 +2174,9 @@ export component MainWindow inherits Window {
             show-cancel: root.show-cancel-select;
             ptt-enabled: root.ptt-enabled;
             ptt-label: root.ptt-label;
-            ptt-sub: root.ptt-sub;
             group-call-active: root.group-call-active;
             group-call-name: root.group-call-name;
-            group-folder: root.group-folder;
-            group-talking: root.group-talking;
-            group-talker-you: root.group-talker-you;
-            group-talker-name: root.group-talker-name;
-            group-talk-time: root.group-talk-time;
-            group-floor-sub: root.group-floor-sub;
+            group-call-status: root.group-call-status;
             group-ptt-state: root.group-ptt-state;
             cycle-prev => {
                 root.cycle-prev();
@@ -2549,12 +2384,21 @@ export component MainWindow inherits Window {
                     }
                 }
                 if root.screen == Screen.Home: Rectangle { horizontal-stretch: 1; }
-                if root.screen == Screen.Home: Softkey {
+                if root.screen == Screen.Home && !root.group-call-active: Softkey {
                     text: "Dialer";
                     icon: Icons.phone;
                     horizontal-stretch: 1;
                     clicked => {
                         root.screen = Screen.Dialer;
+                    }
+                }
+                if root.screen == Screen.Home && root.group-call-active: Softkey {
+                    text: "Hang up";
+                    icon: Icons.phone-off;
+                    danger: true;
+                    horizontal-stretch: 1;
+                    clicked => {
+                        root.hangup-group();
                     }
                 }
 
