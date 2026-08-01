@@ -715,29 +715,27 @@ component LogsScreen inherits Rectangle {
     in property <[LogRow]> logs;
     callback open(string, string, string);
     background: transparent;
-    VerticalLayout {
-        padding: 16px;
-        if root.logs.length == 0: VerticalLayout {
-            alignment: center;
-            Text {
+    // Flickable is the direct child so it fills the screen; the softkey bar below
+    // it stays pinned to the bottom regardless of how many rows there are.
+    Flickable {
+        viewport-height: col.preferred-height;
+        col := VerticalLayout {
+            padding: 16px;
+            spacing: 10px;
+            alignment: start;
+            if root.logs.length == 0: Text {
                 text: "No events yet";
                 color: Palette.muted;
                 font-size: 16px;
                 horizontal-alignment: center;
             }
-        }
-        Flickable {
-            viewport-height: col.preferred-height;
-            col := VerticalLayout {
-                spacing: 10px;
-                for e in root.logs: ListRow {
-                    title: e.variant;
-                    subtitle: e.summary;
-                    icon: Icons.logs;
-                    trailing-text: e.time;
-                    clicked => {
-                        root.open(e.variant, e.time, e.detail);
-                    }
+            for e in root.logs: ListRow {
+                title: e.variant;
+                subtitle: e.summary;
+                icon: Icons.logs;
+                trailing-text: e.time;
+                clicked => {
+                    root.open(e.variant, e.time, e.detail);
                 }
             }
         }
