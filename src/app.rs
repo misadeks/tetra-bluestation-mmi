@@ -150,6 +150,9 @@ struct Call {
     answered: bool,
     queued: bool,
     active_since: Option<Instant>,
+    /// When we last played a downlink speech frame for this call (someone is
+    /// speaking now, even if the SwMI doesn't tell us who).
+    rx_at: Option<Instant>,
 }
 
 #[derive(Clone)]
@@ -1350,11 +1353,15 @@ fn handle_speech_frame(
     let frame_bits = payload.get("frame_bits").and_then(Value::as_u64);
     let own = app.state.own_issi;
 
-    // Decode + play FIRST so the audio path is never delayed by UI work. Never
-    // play the SwMI's echo of our OWN transmission: while we key a group call or
-    // a simplex call the whole downlink is our echo (half-duplex, block it), and
-    // any frame whose talker is our own ISSI is our echo (also on a duplex call).
-    let is_own_echo = talker == Some(own) && own != 0;
+    // Decode + play FIRST so the audio path is never delayed by UI work. Don't
+    // play the SwMI's echo of our OWN transmission: while we key a group/simplex
+    // call the whole downlink is our echo (half-duplex, block it); and while we
+    // are transmitting (incl. a duplex call streaming the mic) a frame whose
+    // talker is our own ISSI is our echo. When we are NOT transmitting, a frame
+    // labelled with our ISSI is the SwMI mislabelling the real talker (group
+    // calls do this) - play it, or an incoming group call is silent.
+    let transmitting = we_are_transmitting(app);
+    let is_own_echo = transmitting && own != 0 && talker == Some(own);
     let blocked = tx_blocks_playback(app, cid) || is_own_echo;
     if !blocked && matches!(frame_bits, None | Some(274)) {
         if let Some(a) = audio {
@@ -1377,6 +1384,16 @@ fn handle_speech_frame(
     // the call UI when it actually changes, not on every 60 ms frame. Our own
     // echo is not a real other talker, so ignore it here too.
     let mut changed = false;
+    if !blocked {
+        // Downlink audio is flowing for this call -> someone is speaking now.
+        if let Some(c) = app.calls.get_mut(&cid) {
+            let was_receiving = c.rx_at.map(|t| t.elapsed() < Duration::from_millis(700)).unwrap_or(false);
+            c.rx_at = Some(Instant::now());
+            if !was_receiving {
+                changed = true;
+            }
+        }
+    }
     if let Some(t) = talker {
         if let Some(c) = app.calls.get_mut(&cid) {
             if t != own && (c.talker_ssi != Some(t) || c.can_request_tx) {
@@ -1389,6 +1406,21 @@ fn handle_speech_frame(
     if changed {
         push_calls(app, weak);
     }
+}
+
+/// True while our mic is (or should be) keying the network: keying a group call,
+/// holding an individual PTT, or in an active duplex call (continuous mic). Used
+/// to decide whether a talker==own-ISSI downlink frame is our own echo.
+fn we_are_transmitting(app: &AppState) -> bool {
+    if app.grp_call.as_ref().map(|g| g.talking).unwrap_or(false) {
+        return true;
+    }
+    if app.ptt_held.is_some() {
+        return true;
+    }
+    app.calls
+        .values()
+        .any(|c| !c.group && !c.simplex && c.state == CallState::Active)
 }
 
 /// While WE transmit, the SwMI echoes our own voice back as downlink frames.
@@ -1936,6 +1968,11 @@ fn push_calls(app: &AppState, weak: &slint::Weak<MainWindow>) {
         || app.grp_call.is_some()
         || app.dialing.as_ref().map(|d| d.group).unwrap_or(false);
     let i_am_talking = app.grp_call.as_ref().map(|g| g.talking).unwrap_or(false);
+    // Someone is speaking on the call right now if downlink audio is flowing.
+    let receiving = gcall
+        .and_then(|c| c.rx_at)
+        .map(|t| t.elapsed() < Duration::from_millis(700))
+        .unwrap_or(false);
     let other_talker = if i_am_talking {
         None
     } else {
@@ -1954,6 +1991,9 @@ fn push_calls(app: &AppState, weak: &slint::Weak<MainWindow>) {
         "TALKING - You".to_string()
     } else if let Some(o) = other_talker {
         format!("TALKING - {}", peer_name(Some(o), true))
+    } else if receiving {
+        // Audio is flowing but the SwMI didn't give us a usable talker SSI.
+        "TALKING".to_string()
     } else {
         let floor = gcall.and_then(|c| c.tx_status.as_deref());
         match floor {
