@@ -5,10 +5,18 @@
 // it. It is a native/embedded peer of the browser tetra-tn-web-ui (Python TNMM
 // Demo UI), not a port of it.
 //
-// M1: toolchain spike. Bring up a Slint hello window (portrait, dark) and parse
-// the config stub. Networking (the two WebSocket servers) lands in M2.
+// M2/M3: the two WebSocket servers (control 9102, telemetry 9101), a serde
+// protocol layer, a central app state, and a status bar + home screen driven by
+// live MsRuntimeState. Topology: the stack is the WS client and dials out; this
+// app is the server.
 
+mod app;
 mod config;
+mod net;
+mod protocol;
+
+use std::thread;
+use std::time::Duration;
 
 use config::{Config, InputKind};
 
@@ -33,7 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         scale = ui.scale,
         input = ?ui.input,
         theme = %ui.theme,
-        "loaded config (M1: servers not started yet)"
+        "loaded config"
     );
 
     // Override the host display scaling (e.g. Windows 150%) so the window renders
@@ -44,34 +52,82 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Size the window so it occupies width x height device pixels on screen,
     // regardless of the host monitor's scaling. With SLINT_SCALE_FACTOR forced to
     // `scale`, physical = logical * scale, so request logical = width/scale.
-    window
-        .window()
-        .set_size(slint::LogicalSize::new(
-            ui.width as f32 / ui.scale,
-            ui.height as f32 / ui.scale,
-        ));
+    window.window().set_size(slint::LogicalSize::new(
+        ui.width as f32 / ui.scale,
+        ui.height as f32 / ui.scale,
+    ));
     window.set_device_input(match ui.input {
         InputKind::Touch => DeviceInput::Touch,
         InputKind::Keypad => DeviceInput::Keypad,
     });
-    tracing::info!(
-        width = ui.width,
-        height = ui.height,
-        scale = ui.scale,
-        input = ?ui.input,
-        "applied window size and input layout from config"
+
+    // --- Wire the network + app event loop --------------------------------
+    let (events_tx, events_rx) = crossbeam_channel::unbounded::<app::AppEvent>();
+
+    let control_auth = net::ChannelAuth {
+        username: cfg.command.username.clone(),
+        password: cfg.command.password.clone(),
+    };
+    let telemetry_auth = net::ChannelAuth {
+        username: cfg.telemetry.username.clone(),
+        password: cfg.telemetry.password.clone(),
+    };
+    net::spawn_control_server(
+        cfg.command.host.clone(),
+        cfg.command.port,
+        control_auth,
+        events_tx.clone(),
     );
-    window.set_status_line(
-        format!(
-            "{} {}x{} @{}x  {:?}",
-            ui.model.as_deref().unwrap_or("custom"),
-            ui.width,
-            ui.height,
-            ui.scale,
-            ui.input,
-        )
-        .into(),
+    net::spawn_telemetry_server(
+        cfg.telemetry.host.clone(),
+        cfg.telemetry.port,
+        telemetry_auth,
+        events_tx.clone(),
     );
+
+    // Poll GetState every ~2s (the app loop only acts on it while connected).
+    {
+        let tx = events_tx.clone();
+        thread::spawn(move || loop {
+            thread::sleep(Duration::from_secs(2));
+            if tx.send(app::AppEvent::PollTick).is_err() {
+                break;
+            }
+        });
+    }
+
+    // Wall clock for the status bar, once a second.
+    {
+        let tx = events_tx.clone();
+        thread::spawn(move || loop {
+            let now = chrono::Local::now().format("%H:%M:%S").to_string();
+            if tx.send(app::AppEvent::ClockTick(now)).is_err() {
+                break;
+            }
+            thread::sleep(Duration::from_secs(1));
+        });
+    }
+
+    // UI actions -> app loop.
+    {
+        let tx = events_tx.clone();
+        window.on_register(move || {
+            let _ = tx.send(app::AppEvent::UiRegister);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_deregister(move || {
+            let _ = tx.send(app::AppEvent::UiDeregister);
+        });
+    }
+
+    // The app loop owns state and is the sole UI writer.
+    {
+        let weak = window.as_weak();
+        let reg_type = cfg.registration.registration_type.clone();
+        thread::spawn(move || app::run(events_rx, weak, reg_type));
+    }
 
     tracing::info!("starting Slint event loop");
     window.run()?;

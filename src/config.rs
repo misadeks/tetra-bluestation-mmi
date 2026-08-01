@@ -17,6 +17,7 @@ pub struct Config {
     pub telemetry: ChannelConfig,
     #[serde(default)]
     pub registration: RegistrationConfig,
+    #[allow(dead_code)] // audio config is consumed in M5
     #[serde(default)]
     pub audio: AudioConfig,
     #[serde(default)]
@@ -32,8 +33,10 @@ pub struct ChannelConfig {
     #[serde(default = "default_host")]
     pub host: String,
     pub port: u16,
+    #[allow(dead_code)] // TLS wiring lands in a later milestone
     #[serde(default)]
     pub use_tls: bool,
+    #[allow(dead_code)]
     #[serde(default)]
     pub ca_cert: Option<String>,
     #[serde(default)]
@@ -48,6 +51,7 @@ pub struct RegistrationConfig {
     pub registration_type: String,
 }
 
+#[allow(dead_code)] // fields consumed by the audio path in M5
 #[derive(Debug, Clone, Deserialize)]
 pub struct AudioConfig {
     #[serde(default = "default_device")]

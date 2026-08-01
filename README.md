@@ -35,12 +35,15 @@ Targets:
 ## Repository layout
 
 ```
-Cargo.toml        crate manifest (Slint, serde, toml, tracing)
+Cargo.toml        crate manifest (Slint, serde, tungstenite, crossbeam, ...)
 build.rs          compiles ui/main.slint via slint-build
-ui/main.slint     Slint markup (portrait 720x1280 dark hello window)
-src/main.rs       init, logging, config load, Slint event loop
-src/config.rs     config.toml parsing (stub for M1)
-config.toml       runtime config (BlueStation MS listen ports, [audio], [ui])
+ui/main.slint     Slint UI (status bar + touch home + parked keypad layout)
+src/main.rs       startup: config, window, spawn servers/timers, event loop
+src/config.rs     config.toml parsing (channels, device models, [audio], [ui])
+src/protocol.rs   serde mirror of the interface-2 wire types + command builders
+src/net.rs        the two WebSocket servers (control + telemetry)
+src/app.rs        central app state + the single UI-writer event loop
+config.toml       runtime config (BlueStation MS listen ports, devices, [ui])
 DECISIONS.md      running log of decisions and deviations
 ```
 
@@ -97,7 +100,9 @@ python fake_stack.py --control ws://127.0.0.1:9102 --telemetry ws://127.0.0.1:91
 
 Leave `[command].port` / `[telemetry].port` in `config.toml` at their defaults
 (`9102` / `9101`) so the simulator connects. `--chaos` randomly drops channels so you can
-exercise reconnect handling. (The WebSocket servers are wired up in M2.)
+exercise reconnect handling. On connect the app bootstraps
+(GetInterfaceVersion/GetState/GetConfig), polls GetState every 2s, and reflects
+telemetry live in the status bar and home screen.
 
 ## Configuration (`config.toml`)
 
@@ -138,15 +143,19 @@ regardless of the Windows scaling setting.
 
 ## Status and milestones
 
-Current: **M1 - toolchain spike.** A Slint hello window (portrait 720x1280, dark) plus a
-config parsing stub. The two WebSocket servers land in M2. See `DECISIONS.md` for the
-rationale behind each choice and any deviations.
+Current: **M2/M3.** The two WebSocket servers are up (control 9102, telemetry
+9101) with a serde protocol layer, a central app state, bootstrap + 2s GetState
+polling, telemetry decode, and reconnect tolerance. The Pi touch UI shows a live
+status bar (signal bars, network, SCAN, per-channel link dots, registration
+pill, clock) and an idle/home screen (hero talkgroup, status card, register
+action) modeled on the browser tetra-tn-web-ui. Tested end to end against
+`fake_stack.py`. See `DECISIONS.md` for details.
 
-- M1 toolchain spike (this milestone).
-- M2 net + JSON: the two WebSocket servers, bootstrap + poll GetState, decode telemetry,
-  reconnect tolerant. Test against `fake_stack.py`.
-- M3+ state, status bar, home, navigation, audio, calls, editors, Pi hardware I/O, and
-  kiosk polish.
+- M1 toolchain spike (done).
+- M2 net + JSON (done): the two servers, bootstrap + poll, telemetry decode,
+  reconnect tolerant.
+- M3 state + status bar + home (done for the touch/Pi model).
+- M4+ navigation, actions, audio, calls, editors, Pi hardware I/O, kiosk polish.
 
 ## License
 
