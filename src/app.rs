@@ -700,6 +700,19 @@ pub fn run(
                     tracing::info!(gssi, cou, "UI: group select (switch TX)");
                     app.send(protocol::tnmm_switch_talkgroup(h, gssi as u32, cou as u8));
                     app.selected_tx = Some(gssi as u32);
+                    // Point the home cycler at the group we just switched to (and
+                    // its folder) so returning home shows it, not a folder default.
+                    if let Some(cp) = &app.codeplug {
+                        if let Some(fidx) = cp
+                            .folders
+                            .iter()
+                            .position(|f| f.talkgroups.iter().any(|t| t.gssi == gssi as u32))
+                        {
+                            app.sel_folder = fidx;
+                        }
+                    }
+                    app.cycle_gssi = Some(gssi as u32);
+                    push_ui(&app, &weak);
                     let h = app.next_handle();
                     app.send(protocol::get_state(h));
                 }
@@ -833,6 +846,7 @@ fn handle_control(app: &mut AppState, message: &Value, weak: &slint::Weak<MainWi
                             app.logged_state = true;
                         }
                         app.state = state;
+                        reconcile_home_view(app);
                         push_ui(app, weak);
                         push_survey(app, weak);
                     }
@@ -859,6 +873,7 @@ fn handle_control(app: &mut AppState, message: &Value, weak: &slint::Weak<MainWi
                                     app.codeplug = Some(cp);
                                     app.sel_folder = 0;
                                     app.cycle_gssi = None;
+                                    reconcile_home_view(app);
                                     push_ui(app, weak);
                                 }
                                 None => tracing::info!("config has no talkgroups"),
@@ -1473,6 +1488,53 @@ fn cycle(app: &mut AppState, dir: isize) {
         .unwrap_or(0);
     let i = (cur as isize + dir).rem_euclid(tgs.len() as isize) as usize;
     app.cycle_gssi = Some(tgs[i].gssi);
+}
+
+/// Keep the home cycler pointed at the attached TX group by default. When the
+/// cycler has no selection (or points outside the current folder), snap it to
+/// the effective TX group and its folder, else fall back to the folder's first
+/// talkgroup. Mirrors the web UI's renderHomeCycler reconciliation and never
+/// overrides a valid in-folder selection the operator browsed to.
+fn reconcile_home_view(app: &mut AppState) {
+    let folders_len = match &app.codeplug {
+        Some(cp) => cp.folders.len(),
+        None => return,
+    };
+    if folders_len == 0 {
+        return;
+    }
+    if app.sel_folder >= folders_len {
+        app.sel_folder = 0;
+    }
+    let cur_folder = app.sel_folder;
+    let in_folder = {
+        let cp = app.codeplug.as_ref().unwrap();
+        app.cycle_gssi
+            .map(|g| cp.folders[cur_folder].talkgroups.iter().any(|t| t.gssi == g))
+            .unwrap_or(false)
+    };
+    if in_folder {
+        return;
+    }
+    let tx = effective_tx(app);
+    let (new_folder, new_gssi) = {
+        let cp = app.codeplug.as_ref().unwrap();
+        let owner = tx.and_then(|g| {
+            cp.folders
+                .iter()
+                .position(|f| f.talkgroups.iter().any(|t| t.gssi == g))
+                .map(|fidx| (fidx, g))
+        });
+        match owner {
+            Some((fidx, g)) => (fidx, Some(g)),
+            None => (
+                cur_folder,
+                cp.folders[cur_folder].talkgroups.first().map(|t| t.gssi),
+            ),
+        }
+    };
+    app.sel_folder = new_folder;
+    app.cycle_gssi = new_gssi;
 }
 
 /// Snapshot the state into plain values and push them onto the Slint event loop.
