@@ -221,6 +221,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let _ = tx.send(app::AppEvent::UiRefresh);
         });
     }
+    {
+        let tx = events_tx.clone();
+        window.on_survey_toggle_mode(move || {
+            let _ = tx.send(app::AppEvent::UiSurveyToggleMode);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_survey_scan(move || {
+            let _ = tx.send(app::AppEvent::UiSurveyScan);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_survey_stop(move || {
+            let _ = tx.send(app::AppEvent::UiSurveyStop);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_survey_camp(move |carrier, register| {
+            let _ = tx.send(app::AppEvent::UiCampCell(carrier as u64, register));
+        });
+    }
 
     // The app loop owns state and is the sole UI writer.
     {

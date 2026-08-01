@@ -14,7 +14,7 @@ import "fonts/Inter-Bold.ttf";
 import "fonts/Inter-ExtraBold.ttf";
 
 export enum DeviceInput { Touch, Keypad }
-enum Screen { Home, Menu, Info, Folders, Dialer, Logs, LogDetail, Groups, Config }
+enum Screen { Home, Menu, Info, Folders, Dialer, Logs, LogDetail, Groups, Config, Survey }
 
 export struct FolderRow {
     name: string,
@@ -43,6 +43,13 @@ export struct ScanRow {
     name: string,
     sub: string,
     active: bool,
+}
+
+export struct SurveyRow {
+    carrier: int,
+    title: string,
+    sub1: string,
+    sub2: string,
 }
 
 // Palette lifted from the web UI's :root custom properties.
@@ -99,6 +106,8 @@ global Icons {
     out property <string> minus: "M5 12L19 12";
     out property <string> refresh: "M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4";
     out property <string> gear: "M12 2.5v3.5M12 18v3.5M2.5 12h3.5M18 12h3.5M12 15a3 3 0 1 0 0-6a3 3 0 0 0 0 6";
+    out property <string> close: "M6 6L18 18M18 6L6 18";
+    out property <string> activity: "M3 12h4l3 8l4-16l3 8h4";
     out property <string> radio: "M6.3 6.3a8 8 0 0 0 0 11.4M17.7 6.3a8 8 0 0 1 0 11.4M9.2 9.2a4 4 0 0 0 0 5.6M14.8 9.2a4 4 0 0 1 0 5.6M12 12v0.01";
 }
 
@@ -355,7 +364,7 @@ component SecondaryButton inherits Rectangle {
     in property <string> text;
     in property <string> icon;
     callback clicked;
-    height: 58px;
+    height: 64px;
     border-radius: 14px;
     border-width: 1px;
     border-color: Palette.line2;
@@ -743,6 +752,7 @@ component MenuScreen inherits Rectangle {
     callback open-logs;
     callback open-groups;
     callback open-config;
+    callback open-survey;
     callback register;
     callback deregister;
     background: transparent;
@@ -780,6 +790,14 @@ component MenuScreen inherits Rectangle {
             icon: Icons.gear;
             clicked => {
                 root.open-config();
+            }
+        }
+        ListRow {
+            title: "Cell Survey";
+            subtitle: "Survey carriers and camp on a cell";
+            icon: Icons.radio;
+            clicked => {
+                root.open-survey();
             }
         }
         ListRow {
@@ -1329,6 +1347,182 @@ component ConfigScreen inherits Rectangle {
     }
 }
 
+component SurveyRowView inherits Rectangle {
+    in property <string> title;
+    in property <string> sub1;
+    in property <string> sub2;
+    callback register;
+    callback monitor;
+    height: 150px;
+    border-radius: 14px;
+    border-width: 1px;
+    border-color: Palette.line;
+    background: Palette.surface;
+    VerticalLayout {
+        padding: 14px;
+        spacing: 6px;
+        Text {
+            text: root.title;
+            color: Palette.txt;
+            font-size: 20px;
+            font-weight: 700;
+        }
+        Text {
+            text: root.sub1;
+            color: Palette.muted;
+            font-size: 14px;
+        }
+        Text {
+            text: root.sub2;
+            color: Palette.muted;
+            font-size: 14px;
+        }
+        HorizontalLayout {
+            spacing: 10px;
+            padding-top: 4px;
+            PrimaryButton {
+                text: "Register";
+                icon: Icons.login;
+                horizontal-stretch: 1;
+                clicked => {
+                    root.register();
+                }
+            }
+            SecondaryButton {
+                text: "Monitor";
+                icon: Icons.activity;
+                horizontal-stretch: 1;
+                clicked => {
+                    root.monitor();
+                }
+            }
+        }
+    }
+}
+
+component SurveyScreen inherits Rectangle {
+    in property <bool> manual;
+    in property <bool> scanning;
+    in property <string> status;
+    in property <[SurveyRow]> rows;
+    callback toggle-mode;
+    callback scan;
+    callback stop;
+    callback camp(int, bool);
+    background: transparent;
+    Flickable {
+        viewport-height: col.preferred-height;
+        col := VerticalLayout {
+            padding: 16px;
+            spacing: 12px;
+            alignment: start;
+
+            // Manual/Auto toggle.
+            Rectangle {
+                height: 66px;
+                border-radius: 14px;
+                border-width: 1px;
+                border-color: Palette.line;
+                background: Palette.surface;
+                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    spacing: 12px;
+                    Text {
+                        text: "Manual cell selection";
+                        color: Palette.txt;
+                        font-size: 17px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    Toggle {
+                        on: root.manual;
+                        toggled(v) => {
+                            root.toggle-mode();
+                        }
+                    }
+                }
+            }
+
+            if !root.manual: Rectangle {
+                height: 160px;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 10px;
+                    HorizontalLayout {
+                        alignment: center;
+                        Icon { d: Icons.radio; tint: Palette.muted; size: 34px; }
+                    }
+                    Text {
+                        text: "Auto mode";
+                        color: Palette.txt;
+                        font-size: 18px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                    }
+                    Text {
+                        text: "The stack scans and camps on its own. Switch to Manual to survey the programmed carriers and pick a cell.";
+                        color: Palette.muted;
+                        font-size: 14px;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+
+            if root.manual: HorizontalLayout {
+                if root.scanning: SecondaryButton {
+                    text: "Stop scan";
+                    icon: Icons.close;
+                    horizontal-stretch: 1;
+                    clicked => {
+                        root.stop();
+                    }
+                }
+                if !root.scanning: PrimaryButton {
+                    text: "Scan cells";
+                    icon: Icons.radio;
+                    horizontal-stretch: 1;
+                    clicked => {
+                        root.scan();
+                    }
+                }
+            }
+
+            if root.manual && root.status != "": Text {
+                text: root.status;
+                color: Palette.muted;
+                font-size: 14px;
+                horizontal-alignment: center;
+            }
+
+            if root.manual: VerticalLayout {
+                spacing: 12px;
+                for r in root.rows: SurveyRowView {
+                    title: r.title;
+                    sub1: r.sub1;
+                    sub2: r.sub2;
+                    register => {
+                        root.camp(r.carrier, true);
+                    }
+                    monitor => {
+                        root.camp(r.carrier, false);
+                    }
+                }
+            }
+
+            if root.manual && root.rows.length == 0 && !root.scanning: Text {
+                text: "Tap Scan to survey the programmed carriers. The survey is receive-only.";
+                color: Palette.muted;
+                font-size: 14px;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+        }
+    }
+}
+
 component DialKey inherits Rectangle {
     in property <string> text;
     in property <string> sub;
@@ -1564,6 +1758,10 @@ export component MainWindow inherits Window {
     in property <string> alert-message;
     in property <int> alert-kind;
     in property <string> config-toml: "";
+    in property <bool> survey-manual;
+    in property <bool> survey-scanning;
+    in property <string> survey-status: "";
+    in property <[SurveyRow]> survey-rows;
 
     callback register;
     callback deregister;
@@ -1583,6 +1781,10 @@ export component MainWindow inherits Window {
     callback scanlist-toggle(string, bool);
     callback apply-config;
     callback refresh;
+    callback survey-toggle-mode;
+    callback survey-scan;
+    callback survey-stop;
+    callback survey-camp(int, bool);
 
     // Detail of the event currently open on the LogDetail screen.
     property <string> detail-variant;
@@ -1614,12 +1816,15 @@ export component MainWindow inherits Window {
         if (root.screen == Screen.Config) {
             return "Config";
         }
+        if (root.screen == Screen.Survey) {
+            return "Cell Survey";
+        }
         return root.clock + "   " + root.date;
     }
 
     // Parent screen for the Back softkey.
     function back-target() -> Screen {
-        if (root.screen == Screen.Info || root.screen == Screen.Logs || root.screen == Screen.Groups || root.screen == Screen.Config) {
+        if (root.screen == Screen.Info || root.screen == Screen.Logs || root.screen == Screen.Groups || root.screen == Screen.Config || root.screen == Screen.Survey) {
             return Screen.Menu;
         }
         if (root.screen == Screen.LogDetail) {
@@ -1697,6 +1902,10 @@ export component MainWindow inherits Window {
             open-config => {
                 root.refresh();
                 root.screen = Screen.Config;
+            }
+            open-survey => {
+                root.refresh();
+                root.screen = Screen.Survey;
             }
             register => {
                 root.register();
@@ -1776,6 +1985,26 @@ export component MainWindow inherits Window {
             }
             refresh => {
                 root.refresh();
+            }
+        }
+
+        if root.device-input == DeviceInput.Touch && root.screen == Screen.Survey: SurveyScreen {
+            vertical-stretch: 1;
+            manual: root.survey-manual;
+            scanning: root.survey-scanning;
+            status: root.survey-status;
+            rows: root.survey-rows;
+            toggle-mode => {
+                root.survey-toggle-mode();
+            }
+            scan => {
+                root.survey-scan();
+            }
+            stop => {
+                root.survey-stop();
+            }
+            camp(c, r) => {
+                root.survey-camp(c, r);
             }
         }
 

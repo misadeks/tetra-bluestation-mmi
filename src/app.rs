@@ -14,7 +14,7 @@ use slint::{ModelRc, VecModel};
 
 use crate::codeplug::Codeplug;
 use crate::protocol::{self, MsRuntimeState, ServiceStatus};
-use crate::{FolderRow, GroupRow, LogRow, MainWindow, ScanRow};
+use crate::{FolderRow, GroupRow, LogRow, MainWindow, ScanRow, SurveyRow};
 
 /// Events fed into the app loop from net threads, timers, and the UI.
 pub enum AppEvent {
@@ -47,6 +47,10 @@ pub enum AppEvent {
     UiGroupAttach(i32, i32),
     UiGroupDetach(i32),
     UiScanlistToggle(String, bool),
+    UiSurveyToggleMode,
+    UiSurveyScan,
+    UiSurveyStop,
+    UiCampCell(u64, bool),
     UiApplyConfig,
     UiRefresh,
 }
@@ -87,6 +91,25 @@ struct AppState {
     unread: i32,
     /// Last full MS config TOML from GetConfig.
     last_config_toml: String,
+    /// Cell survey rows collected from MsScanResult telemetry.
+    scan_rows: Vec<ScanCell>,
+    /// Whether a survey is currently in progress.
+    scanning: bool,
+    /// Whether the last survey completed (for the results footer).
+    scan_complete: bool,
+    /// Completion summary: (cells found, carriers scanned).
+    scan_summary: (i32, i32),
+}
+
+#[derive(Clone)]
+struct ScanCell {
+    carrier_hz: u64,
+    rssi_dbfs: Option<f32>,
+    mcc: Option<i64>,
+    mnc: Option<i64>,
+    location_area: Option<i64>,
+    registration_required: Option<bool>,
+    late_entry_supported: Option<bool>,
 }
 
 struct LogEntry {
@@ -210,6 +233,10 @@ pub fn run(
         events: VecDeque::new(),
         unread: 0,
         last_config_toml: String::new(),
+        scan_rows: Vec::new(),
+        scanning: false,
+        scan_complete: false,
+        scan_summary: (0, 0),
     };
 
     for event in rx.iter() {
@@ -474,6 +501,53 @@ pub fn run(
                     app.send(protocol::get_state(h));
                 }
             }
+            AppEvent::UiSurveyToggleMode => {
+                if app.require_online(&weak) {
+                    let manual = app.state.selection_mode_manual.unwrap_or(false);
+                    let next = !manual;
+                    let h = app.next_handle();
+                    tracing::info!(next, "UI: set cell selection mode");
+                    app.send(protocol::set_cell_selection_mode(h, next));
+                    // Optimistic; GetState confirms.
+                    app.state.selection_mode_manual = Some(next);
+                    if !next {
+                        app.scan_rows.clear();
+                        app.scanning = false;
+                        app.scan_complete = false;
+                    }
+                    let h = app.next_handle();
+                    app.send(protocol::get_state(h));
+                    push_survey(&app, &weak);
+                    push_ui(&app, &weak);
+                }
+            }
+            AppEvent::UiSurveyScan => {
+                if app.require_online(&weak) {
+                    app.scan_rows.clear();
+                    app.scanning = true;
+                    app.scan_complete = false;
+                    let h = app.next_handle();
+                    tracing::info!("UI: start cell scan");
+                    app.send(protocol::start_cell_scan(h));
+                    push_survey(&app, &weak);
+                }
+            }
+            AppEvent::UiSurveyStop => {
+                let h = app.next_handle();
+                tracing::info!("UI: stop cell scan");
+                app.send(protocol::stop_cell_scan(h));
+                app.scanning = false;
+                push_survey(&app, &weak);
+            }
+            AppEvent::UiCampCell(carrier, register) => {
+                if app.require_online(&weak) {
+                    let h = app.next_handle();
+                    tracing::info!(carrier, register, "UI: camp on cell");
+                    app.send(protocol::camp_on_cell(h, carrier, register));
+                    let h = app.next_handle();
+                    app.send(protocol::get_state(h));
+                }
+            }
             AppEvent::UiApplyConfig => {
                 if app.require_online(&weak) {
                     let h = app.next_handle();
@@ -530,6 +604,7 @@ fn handle_control(app: &mut AppState, message: &Value, weak: &slint::Weak<MainWi
                         }
                         app.state = state;
                         push_ui(app, weak);
+                        push_survey(app, weak);
                     }
                     Err(e) => tracing::warn!(error = %e, "failed to parse MsRuntimeState"),
                 },
@@ -667,6 +742,38 @@ fn handle_telemetry(app: &mut AppState, message: &Value, weak: &slint::Weak<Main
                 }
                 app.last_service = now;
             }
+        }
+        "MsScanResult" => {
+            app.scanning = true;
+            app.scan_complete = false;
+            app.scan_rows.push(ScanCell {
+                carrier_hz: payload.get("carrier_hz").and_then(Value::as_u64).unwrap_or(0),
+                rssi_dbfs: payload
+                    .get("rssi_dbfs")
+                    .and_then(Value::as_f64)
+                    .map(|v| v as f32),
+                mcc: payload.get("mcc").and_then(Value::as_i64),
+                mnc: payload.get("mnc").and_then(Value::as_i64),
+                location_area: payload.get("location_area").and_then(Value::as_i64),
+                registration_required: payload
+                    .get("registration_required")
+                    .and_then(Value::as_bool),
+                late_entry_supported: payload
+                    .get("late_entry_supported")
+                    .and_then(Value::as_bool),
+            });
+            push_survey(app, weak);
+        }
+        "MsScanComplete" => {
+            app.scanning = false;
+            app.scan_complete = true;
+            let found = payload
+                .get("found")
+                .and_then(Value::as_i64)
+                .unwrap_or(app.scan_rows.len() as i64) as i32;
+            let scanned = payload.get("scanned").and_then(Value::as_i64).unwrap_or(0) as i32;
+            app.scan_summary = (found, scanned);
+            push_survey(app, weak);
         }
         _ => {}
     }
@@ -979,5 +1086,65 @@ fn push_groups(app: &AppState, weak: &slint::Weak<MainWindow>) {
     let _ = weak.upgrade_in_event_loop(move |w| {
         w.set_groups(ModelRc::new(VecModel::from(groups)));
         w.set_scanlists(ModelRc::new(VecModel::from(scanlists)));
+    });
+}
+
+fn push_survey(app: &AppState, weak: &slint::Weak<MainWindow>) {
+    let manual = app.state.selection_mode_manual.unwrap_or(false);
+    let scanning = app.scanning;
+    let complete = app.scan_complete;
+    let fmt_opt = |v: Option<i64>| v.map(|n| n.to_string()).unwrap_or_else(|| "-".to_string());
+    let ynd = |v: Option<bool>| match v {
+        Some(true) => "Yes",
+        Some(false) => "No",
+        None => "-",
+    };
+    let rows: Vec<SurveyRow> = app
+        .scan_rows
+        .iter()
+        .map(|r| {
+            let mhz = r.carrier_hz as f64 / 1_000_000.0;
+            let rssi = match r.rssi_dbfs {
+                Some(v) => format!("{v:.1} dBFS"),
+                None => "-".to_string(),
+            };
+            SurveyRow {
+                carrier: r.carrier_hz as i32,
+                title: format!("{mhz:.4} MHz").into(),
+                sub1: format!(
+                    "MCC {} - MNC {} - LA {}",
+                    fmt_opt(r.mcc),
+                    fmt_opt(r.mnc),
+                    fmt_opt(r.location_area)
+                )
+                .into(),
+                sub2: format!(
+                    "{} - Reg-req {} - Late-entry {}",
+                    rssi,
+                    ynd(r.registration_required),
+                    ynd(r.late_entry_supported)
+                )
+                .into(),
+            }
+        })
+        .collect();
+    let count = rows.len() as i32;
+    let (found, scanned) = app.scan_summary;
+    let status = if scanning {
+        format!("Scanning... {count} found so far")
+    } else if complete {
+        format!(
+            "{found} cell{} - {scanned} carrier{} scanned",
+            if found == 1 { "" } else { "s" },
+            if scanned == 1 { "" } else { "s" }
+        )
+    } else {
+        String::new()
+    };
+    let _ = weak.upgrade_in_event_loop(move |w| {
+        w.set_survey_manual(manual);
+        w.set_survey_scanning(scanning);
+        w.set_survey_status(status.into());
+        w.set_survey_rows(ModelRc::new(VecModel::from(rows)));
     });
 }

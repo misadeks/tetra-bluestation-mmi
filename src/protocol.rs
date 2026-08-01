@@ -140,6 +140,26 @@ pub fn activate_scanlist(handle: u32, name: &str, active: bool) -> Value {
     management(json!({ "ActivateScanlist": { "handle": handle, "name": name, "active": active } }))
 }
 
+// --- Manual cell selection / survey (interface-3, Plane B) -------------------
+// Receive-only carrier survey and manual camp/register. The MS RF stack owns
+// scanning and camp; these commands just drive it. Each is answered with an Ack.
+
+pub fn set_cell_selection_mode(handle: u32, manual: bool) -> Value {
+    management(json!({ "SetCellSelectionMode": { "handle": handle, "manual": manual } }))
+}
+
+pub fn start_cell_scan(handle: u32) -> Value {
+    management(json!({ "StartCellScan": { "handle": handle } }))
+}
+
+pub fn stop_cell_scan(handle: u32) -> Value {
+    management(json!({ "StopCellScan": { "handle": handle } }))
+}
+
+pub fn camp_on_cell(handle: u32, carrier_hz: u64, register: bool) -> Value {
+    management(json!({ "CampOnCell": { "handle": handle, "carrier_hz": carrier_hz, "register": register } }))
+}
+
 // --- Inbound parsing helpers -------------------------------------------------
 
 /// Return (variant_name, payload) for an externally-tagged message object.
@@ -277,6 +297,22 @@ mod tests {
         assert_eq!(
             get_config(3),
             json!({"Management": {"GetConfig": {"handle": 3}}})
+        );
+        assert_eq!(
+            set_cell_selection_mode(4, true),
+            json!({"Management": {"SetCellSelectionMode": {"handle": 4, "manual": true}}})
+        );
+        assert_eq!(
+            start_cell_scan(5),
+            json!({"Management": {"StartCellScan": {"handle": 5}}})
+        );
+        assert_eq!(
+            stop_cell_scan(6),
+            json!({"Management": {"StopCellScan": {"handle": 6}}})
+        );
+        assert_eq!(
+            camp_on_cell(7, 396_000_000, true),
+            json!({"Management": {"CampOnCell": {"handle": 7, "carrier_hz": 396_000_000u64, "register": true}}})
         );
     }
 
