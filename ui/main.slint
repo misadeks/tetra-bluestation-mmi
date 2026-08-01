@@ -1862,7 +1862,7 @@ component DialerScreen inherits Rectangle {
         HorizontalLayout {
             spacing: 8px;
             for seg[i] in ["Private", "PSTN", "PABX"]: Rectangle {
-                height: 44px;
+                height: 54px;
                 horizontal-stretch: 1;
                 border-radius: 12px;
                 border-width: 1px;
@@ -1878,16 +1878,17 @@ component DialerScreen inherits Rectangle {
                     y: (parent.height - self.height) / 2;
                     text: seg;
                     color: root.call-type == i ? #9fd3ef : Palette.muted;
-                    font-size: 15px;
+                    font-size: 16px;
                     font-weight: 700;
                 }
             }
         }
 
-        // Number readout. Fixed height so entering digits never shifts the
-        // keypad below it.
+        // Number readout, vertically centered in the space between the selector
+        // and the keypad. The stretch region keeps the keypad anchored, so a
+        // changing font never shifts it.
         Rectangle {
-            height: 74px;
+            vertical-stretch: 1;
             VerticalLayout {
                 alignment: center;
                 Text {
@@ -1901,9 +1902,6 @@ component DialerScreen inherits Rectangle {
                 }
             }
         }
-
-        // Flexible gap so the keypad + action row sit low, above the PTT.
-        Rectangle { vertical-stretch: 1; }
 
         // Keypad.
         for row in [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["*", "0", "#"]]: HorizontalLayout {
