@@ -83,6 +83,28 @@ pub fn tnmm_deregistration(handle: u32, issi: Option<u32>, mcc: Option<u16>, mnc
     json!({ "TnmmDeregistration": { "handle": handle, "request": Value::Object(request) } })
 }
 
+/// Map an on-air class of usage (0..7) to the TNMM enum string
+/// (ClassOfUsage(N+1); ClassOfUsage1 == on-air 0).
+pub fn class_of_usage(onair: u8) -> String {
+    format!("ClassOfUsage{}", onair.min(7) as u16 + 1)
+}
+
+/// Switch the TX talkgroup: detach the currently active group identities and
+/// attach `gssi` in one PDU (TnmmAttachDetachGroupIdentity, "select"). `gtsi`
+/// carries the plain GSSI (the stack uses the low 24 bits).
+pub fn tnmm_switch_talkgroup(handle: u32, gssi: u32, cou_onair: u8) -> Value {
+    json!({ "TnmmAttachDetachGroupIdentity": { "handle": handle, "request": {
+        "group_identity_attach_detach_mode": "DetachTheCurrentlyActiveGroupIdentities",
+        "group_identity_request": [{
+            "gtsi": gssi,
+            "group_identity_attach_detach_type_identifier": "Attachment",
+            "class_of_usage": class_of_usage(cou_onair),
+            "group_identity_detachment_request": null,
+        }],
+        "group_identity_report": "ReportNotRequested",
+    }}})
+}
+
 // --- Inbound parsing helpers -------------------------------------------------
 
 /// Return (variant_name, payload) for an externally-tagged message object.
@@ -279,6 +301,26 @@ mod tests {
         .unwrap();
         assert_eq!(state.registration_state, RegistrationState::Unknown);
         assert_eq!(state.service_status, ServiceStatus::Unknown);
+    }
+
+    #[test]
+    fn switch_talkgroup_shape() {
+        assert_eq!(class_of_usage(0), "ClassOfUsage1");
+        assert_eq!(class_of_usage(3), "ClassOfUsage4");
+        let v = tnmm_switch_talkgroup(9, 101, 0);
+        assert_eq!(
+            v,
+            json!({"TnmmAttachDetachGroupIdentity": {"handle": 9, "request": {
+                "group_identity_attach_detach_mode": "DetachTheCurrentlyActiveGroupIdentities",
+                "group_identity_request": [{
+                    "gtsi": 101,
+                    "group_identity_attach_detach_type_identifier": "Attachment",
+                    "class_of_usage": "ClassOfUsage1",
+                    "group_identity_detachment_request": null
+                }],
+                "group_identity_report": "ReportNotRequested"
+            }}})
+        );
     }
 
     #[test]

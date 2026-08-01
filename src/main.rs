@@ -11,6 +11,7 @@
 // app is the server.
 
 mod app;
+mod codeplug;
 mod config;
 mod net;
 mod protocol;
@@ -141,6 +142,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let tx = events_tx.clone();
         window.on_ptt(move || {
             let _ = tx.send(app::AppEvent::UiPtt);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_select_talkgroup(move || {
+            let _ = tx.send(app::AppEvent::UiSelectTalkgroup);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_select_folder(move |i| {
+            let _ = tx.send(app::AppEvent::UiSelectFolder(i));
         });
     }
 

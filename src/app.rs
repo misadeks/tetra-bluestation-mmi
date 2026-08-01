@@ -7,9 +7,11 @@
 
 use crossbeam_channel::{Receiver, Sender};
 use serde_json::Value;
+use slint::{ModelRc, VecModel};
 
+use crate::codeplug::Codeplug;
 use crate::protocol::{self, MsRuntimeState};
-use crate::MainWindow;
+use crate::{FolderRow, MainWindow};
 
 /// Events fed into the app loop from net threads, timers, and the UI.
 pub enum AppEvent {
@@ -29,6 +31,8 @@ pub enum AppEvent {
     UiDeregister,
     UiCyclePrev,
     UiCycleNext,
+    UiSelectTalkgroup,
+    UiSelectFolder(i32),
     UiPtt,
 }
 
@@ -41,7 +45,13 @@ struct AppState {
     reg_type: String,
     state: MsRuntimeState,
     logged_state: bool,
-    selected_tg: usize,
+    codeplug: Option<Codeplug>,
+    /// Index of the selected folder in the codeplug tree.
+    sel_folder: usize,
+    /// GSSI currently shown by the home cycler within the selected folder.
+    cycle_gssi: Option<u32>,
+    /// Last talkgroup the operator switched to (TX), if still attached.
+    selected_tx: Option<u32>,
 }
 
 impl AppState {
@@ -71,7 +81,10 @@ pub fn run(rx: Receiver<AppEvent>, weak: slint::Weak<MainWindow>, reg_type: Stri
         reg_type,
         state: MsRuntimeState::default(),
         logged_state: false,
-        selected_tg: 0,
+        codeplug: None,
+        sel_folder: 0,
+        cycle_gssi: None,
+        selected_tx: None,
     };
 
     for event in rx.iter() {
@@ -149,22 +162,38 @@ pub fn run(rx: Receiver<AppEvent>, weak: slint::Weak<MainWindow>, reg_type: Stri
                 app.send(protocol::tnmm_deregistration(h, Some(issi), None, None));
             }
             AppEvent::UiCyclePrev => {
-                let len = app.state.attached_groups.len();
-                if len > 1 {
-                    app.selected_tg = (app.selected_tg + len - 1) % len;
-                    push_ui(&app, &weak);
-                }
+                cycle(&mut app, -1);
+                push_ui(&app, &weak);
             }
             AppEvent::UiCycleNext => {
-                let len = app.state.attached_groups.len();
-                if len > 1 {
-                    app.selected_tg = (app.selected_tg + 1) % len;
-                    push_ui(&app, &weak);
+                cycle(&mut app, 1);
+                push_ui(&app, &weak);
+            }
+            AppEvent::UiSelectFolder(i) => {
+                if let Some(cp) = &app.codeplug {
+                    let i = i.max(0) as usize;
+                    if i < cp.folders.len() {
+                        app.sel_folder = i;
+                        // Reset the cycler to the folder's first talkgroup.
+                        app.cycle_gssi = cp.folders[i].talkgroups.first().map(|t| t.gssi);
+                    }
+                }
+                push_ui(&app, &weak);
+            }
+            AppEvent::UiSelectTalkgroup => {
+                if let Some((gssi, cou)) = cycle_target(&app) {
+                    let h = app.next_handle();
+                    tracing::info!(gssi, cou, "UI: switching TX talkgroup");
+                    app.send(protocol::tnmm_switch_talkgroup(h, gssi, cou));
+                    app.selected_tx = Some(gssi);
+                    // Nudge a GetState; telemetry will also drive an immediate one.
+                    let h = app.next_handle();
+                    app.send(protocol::get_state(h));
                 }
             }
             AppEvent::UiPtt => {
                 // Voice calls land in M5/M6; for now just note the press.
-                let gssi = current_gssi(&app);
+                let gssi = effective_tx(&app);
                 tracing::info!(?gssi, "UI: PTT pressed (voice calls arrive in a later milestone)");
             }
         }
@@ -210,13 +239,23 @@ fn handle_control(app: &mut AppState, message: &Value, weak: &slint::Weak<MainWi
                     tracing::info!(version = ?body.get("version"), "interface version");
                 }
                 "Config" => {
-                    if body
-                        .get("toml")
-                        .and_then(Value::as_str)
-                        .map(|s| !s.trim().is_empty())
-                        .unwrap_or(false)
-                    {
-                        app.have_config = true;
+                    if let Some(toml) = body.get("toml").and_then(Value::as_str) {
+                        if !toml.trim().is_empty() {
+                            app.have_config = true;
+                            match Codeplug::parse(toml) {
+                                Some(cp) => {
+                                    tracing::info!(
+                                        folders = cp.folders.len(),
+                                        "codeplug parsed"
+                                    );
+                                    app.codeplug = Some(cp);
+                                    app.sel_folder = 0;
+                                    app.cycle_gssi = None;
+                                    push_ui(app, weak);
+                                }
+                                None => tracing::info!("config has no talkgroups"),
+                            }
+                        }
                     }
                 }
                 "Ack" => tracing::info!(?body, "management ack"),
@@ -252,14 +291,50 @@ fn handle_telemetry(app: &mut AppState, message: &Value) {
     }
 }
 
-/// The currently selected (TX) group GSSI, if any.
-fn current_gssi(app: &AppState) -> Option<u32> {
+/// The effective TX talkgroup: the last one switched to if still attached,
+/// otherwise the first attached group.
+fn effective_tx(app: &AppState) -> Option<u32> {
     let groups = &app.state.attached_groups;
-    if groups.is_empty() {
-        None
-    } else {
-        groups.get(app.selected_tg % groups.len()).copied()
+    if let Some(tx) = app.selected_tx {
+        if groups.contains(&tx) {
+            return Some(tx);
+        }
     }
+    groups.first().copied()
+}
+
+/// (gssi, on-air class of usage) of the talkgroup the cycler currently shows.
+fn cycle_target(app: &AppState) -> Option<(u32, u8)> {
+    let cp = app.codeplug.as_ref()?;
+    let folder = cp.folders.get(app.sel_folder.min(cp.folders.len().saturating_sub(1)))?;
+    let tgs = &folder.talkgroups;
+    if tgs.is_empty() {
+        return None;
+    }
+    let i = app
+        .cycle_gssi
+        .and_then(|g| tgs.iter().position(|t| t.gssi == g))
+        .unwrap_or(0);
+    tgs.get(i).map(|t| (t.gssi, t.class_of_usage))
+}
+
+/// Move the cycler within the selected folder by `dir` (+/-1), wrapping.
+fn cycle(app: &mut AppState, dir: isize) {
+    let Some(cp) = &app.codeplug else { return };
+    if app.sel_folder >= cp.folders.len() {
+        app.sel_folder = 0;
+    }
+    let Some(folder) = cp.folders.get(app.sel_folder) else { return };
+    let tgs = &folder.talkgroups;
+    if tgs.is_empty() {
+        return;
+    }
+    let cur = app
+        .cycle_gssi
+        .and_then(|g| tgs.iter().position(|t| t.gssi == g))
+        .unwrap_or(0);
+    let i = (cur as isize + dir).rem_euclid(tgs.len() as isize) as usize;
+    app.cycle_gssi = Some(tgs[i].gssi);
 }
 
 /// Snapshot the state into plain values and push them onto the Slint event loop.
@@ -284,15 +359,86 @@ fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
     let network = format!("{} / {}", s.home_mcc, s.home_mnc);
     let serving_la = s.serving_la.to_string();
     let colour_code = s.colour_code.to_string();
-    let count = s.attached_groups.len();
-    let attached_count = count as i32;
-    let scan_active = count > 1;
-    let (talkgroup_name, talkgroup_id) = match current_gssi(app) {
-        Some(gssi) => (format!("TG {gssi}"), gssi.to_string()),
-        None => ("No group".to_string(), "--".to_string()),
-    };
-    let can_cycle = count > 1;
-    let ptt_enabled = registered && count > 0;
+    let attached = &s.attached_groups;
+    let attached_count = attached.len() as i32;
+    let scan_active = attached.len() > 1;
+    let tx = effective_tx(app);
+
+    let has_codeplug = app.codeplug.is_some();
+    let mut folder_name = "Talkgroups".to_string();
+    let tg_name;
+    let mut tg_id = "--".to_string();
+    let mut tg_sub = String::new();
+    let mut badge = String::new();
+    let mut badge_kind: i32 = 0; // 0 not-selected, 1 scanning, 2 on-air
+    let mut can_cycle = false;
+    let mut select_enabled = false;
+    let mut sel_folder_idx: i32 = 0;
+    let mut folder_rows: Vec<(String, i32, bool)> = Vec::new();
+
+    if let Some(cp) = &app.codeplug {
+        let fidx = if app.sel_folder < cp.folders.len() {
+            app.sel_folder
+        } else {
+            0
+        };
+        sel_folder_idx = fidx as i32;
+        let folder = &cp.folders[fidx];
+        folder_name = folder.name.clone();
+        let tgs = &folder.talkgroups;
+        can_cycle = tgs.len() > 1;
+        let i = app
+            .cycle_gssi
+            .and_then(|g| tgs.iter().position(|t| t.gssi == g))
+            .unwrap_or(0);
+        if let Some(t) = tgs.get(i) {
+            tg_name = t.name.clone();
+            tg_id = t.gssi.to_string();
+            tg_sub = format!("GSSI {} ({}/{})", t.gssi, i + 1, tgs.len());
+            let is_attached = attached.contains(&t.gssi);
+            let is_tx = is_attached && Some(t.gssi) == tx;
+            badge_kind = if is_tx {
+                2
+            } else if is_attached {
+                1
+            } else {
+                0
+            };
+            badge = if is_tx {
+                "ON AIR"
+            } else if is_attached {
+                "SCANNING"
+            } else {
+                "NOT SELECTED"
+            }
+            .to_string();
+            select_enabled = registered && !is_tx;
+        } else {
+            tg_name = "No talkgroups".to_string();
+        }
+        folder_rows = cp
+            .folders
+            .iter()
+            .enumerate()
+            .map(|(idx, f)| (f.name.clone(), f.talkgroups.len() as i32, idx == fidx))
+            .collect();
+    } else {
+        // Fallback (no codeplug yet): show the attached TX group by number.
+        match tx {
+            Some(gssi) => {
+                tg_name = format!("TG {gssi}");
+                tg_id = gssi.to_string();
+                tg_sub = format!("GSSI {gssi}");
+                badge_kind = if registered { 2 } else { 0 };
+                badge = if registered { "ON AIR" } else { "SELECT" }.to_string();
+            }
+            None => {
+                tg_name = if registered { "No group" } else { "--" }.to_string();
+            }
+        }
+    }
+
+    let ptt_enabled = registered && tx.is_some();
     let ptt_label = if ptt_enabled {
         "Push to talk"
     } else if registered {
@@ -301,7 +447,6 @@ fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
         "Register to talk"
     }
     .to_string();
-    let badge = if registered { "TX" } else { "SEL" }.to_string();
     let restart_required = s.restart_required;
 
     let _ = weak.upgrade_in_event_loop(move |w| {
@@ -319,12 +464,28 @@ fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
         w.set_colour_code(colour_code.into());
         w.set_attached_count(attached_count);
         w.set_scan_active(scan_active);
-        w.set_talkgroup_name(talkgroup_name.into());
-        w.set_talkgroup_id(talkgroup_id.into());
+        w.set_has_codeplug(has_codeplug);
+        w.set_folder_name(folder_name.into());
+        w.set_talkgroup_name(tg_name.into());
+        w.set_talkgroup_id(tg_id.into());
+        w.set_tg_sub(tg_sub.into());
         w.set_badge(badge.into());
+        w.set_badge_kind(badge_kind);
         w.set_can_cycle(can_cycle);
+        w.set_select_enabled(select_enabled);
+        w.set_sel_folder(sel_folder_idx);
         w.set_ptt_enabled(ptt_enabled);
         w.set_ptt_label(ptt_label.into());
         w.set_restart_required(restart_required);
+
+        let rows: Vec<FolderRow> = folder_rows
+            .into_iter()
+            .map(|(name, count, selected)| FolderRow {
+                name: name.into(),
+                count,
+                selected,
+            })
+            .collect();
+        w.set_folders(ModelRc::new(VecModel::from(rows)));
     });
 }
