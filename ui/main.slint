@@ -160,7 +160,7 @@ component StatusBar inherits Rectangle {
 
     HorizontalLayout {
         padding-left: 18px;
-        padding-right: 16px;
+        padding-right: 12px;
         spacing: 12px;
         alignment: start;
 
@@ -191,8 +191,12 @@ component StatusBar inherits Rectangle {
 
         Rectangle { horizontal-stretch: 1; }
 
-        // Battery pinned to the far right (time lives in the header below).
-        VerticalLayout { alignment: center; Battery { } }
+        // Battery pinned flush to the far right (time lives in the header below).
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 0;
+            Battery { }
+        }
     }
 }
 
