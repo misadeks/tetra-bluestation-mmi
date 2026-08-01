@@ -17,6 +17,8 @@ pub struct Config {
     pub telemetry: ChannelConfig,
     #[serde(default)]
     pub registration: RegistrationConfig,
+    #[serde(default)]
+    pub log: LogConfig,
     #[allow(dead_code)] // audio config is consumed in M5
     #[serde(default)]
     pub audio: AudioConfig,
@@ -49,6 +51,34 @@ pub struct ChannelConfig {
 pub struct RegistrationConfig {
     #[serde(default = "default_registration_type")]
     pub registration_type: String,
+}
+
+/// Wire logging of raw WebSocket frames (both channels) for diagnostics.
+#[derive(Debug, Clone, Deserialize)]
+pub struct LogConfig {
+    /// Log every control + telemetry WS frame to a file.
+    #[serde(default)]
+    pub ws: bool,
+    /// Path of the wire-log file.
+    #[serde(default = "default_ws_path")]
+    pub ws_path: String,
+    /// Include the high-rate `MsSpeechFrame` voice frames (noisy). Off by default.
+    #[serde(default)]
+    pub ws_speech: bool,
+}
+
+impl Default for LogConfig {
+    fn default() -> Self {
+        LogConfig {
+            ws: false,
+            ws_path: default_ws_path(),
+            ws_speech: false,
+        }
+    }
+}
+
+fn default_ws_path() -> String {
+    "ws.log".to_string()
 }
 
 #[allow(dead_code)] // fields consumed by the audio path in M5
@@ -319,6 +349,7 @@ impl Default for Config {
             command: ChannelConfig::with_port(9102),
             telemetry: ChannelConfig::with_port(9101),
             registration: RegistrationConfig::default(),
+            log: LogConfig::default(),
             audio: AudioConfig::default(),
             ui: UiConfig::default(),
             device: Vec::new(),

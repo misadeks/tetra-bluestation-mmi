@@ -73,17 +73,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         username: cfg.telemetry.username.clone(),
         password: cfg.telemetry.password.clone(),
     };
+    let wire = net::WireLog::new(cfg.log.ws, &cfg.log.ws_path, cfg.log.ws_speech);
     net::spawn_control_server(
         cfg.command.host.clone(),
         cfg.command.port,
         control_auth,
         events_tx.clone(),
+        wire.clone(),
     );
     net::spawn_telemetry_server(
         cfg.telemetry.host.clone(),
         cfg.telemetry.port,
         telemetry_auth,
         events_tx.clone(),
+        wire.clone(),
     );
 
     // Poll GetState every ~2s (the app loop only acts on it while connected).

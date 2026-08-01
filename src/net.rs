@@ -8,8 +8,9 @@
 // Topology reminder: the STACK is the client and dials out; THIS app is the
 // server. Frames are binary UTF-8 JSON; text is tolerated on receive.
 
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -21,6 +22,49 @@ use tungstenite::Message;
 
 use crate::app::AppEvent;
 use crate::protocol::{CONTROL_SUBPROTOCOL, TELEMETRY_SUBPROTOCOL};
+
+/// Optional wire log of raw WebSocket frames (both channels), for diagnostics.
+pub struct WireLog {
+    file: Option<Mutex<std::fs::File>>,
+    speech: bool,
+}
+
+impl WireLog {
+    /// Open the wire log if enabled; a disabled log is a cheap no-op.
+    pub fn new(enabled: bool, path: &str, speech: bool) -> Arc<WireLog> {
+        let file = if enabled {
+            match std::fs::OpenOptions::new().create(true).append(true).open(path) {
+                Ok(f) => {
+                    tracing::info!(%path, "wire log: enabled");
+                    Some(Mutex::new(f))
+                }
+                Err(e) => {
+                    tracing::warn!(%path, error = %e, "wire log: could not open file");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        Arc::new(WireLog { file, speech })
+    }
+
+    /// Record one frame. `out` = we sent it; `channel` is "ctrl"/"tele".
+    fn record(&self, out: bool, channel: &str, data: &[u8]) {
+        let Some(file) = &self.file else { return };
+        let text = std::str::from_utf8(data).unwrap_or("<binary>");
+        // MsSpeechFrame is high-rate voice; skip unless explicitly requested.
+        if !self.speech && text.contains("MsSpeechFrame") {
+            return;
+        }
+        let ts = chrono::Local::now().format("%H:%M:%S%.3f");
+        let dir = if out { "OUT" } else { "IN " };
+        let line = format!("{ts} {dir} {channel} {text}\n");
+        if let Ok(mut f) = file.lock() {
+            let _ = f.write_all(line.as_bytes());
+        }
+    }
+}
 
 /// Optional HTTP Basic auth for a channel. Empty username = accept all (demo).
 #[derive(Clone)]
@@ -107,6 +151,7 @@ pub fn spawn_control_server(
     port: u16,
     auth: ChannelAuth,
     events: Sender<AppEvent>,
+    wire: Arc<WireLog>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
         let addr = format!("{host}:{port}");
@@ -124,7 +169,8 @@ pub fn spawn_control_server(
                     let peer = s.peer_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".into());
                     let auth = auth.clone();
                     let events = events.clone();
-                    thread::spawn(move || handle_control(s, peer, auth, events));
+                    let wire = wire.clone();
+                    thread::spawn(move || handle_control(s, peer, auth, events, wire));
                 }
                 Err(e) => tracing::warn!(error = %e, "control: accept error"),
             }
@@ -137,6 +183,7 @@ pub fn spawn_telemetry_server(
     port: u16,
     auth: ChannelAuth,
     events: Sender<AppEvent>,
+    wire: Arc<WireLog>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
         let addr = format!("{host}:{port}");
@@ -154,7 +201,8 @@ pub fn spawn_telemetry_server(
                     let peer = s.peer_addr().map(|a| a.to_string()).unwrap_or_else(|_| "?".into());
                     let auth = auth.clone();
                     let events = events.clone();
-                    thread::spawn(move || handle_telemetry(s, peer, auth, events));
+                    let wire = wire.clone();
+                    thread::spawn(move || handle_telemetry(s, peer, auth, events, wire));
                 }
                 Err(e) => tracing::warn!(error = %e, "telemetry: accept error"),
             }
@@ -162,7 +210,13 @@ pub fn spawn_telemetry_server(
     })
 }
 
-fn handle_control(stream: TcpStream, peer: String, auth: ChannelAuth, events: Sender<AppEvent>) {
+fn handle_control(
+    stream: TcpStream,
+    peer: String,
+    auth: ChannelAuth,
+    events: Sender<AppEvent>,
+    wire: Arc<WireLog>,
+) {
     let mut ws = match tungstenite::accept_hdr(stream, |req: &Request, resp: Response| {
         negotiate(&auth, CONTROL_SUBPROTOCOL, req, resp)
     }) {
@@ -186,6 +240,7 @@ fn handle_control(stream: TcpStream, peer: String, auth: ChannelAuth, events: Se
     'conn: loop {
         // Flush any pending outbound commands first.
         while let Ok(bytes) = out_rx.try_recv() {
+            wire.record(true, "ctrl", &bytes);
             if let Err(e) = ws.send(Message::Binary(bytes.into())) {
                 tracing::warn!(%peer, error = %e, "control: send failed");
                 break 'conn;
@@ -194,8 +249,14 @@ fn handle_control(stream: TcpStream, peer: String, auth: ChannelAuth, events: Se
         let _ = ws.flush();
 
         match ws.read() {
-            Ok(Message::Binary(data)) => decode_and_forward(&events, &data, true),
-            Ok(Message::Text(text)) => decode_and_forward(&events, text.as_str().as_bytes(), true),
+            Ok(Message::Binary(data)) => {
+                wire.record(false, "ctrl", &data);
+                decode_and_forward(&events, &data, true);
+            }
+            Ok(Message::Text(text)) => {
+                wire.record(false, "ctrl", text.as_str().as_bytes());
+                decode_and_forward(&events, text.as_str().as_bytes(), true);
+            }
             Ok(Message::Ping(_)) => {
                 let _ = ws.flush();
             }
@@ -215,7 +276,13 @@ fn handle_control(stream: TcpStream, peer: String, auth: ChannelAuth, events: Se
     tracing::info!(%peer, "control: closed");
 }
 
-fn handle_telemetry(stream: TcpStream, peer: String, auth: ChannelAuth, events: Sender<AppEvent>) {
+fn handle_telemetry(
+    stream: TcpStream,
+    peer: String,
+    auth: ChannelAuth,
+    events: Sender<AppEvent>,
+    wire: Arc<WireLog>,
+) {
     let mut ws = match tungstenite::accept_hdr(stream, |req: &Request, resp: Response| {
         negotiate(&auth, TELEMETRY_SUBPROTOCOL, req, resp)
     }) {
@@ -230,8 +297,14 @@ fn handle_telemetry(stream: TcpStream, peer: String, auth: ChannelAuth, events: 
 
     loop {
         match ws.read() {
-            Ok(Message::Binary(data)) => decode_and_forward(&events, &data, false),
-            Ok(Message::Text(text)) => decode_and_forward(&events, text.as_str().as_bytes(), false),
+            Ok(Message::Binary(data)) => {
+                wire.record(false, "tele", &data);
+                decode_and_forward(&events, &data, false);
+            }
+            Ok(Message::Text(text)) => {
+                wire.record(false, "tele", text.as_str().as_bytes());
+                decode_and_forward(&events, text.as_str().as_bytes(), false);
+            }
             Ok(Message::Ping(_)) => {
                 let _ = ws.flush();
             }
