@@ -14,7 +14,7 @@ import "fonts/Inter-Bold.ttf";
 import "fonts/Inter-ExtraBold.ttf";
 
 export enum DeviceInput { Touch, Keypad }
-enum Screen { Home, Menu, Info, Folders, Dialer, Logs, LogDetail, Groups, Config, Survey }
+enum Screen { Home, Menu, Info, Folders, Dialer, Logs, LogDetail, Groups, Config, Survey, InCall }
 
 export struct FolderRow {
     name: string,
@@ -107,6 +107,7 @@ global Icons {
     out property <string> refresh: "M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4";
     out property <string> gear: "M12 2.5v3.5M12 18v3.5M2.5 12h3.5M18 12h3.5M12 15a3 3 0 1 0 0-6a3 3 0 0 0 0 6";
     out property <string> close: "M6 6L18 18M18 6L6 18";
+    out property <string> phone-off: "M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91M23 1 1 23";
     out property <string> activity: "M3 12h4l3 8l4-16l3 8h4";
     out property <string> radio: "M6.3 6.3a8 8 0 0 0 0 11.4M17.7 6.3a8 8 0 0 1 0 11.4M9.2 9.2a4 4 0 0 0 0 5.6M14.8 9.2a4 4 0 0 1 0 5.6M12 12v0.01";
 }
@@ -391,9 +392,43 @@ component SecondaryButton inherits Rectangle {
     }
 }
 
+component DangerButton inherits Rectangle {
+    in property <string> text;
+    in property <string> icon;
+    callback clicked;
+    height: 64px;
+    border-radius: 16px;
+    border-width: 1px;
+    border-color: #b5343a;
+    background: touch.pressed
+        ? @linear-gradient(180deg, #a82a2f 0%, #7f1f23 100%)
+        : @linear-gradient(180deg, #d23b41 0%, #a82a2f 100%);
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+    HorizontalLayout {
+        alignment: center;
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            if root.icon != "": Icon { d: root.icon; tint: #fff; size: 20px; }
+        }
+        Text {
+            text: root.text;
+            color: #fff;
+            font-size: 18px;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
+    }
+}
+
 // Docked push-to-talk button. `state`: 0 idle, 1 requesting, 2 on air, 3 locked.
 component Ptt inherits Rectangle {
     in property <string> text;
+    in property <string> sub;
     in property <bool> enabled;
     in property <int> state;
     callback press-down;
@@ -424,20 +459,32 @@ component Ptt inherits Rectangle {
             }
         }
     }
-    VerticalLayout {
+    HorizontalLayout {
         alignment: center;
-        spacing: 10px;
-        HorizontalLayout {
+        spacing: 12px;
+        VerticalLayout {
             alignment: center;
             Icon { d: Icons.mic; tint: root.enabled ? Palette.txt : Palette.muted; size: 34px; }
         }
-        Text {
-            text: root.text;
-            color: root.enabled ? Palette.txt : Palette.muted;
-            font-size: 18px;
-            font-weight: 700;
-            letter-spacing: 0.4px;
-            horizontal-alignment: center;
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.text;
+                color: root.enabled ? Palette.txt : Palette.muted;
+                font-size: 18px;
+                font-weight: 700;
+                letter-spacing: 0.4px;
+                horizontal-alignment: center;
+            }
+            if root.sub != "": Text {
+                text: root.sub;
+                color: root.enabled ? #b9ccd8 : Palette.muted;
+                font-size: 13px;
+                font-weight: 600;
+                horizontal-alignment: center;
+                overflow: elide;
+            }
         }
     }
 }
@@ -617,9 +664,15 @@ component HomeScreen inherits Rectangle {
     in property <bool> show-cancel;
     in property <bool> ptt-enabled;
     in property <string> ptt-label;
+    in property <string> ptt-sub;
     in property <bool> group-call-active;
     in property <string> group-call-name;
-    in property <string> group-call-status;
+    in property <string> group-folder;
+    in property <bool> group-talking;
+    in property <bool> group-talker-you;
+    in property <string> group-talker-name;
+    in property <string> group-talk-time;
+    in property <string> group-floor-sub;
     in property <int> group-ptt-state;
     callback cycle-prev;
     callback cycle-next;
@@ -646,47 +699,150 @@ component HomeScreen inherits Rectangle {
             vertical-stretch: 1;
             if root.group-call-active: VerticalLayout {
                 alignment: center;
-                spacing: 14px;
+                spacing: 6px;
+                // "GROUP IN USE" tag with a beating dot.
                 HorizontalLayout {
                     alignment: center;
-                    Rectangle {
-                        height: 30px;
-                        border-radius: 999px;
-                        background: #d23b4133;
-                        HorizontalLayout {
-                            padding-left: 16px;
-                            padding-right: 16px;
-                            Text {
-                                text: "GROUP IN USE";
-                                color: #ff9a9d;
-                                font-size: 13px;
-                                font-weight: 800;
-                                letter-spacing: 2px;
-                                vertical-alignment: center;
-                            }
+                    spacing: 8px;
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: Palette.accent;
                         }
+                    }
+                    Text {
+                        text: "GROUP IN USE";
+                        color: Palette.accent;
+                        font-size: 12px;
+                        font-weight: 800;
+                        letter-spacing: 4px;
+                        vertical-alignment: center;
+                    }
+                }
+                // Folder (zone) line.
+                if root.group-folder != "": HorizontalLayout {
+                    alignment: center;
+                    spacing: 7px;
+                    padding-top: 6px;
+                    VerticalLayout {
+                        alignment: center;
+                        Icon { d: Icons.folder; tint: Palette.accent; size: 15px; }
+                    }
+                    Text {
+                        text: root.group-folder;
+                        color: #cfe0ec;
+                        font-size: 14px;
+                        font-weight: 600;
+                        vertical-alignment: center;
                     }
                 }
                 Text {
                     text: root.group-call-name;
                     color: #f2f7fb;
-                    font-size: 52px;
+                    font-size: 48px;
                     font-weight: 800;
                     horizontal-alignment: center;
                     wrap: word-wrap;
                 }
-                Text {
-                    text: root.group-call-status;
-                    color: Palette.muted;
-                    font-size: 17px;
-                    font-weight: 600;
-                    horizontal-alignment: center;
+                // Talker / floor status block.
+                Rectangle {
+                    height: 96px;
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 7px;
+                        if root.group-talking: HorizontalLayout {
+                            alignment: center;
+                            Rectangle {
+                                height: 26px;
+                                border-radius: 999px;
+                                background: #d23b4133;
+                                HorizontalLayout {
+                                    padding-left: 13px;
+                                    padding-right: 13px;
+                                    Text {
+                                        text: "TALKING";
+                                        color: #ff9a9d;
+                                        font-size: 11px;
+                                        font-weight: 800;
+                                        letter-spacing: 1.4px;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                        if root.group-talking: Text {
+                            text: "CURRENT TALKER";
+                            color: Palette.faint;
+                            font-size: 11px;
+                            letter-spacing: 3px;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                        }
+                        if root.group-talking: HorizontalLayout {
+                            alignment: center;
+                            spacing: 10px;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 12px;
+                                    height: 12px;
+                                    border-radius: 6px;
+                                    background: #37c06a;
+                                }
+                            }
+                            Text {
+                                text: root.group-talker-you ? "You" : root.group-talker-name;
+                                color: #ffffff;
+                                font-size: 22px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                            }
+                        }
+                        if root.group-talking: Text {
+                            text: root.group-talk-time;
+                            color: #9fe3b6;
+                            font-size: 15px;
+                            font-weight: 700;
+                            letter-spacing: 1px;
+                            horizontal-alignment: center;
+                        }
+                        if !root.group-talking: HorizontalLayout {
+                            alignment: center;
+                            Rectangle {
+                                height: 26px;
+                                border-radius: 999px;
+                                background: #33a7dd29;
+                                HorizontalLayout {
+                                    padding-left: 13px;
+                                    padding-right: 13px;
+                                    Text {
+                                        text: "GROUP CALL ACTIVE";
+                                        color: #7ecbef;
+                                        font-size: 11px;
+                                        font-weight: 800;
+                                        letter-spacing: 1.4px;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                        if !root.group-talking: Text {
+                            text: root.group-floor-sub;
+                            color: Palette.muted;
+                            font-size: 14px;
+                            horizontal-alignment: center;
+                        }
+                    }
                 }
                 HorizontalLayout {
                     alignment: center;
-                    SecondaryButton {
+                    padding-top: 6px;
+                    DangerButton {
                         text: "Hang up";
-                        icon: Icons.close;
+                        icon: Icons.phone-off;
                         clicked => {
                             root.hangup-group();
                         }
@@ -809,6 +965,7 @@ component HomeScreen inherits Rectangle {
                 : root.group-ptt-state == 1 ? "Requesting..."
                 : root.group-ptt-state == 3 ? "Floor busy"
                 : root.ptt-label;
+            sub: root.ptt-sub;
             enabled: root.ptt-enabled;
             state: root.group-ptt-state;
             press-down => {
@@ -1600,41 +1757,10 @@ component SurveyScreen inherits Rectangle {
     }
 }
 
-component DangerButton inherits Rectangle {
-    in property <string> text;
-    in property <string> icon;
-    callback clicked;
-    height: 64px;
-    border-radius: 16px;
-    border-width: 1px;
-    border-color: #b5343a;
-    background: touch.pressed
-        ? @linear-gradient(180deg, #a82a2f 0%, #7f1f23 100%)
-        : @linear-gradient(180deg, #d23b41 0%, #a82a2f 100%);
-    touch := TouchArea {
-        clicked => {
-            root.clicked();
-        }
-    }
-    HorizontalLayout {
-        alignment: center;
-        spacing: 10px;
-        VerticalLayout {
-            alignment: center;
-            if root.icon != "": Icon { d: root.icon; tint: #fff; size: 20px; }
-        }
-        Text {
-            text: root.text;
-            color: #fff;
-            font-size: 18px;
-            font-weight: 700;
-            vertical-alignment: center;
-        }
-    }
-}
-
-// Full-screen individual in-call view, shown as an overlay above any screen.
-component CallOverlay inherits Rectangle {
+// In-call view (individual). A proper screen: keeps the status/header/nav chrome
+// and mirrors the web UI's .call-hero + docked PTT. Hang up lives in the nav bar.
+component InCallScreen inherits Rectangle {
+    in property <string> dir;
     in property <string> peer;
     in property <string> sub;
     in property <string> state;
@@ -1644,30 +1770,27 @@ component CallOverlay inherits Rectangle {
     in property <bool> ptt-enabled;
     callback ptt-down;
     callback ptt-up;
-    callback hangup;
-    width: 100%;
-    height: 100%;
-    background: #060a12f2;
+    background: transparent;
     VerticalLayout {
         padding: 22px;
-        spacing: 16px;
+        // Hero, vertically centered.
         Rectangle {
             vertical-stretch: 1;
             VerticalLayout {
                 alignment: center;
-                spacing: 8px;
+                spacing: 4px;
                 Text {
-                    text: "CALL";
-                    color: Palette.faint;
-                    font-size: 12px;
-                    font-weight: 700;
-                    letter-spacing: 4px;
+                    text: root.dir;
+                    color: Palette.muted;
+                    font-size: 13px;
+                    letter-spacing: 1px;
+                    font-weight: 600;
                     horizontal-alignment: center;
                 }
                 Text {
                     text: root.peer;
-                    color: #f2f7fb;
-                    font-size: 46px;
+                    color: #ffffff;
+                    font-size: 40px;
                     font-weight: 800;
                     horizontal-alignment: center;
                     wrap: word-wrap;
@@ -1675,25 +1798,27 @@ component CallOverlay inherits Rectangle {
                 Text {
                     text: root.sub;
                     color: Palette.muted;
-                    font-size: 16px;
+                    font-size: 15px;
                     horizontal-alignment: center;
                 }
+                Rectangle { height: 10px; }
                 Text {
                     text: root.state;
-                    color: Palette.accent;
-                    font-size: 18px;
+                    color: #8fe6ab;
+                    font-size: 16px;
                     font-weight: 600;
                     horizontal-alignment: center;
                 }
                 if root.clock != "": Text {
                     text: root.clock;
-                    color: Palette.txt;
-                    font-size: 22px;
+                    color: #cfe9ff;
+                    font-size: 24px;
                     font-weight: 700;
                     horizontal-alignment: center;
                 }
             }
         }
+        // Docked PTT (simplex active calls only), same position as home/group.
         if root.can-ptt: Ptt {
             text: root.ptt-state == 2 ? "ON AIR"
                 : root.ptt-state == 1 ? "Requesting..."
@@ -1707,17 +1832,10 @@ component CallOverlay inherits Rectangle {
                 root.ptt-up();
             }
         }
-        DangerButton {
-            text: "Hang up";
-            icon: Icons.close;
-            clicked => {
-                root.hangup();
-            }
-        }
     }
 }
 
-// Incoming-call ring overlay with Answer / Reject.
+// Incoming-call modal overlay (mirrors the web UI .callov / .inc-card).
 component IncomingOverlay inherits Rectangle {
     in property <string> peer;
     in property <string> sub;
@@ -1725,40 +1843,39 @@ component IncomingOverlay inherits Rectangle {
     callback reject;
     width: 100%;
     height: 100%;
-    background: #060a12f2;
+    background: #03070cc7;
     VerticalLayout {
         padding: 26px;
-        spacing: 18px;
+        spacing: 16px;
         alignment: center;
         HorizontalLayout {
             alignment: center;
             Rectangle {
-                width: 92px;
-                height: 92px;
-                border-radius: 46px;
-                background: #37c06a2e;
-                border-width: 1px;
-                border-color: #37c06a80;
+                width: 84px;
+                height: 84px;
+                border-radius: 42px;
+                background: #37c06a29;
                 HorizontalLayout {
                     alignment: center;
                     VerticalLayout {
                         alignment: center;
-                        Icon { d: Icons.phone; tint: Palette.green; size: 40px; }
+                        Icon { d: Icons.phone; tint: Palette.green; size: 38px; }
                     }
                 }
             }
         }
         Text {
-            text: "Incoming call";
+            text: "INCOMING CALL";
             color: Palette.muted;
-            font-size: 16px;
+            font-size: 13px;
+            letter-spacing: 1.5px;
             font-weight: 600;
             horizontal-alignment: center;
         }
         Text {
             text: root.peer;
-            color: #f2f7fb;
-            font-size: 44px;
+            color: #ffffff;
+            font-size: 40px;
             font-weight: 800;
             horizontal-alignment: center;
             wrap: word-wrap;
@@ -1766,26 +1883,67 @@ component IncomingOverlay inherits Rectangle {
         Text {
             text: root.sub;
             color: Palette.muted;
-            font-size: 16px;
+            font-size: 15px;
             horizontal-alignment: center;
         }
+        Rectangle { height: 14px; }
+        // Reject / Answer, big column buttons like the web UI grid.
         HorizontalLayout {
-            spacing: 14px;
-            padding-top: 10px;
-            DangerButton {
-                text: "Reject";
-                icon: Icons.close;
+            spacing: 16px;
+            Rectangle {
                 horizontal-stretch: 1;
-                clicked => {
-                    root.reject();
+                height: 96px;
+                border-radius: 18px;
+                background: rej.pressed
+                    ? @linear-gradient(180deg, #cf3f44 0%, #a82a2f 100%)
+                    : @linear-gradient(180deg, #ef5a5f 0%, #cf3f44 100%);
+                rej := TouchArea {
+                    clicked => {
+                        root.reject();
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 8px;
+                    HorizontalLayout {
+                        alignment: center;
+                        Icon { d: Icons.phone-off; tint: #ffffff; size: 28px; }
+                    }
+                    Text {
+                        text: "Reject";
+                        color: #ffffff;
+                        font-size: 16px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                    }
                 }
             }
-            PrimaryButton {
-                text: "Answer";
-                icon: Icons.phone;
+            Rectangle {
                 horizontal-stretch: 1;
-                clicked => {
-                    root.answer();
+                height: 96px;
+                border-radius: 18px;
+                background: ans.pressed
+                    ? @linear-gradient(180deg, #1f9a55 0%, #178045 100%)
+                    : @linear-gradient(180deg, #2bb768 0%, #1f9a55 100%);
+                ans := TouchArea {
+                    clicked => {
+                        root.answer();
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 8px;
+                    HorizontalLayout {
+                        alignment: center;
+                        Icon { d: Icons.phone; tint: #ffffff; size: 28px; }
+                    }
+                    Text {
+                        text: "Answer";
+                        color: #ffffff;
+                        font-size: 16px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                    }
                 }
             }
         }
@@ -1985,6 +2143,16 @@ export component MainWindow inherits Window {
     in property <bool> show-event-log: true;
     property <Screen> screen: Screen.Home;
 
+    // Auto-open the in-call screen while an individual call is live, and leave it
+    // when the call ends (mirrors the web UI pushing/popping the call view).
+    changed call-live => {
+        if (root.call-live) {
+            root.screen = Screen.InCall;
+        } else if (root.screen == Screen.InCall) {
+            root.screen = Screen.Home;
+        }
+    }
+
     // Live state (set from Rust off MsRuntimeState + channel status).
     in property <bool> control-connected;
     in property <bool> telemetry-connected;
@@ -2032,6 +2200,7 @@ export component MainWindow inherits Window {
     in property <string> survey-status: "";
     in property <[SurveyRow]> survey-rows;
     in property <bool> call-live;
+    in property <string> call-dir: "";
     in property <string> call-peer: "";
     in property <string> call-sub: "";
     in property <string> call-state: "";
@@ -2043,9 +2212,14 @@ export component MainWindow inherits Window {
     in property <string> incoming-sub: "";
     in property <bool> group-call-active;
     in property <string> group-call-name: "";
-    in property <string> group-call-status: "";
-    in property <int> group-ptt-state;
+    in property <string> group-folder: "";
     in property <bool> group-talking;
+    in property <bool> group-talker-you;
+    in property <string> group-talker-name: "";
+    in property <string> group-talk-time: "";
+    in property <string> group-floor-sub: "";
+    in property <int> group-ptt-state;
+    in property <string> ptt-sub: "";
 
     callback register;
     callback deregister;
@@ -2111,6 +2285,9 @@ export component MainWindow inherits Window {
         if (root.screen == Screen.Survey) {
             return "Cell Survey";
         }
+        if (root.screen == Screen.InCall) {
+            return "Call";
+        }
         return root.clock + "   " + root.date;
     }
 
@@ -2156,9 +2333,15 @@ export component MainWindow inherits Window {
             show-cancel: root.show-cancel-select;
             ptt-enabled: root.ptt-enabled;
             ptt-label: root.ptt-label;
+            ptt-sub: root.ptt-sub;
             group-call-active: root.group-call-active;
             group-call-name: root.group-call-name;
-            group-call-status: root.group-call-status;
+            group-folder: root.group-folder;
+            group-talking: root.group-talking;
+            group-talker-you: root.group-talker-you;
+            group-talker-name: root.group-talker-name;
+            group-talk-time: root.group-talk-time;
+            group-floor-sub: root.group-floor-sub;
             group-ptt-state: root.group-ptt-state;
             cycle-prev => {
                 root.cycle-prev();
@@ -2328,6 +2511,24 @@ export component MainWindow inherits Window {
             vertical-stretch: 1;
         }
 
+        if root.device-input == DeviceInput.Touch && root.screen == Screen.InCall: InCallScreen {
+            vertical-stretch: 1;
+            dir: root.call-dir;
+            peer: root.call-peer;
+            sub: root.call-sub;
+            state: root.call-state;
+            clock: root.call-clock;
+            can-ptt: root.call-can-ptt;
+            ptt-state: root.call-ptt-state;
+            ptt-enabled: root.ptt-enabled;
+            ptt-down => {
+                root.call-ptt-down();
+            }
+            ptt-up => {
+                root.call-ptt-up();
+            }
+        }
+
         // Softkey bar (3-column grid), context-dependent.
         Rectangle {
             height: 92px;
@@ -2357,7 +2558,7 @@ export component MainWindow inherits Window {
                     }
                 }
 
-                if root.screen != Screen.Home: Softkey {
+                if root.screen != Screen.Home && root.screen != Screen.InCall: Softkey {
                     text: "Back";
                     icon: Icons.back;
                     horizontal-stretch: 1;
@@ -2365,27 +2566,28 @@ export component MainWindow inherits Window {
                         root.screen = root.back-target();
                     }
                 }
-                if root.screen != Screen.Home: Rectangle { horizontal-stretch: 2; }
-            }
-        }
-    }
+                if root.screen != Screen.Home && root.screen != Screen.InCall: Rectangle { horizontal-stretch: 2; }
 
-    if root.call-live && !root.call-incoming: CallOverlay {
-        peer: root.call-peer;
-        sub: root.call-sub;
-        state: root.call-state;
-        clock: root.call-clock;
-        can-ptt: root.call-can-ptt;
-        ptt-state: root.call-ptt-state;
-        ptt-enabled: root.ptt-enabled;
-        ptt-down => {
-            root.call-ptt-down();
-        }
-        ptt-up => {
-            root.call-ptt-up();
-        }
-        hangup => {
-            root.hangup-call();
+                // In-call: Home (left) + Hang up (right, danger), like the web UI.
+                if root.screen == Screen.InCall: Softkey {
+                    text: "Home";
+                    icon: Icons.back;
+                    horizontal-stretch: 1;
+                    clicked => {
+                        root.screen = Screen.Home;
+                    }
+                }
+                if root.screen == Screen.InCall: Rectangle { horizontal-stretch: 1; }
+                if root.screen == Screen.InCall: Softkey {
+                    text: "Hang up";
+                    icon: Icons.phone-off;
+                    danger: true;
+                    horizontal-stretch: 1;
+                    clicked => {
+                        root.hangup-call();
+                    }
+                }
+            }
         }
     }
 
