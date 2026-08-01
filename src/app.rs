@@ -1396,6 +1396,16 @@ fn sync_uplink(app: &AppState, audio: Option<&crate::audio::AudioEngine>) {
             return;
         }
     }
+    // A duplex individual call is through-connected both ways: stream the mic for
+    // the whole call (no PTT), mirroring the web UI's syncDuplexMic.
+    if let Some(c) = app
+        .calls
+        .values()
+        .find(|c| !c.group && !c.simplex && c.state == CallState::Active)
+    {
+        a.set_uplink(true, c.cid);
+        return;
+    }
     a.set_uplink(false, 0);
 }
 

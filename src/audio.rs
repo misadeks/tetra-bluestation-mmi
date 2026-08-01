@@ -50,6 +50,12 @@ struct CodecLib {
     enc_create: EncCreate,
     enc_destroy: EncDestroy,
     enc_encode: EncEncode,
+    /// Serialises the actual codec calls. The ETSI reference code keeps working
+    /// state in file-scope globals, so a concurrent decode + encode (a full-duplex
+    /// call: listening while the mic streams) would clobber each other and produce
+    /// choppy audio. Half-duplex group calls never overlap, so this is uncontended
+    /// there.
+    call_lock: Mutex<()>,
 }
 
 // The raw fn pointers reference code owned by the kept-alive Library handles.
@@ -101,6 +107,7 @@ impl CodecLib {
                 enc_create,
                 enc_destroy,
                 enc_encode,
+                call_lock: Mutex::new(()),
             })
         }
     }
@@ -208,6 +215,8 @@ impl Decoder {
         }
         let mut pcm = [0i16; FRAME_SAMPLES];
         let bfi = if bad { 1 } else { 0 };
+        // Serialise against a concurrent encode (duplex) that shares codec globals.
+        let _guard = self.codec.call_lock.lock().unwrap();
         for sf in 0..2 {
             let inp = &bits[sf * SUBFRAME_BITS..(sf + 1) * SUBFRAME_BITS];
             let out = &mut pcm[sf * SUBFRAME_SAMPLES..(sf + 1) * SUBFRAME_SAMPLES];
@@ -244,6 +253,8 @@ impl Encoder {
     /// Encode 480 PCM samples into 274 codec bits (2 sub-frames).
     fn encode(&self, pcm: &[i16; FRAME_SAMPLES]) -> Option<Vec<u8>> {
         let mut bits = vec![0u8; FRAME_BITS];
+        // Serialise against a concurrent decode (duplex) that shares codec globals.
+        let _guard = self.codec.call_lock.lock().unwrap();
         for sf in 0..2 {
             let inp = &pcm[sf * SUBFRAME_SAMPLES..(sf + 1) * SUBFRAME_SAMPLES];
             let out = &mut bits[sf * SUBFRAME_BITS..(sf + 1) * SUBFRAME_BITS];
