@@ -30,6 +30,35 @@ frame_ms      = 60
 jitter_ms     = 120
 
 [ui]
+# Select a device model from the catalog below (or the built-in models:
+# "pi-1280x720", "pi-720x1280", "linht"). Explicit width/height/scale below
+# override the selected model.
+model  = "pi-720x1280"
+# width  = 720          # device pixels, overrides the model
+# height = 1280         # device pixels, overrides the model
+# scale forces the UI scale factor and, in dev, overrides the host display
+# scaling (e.g. Windows 150%) so the window renders at the target 1:1.
+scale  = 1.0
+theme  = "classic"
+
+# Device model catalog. Add your own panels here and select one via [ui].model.
+# A profile defined here overrides a built-in of the same name. These example
+# resolutions should be confirmed against the real hardware.
+[[device]]
+name   = "pi-720x1280"   # portrait Pi touchscreen
 width  = 720
 height = 1280
-theme  = "classic"
+scale  = 1.0
+
+[[device]]
+name   = "pi-1280x720"   # landscape Pi touchscreen
+width  = 1280
+height = 720
+scale  = 1.0
+
+[[device]]
+name   = "linht"         # LinHT-style handheld (example, adjust to hardware)
+width  = 480
+height = 800
+scale  = 1.0
+

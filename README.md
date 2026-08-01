@@ -110,7 +110,21 @@ exercise reconnect handling. (The WebSocket servers are wired up in M2.)
 | `[registration]` | `registration_type` | Operator registration preference (identity comes from the MS, never configured). |
 | `[audio]` | `output_device` / `input_device` | Output/input device selection. |
 | `[audio]` | `sample_rate` / `frame_ms` / `jitter_ms` | Audio path timing. |
-| `[ui]` | `width` / `height` / `theme` | Window geometry and theme. |
+| `[ui]` | `model` | Device model to use from the catalog (built-ins: `pi-1280x720`, `pi-720x1280`, `linht`, plus any `[[device]]`). |
+| `[ui]` | `width` / `height` | Explicit device-pixel size; overrides the selected model. |
+| `[ui]` | `scale` | UI scale factor. In dev it overrides the host display scaling (e.g. Windows 150%) so the window renders at the target 1:1; `1.0` = one window pixel per device pixel. |
+| `[ui]` | `theme` | UI theme. |
+| `[[device]]` | `name` / `width` / `height` / `scale` | A device model in the catalog. Select it via `[ui].model`; a profile here overrides a built-in of the same name. |
+
+### Device models
+
+The window size targets a device model rather than a single hardcoded size, so
+the same binary drives different panels (a landscape Pi touchscreen, a portrait
+handheld, a LinHT-style device, etc.). Select one with `[ui].model`, or define
+your own under `[[device]]` and select that. `[ui].width` / `height` / `scale`
+override the selected model. The `scale` value also corrects the host display
+scaling during development: set it to `1.0` and the dev window occupies exactly
+`width x height` device pixels regardless of the Windows scaling setting.
 
 ## Status and milestones
 

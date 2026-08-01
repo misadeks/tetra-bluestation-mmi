@@ -23,29 +23,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let cfg = Config::load("config.toml")?;
+    let ui = cfg.resolve_ui();
     tracing::info!(
         control_port = cfg.command.port,
         telemetry_port = cfg.telemetry.port,
-        ui_width = cfg.ui.width,
-        ui_height = cfg.ui.height,
-        theme = %cfg.ui.theme,
+        model = ui.model.as_deref().unwrap_or("<none>"),
+        width = ui.width,
+        height = ui.height,
+        scale = ui.scale,
+        theme = %ui.theme,
         "loaded config (M1: servers not started yet)"
     );
 
+    // Override the host display scaling (e.g. Windows 150%) so the window renders
+    // at the device's own scale factor. Must be set before the window is created.
+    std::env::set_var("SLINT_SCALE_FACTOR", ui.scale.to_string());
+
     let window = MainWindow::new()?;
+    // Size the window so it occupies width x height device pixels on screen,
+    // regardless of the host monitor's scaling. With SLINT_SCALE_FACTOR forced to
+    // `scale`, physical = logical * scale, so request logical = width/scale.
     window.window().set_size(slint::LogicalSize::new(
-        cfg.ui.width as f32,
-        cfg.ui.height as f32,
+        ui.width as f32 / ui.scale,
+        ui.height as f32 / ui.scale,
     ));
     tracing::info!(
-        width = cfg.ui.width,
-        height = cfg.ui.height,
+        width = ui.width,
+        height = ui.height,
+        scale = ui.scale,
         "applied window size from config"
     );
     window.set_status_line(
         format!(
-            "M1 spike - control :{}  telemetry :{}",
-            cfg.command.port, cfg.telemetry.port
+            "M1 spike - {} {}x{} @{}x  control :{}  telemetry :{}",
+            ui.model.as_deref().unwrap_or("custom"),
+            ui.width,
+            ui.height,
+            ui.scale,
+            cfg.command.port,
+            cfg.telemetry.port
         )
         .into(),
     );
