@@ -14,7 +14,7 @@ use slint::{ModelRc, VecModel};
 
 use crate::codeplug::Codeplug;
 use crate::protocol::{self, MsRuntimeState, ServiceStatus};
-use crate::{FolderRow, LogRow, MainWindow};
+use crate::{FolderRow, GroupRow, LogRow, MainWindow, ScanRow};
 
 /// Events fed into the app loop from net threads, timers, and the UI.
 pub enum AppEvent {
@@ -42,6 +42,10 @@ pub enum AppEvent {
     UiOpenLogs,
     UiAlertDismiss,
     AlertExpire(u64),
+    UiGroupSelect(i32, i32),
+    UiGroupAttach(i32, i32),
+    UiGroupDetach(i32),
+    UiScanlistToggle(String, bool),
 }
 
 struct AppState {
@@ -145,6 +149,19 @@ impl AppState {
             );
         }
         false
+    }
+
+    /// Guard for network actions: requires the control link up and the MS
+    /// registered. Shows the appropriate alert and returns false when blocked.
+    fn require_registered(&mut self, weak: &slint::Weak<MainWindow>) -> bool {
+        if !self.require_online(weak) {
+            return false;
+        }
+        if self.state.registration_state != protocol::RegistrationState::Registered {
+            self.notify(weak, "Not registered", "Register the radio first.", 0);
+            return false;
+        }
+        true
     }
 }
 
@@ -396,6 +413,43 @@ pub fn run(
             AppEvent::AlertExpire(gen) => {
                 if gen == app.alert_gen {
                     let _ = weak.upgrade_in_event_loop(|w| w.set_alert_visible(false));
+                }
+            }
+            AppEvent::UiGroupSelect(gssi, cou) => {
+                if app.require_registered(&weak) {
+                    let h = app.next_handle();
+                    tracing::info!(gssi, cou, "UI: group select (switch TX)");
+                    app.send(protocol::tnmm_switch_talkgroup(h, gssi as u32, cou as u8));
+                    app.selected_tx = Some(gssi as u32);
+                    let h = app.next_handle();
+                    app.send(protocol::get_state(h));
+                }
+            }
+            AppEvent::UiGroupAttach(gssi, cou) => {
+                if app.require_registered(&weak) {
+                    let h = app.next_handle();
+                    tracing::info!(gssi, cou, "UI: group attach (add to scan)");
+                    app.send(protocol::tnmm_attach_group(h, gssi as u32, cou as u8));
+                    let h = app.next_handle();
+                    app.send(protocol::get_state(h));
+                }
+            }
+            AppEvent::UiGroupDetach(gssi) => {
+                if app.require_registered(&weak) {
+                    let h = app.next_handle();
+                    tracing::info!(gssi, "UI: group detach");
+                    app.send(protocol::tnmm_detach_group(h, gssi as u32));
+                    let h = app.next_handle();
+                    app.send(protocol::get_state(h));
+                }
+            }
+            AppEvent::UiScanlistToggle(name, active) => {
+                if app.require_registered(&weak) {
+                    let h = app.next_handle();
+                    tracing::info!(%name, active, "UI: scanlist toggle");
+                    app.send(protocol::activate_scanlist(h, &name, active));
+                    let h = app.next_handle();
+                    app.send(protocol::get_state(h));
                 }
             }
         }
@@ -828,5 +882,55 @@ fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
             })
             .collect();
         w.set_folders(ModelRc::new(VecModel::from(rows)));
+    });
+
+    push_groups(app, weak);
+}
+
+/// Build the Groups + scan-list models (all codeplug talkgroups tagged
+/// TX/SCAN/none, plus programmed scan lists with their active state).
+fn push_groups(app: &AppState, weak: &slint::Weak<MainWindow>) {
+    let tx = effective_tx(app);
+    let attached = &app.state.attached_groups;
+    let active_scanlists = app.state.active_scanlists.clone().unwrap_or_default();
+
+    let mut groups: Vec<GroupRow> = Vec::new();
+    let mut scanlists: Vec<ScanRow> = Vec::new();
+    if let Some(cp) = &app.codeplug {
+        for folder in &cp.folders {
+            for t in &folder.talkgroups {
+                let is_attached = attached.contains(&t.gssi);
+                let is_tx = is_attached && Some(t.gssi) == tx;
+                let tag = if is_tx {
+                    2
+                } else if is_attached {
+                    1
+                } else {
+                    0
+                };
+                groups.push(GroupRow {
+                    gssi: t.gssi as i32,
+                    name: t.name.clone().into(),
+                    sub: format!("GSSI {} - {}", t.gssi, folder.name).into(),
+                    tag,
+                    cou: t.class_of_usage as i32,
+                    attached: is_attached,
+                    is_tx,
+                });
+            }
+        }
+        for sl in &cp.scanlists {
+            let names: Vec<String> = sl.talkgroups.iter().map(|g| cp.name_of(*g)).collect();
+            scanlists.push(ScanRow {
+                name: sl.name.clone().into(),
+                sub: names.join(", ").into(),
+                active: active_scanlists.iter().any(|n| n == &sl.name),
+            });
+        }
+    }
+
+    let _ = weak.upgrade_in_event_loop(move |w| {
+        w.set_groups(ModelRc::new(VecModel::from(groups)));
+        w.set_scanlists(ModelRc::new(VecModel::from(scanlists)));
     });
 }

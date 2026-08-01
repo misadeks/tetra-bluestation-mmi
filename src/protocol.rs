@@ -105,6 +105,41 @@ pub fn tnmm_switch_talkgroup(handle: u32, gssi: u32, cou_onair: u8) -> Value {
     }}})
 }
 
+/// Add `gssi` to the attached (scanned) set without dropping the others
+/// (TnmmAttachDetachGroupIdentity, "Amendment" + Attachment).
+pub fn tnmm_attach_group(handle: u32, gssi: u32, cou_onair: u8) -> Value {
+    json!({ "TnmmAttachDetachGroupIdentity": { "handle": handle, "request": {
+        "group_identity_attach_detach_mode": "Amendment",
+        "group_identity_request": [{
+            "gtsi": gssi,
+            "group_identity_attach_detach_type_identifier": "Attachment",
+            "class_of_usage": class_of_usage(cou_onair),
+            "group_identity_detachment_request": null,
+        }],
+        "group_identity_report": "ReportNotRequested",
+    }}})
+}
+
+/// Drop `gssi` from the attached set (TnmmAttachDetachGroupIdentity, "Amendment"
+/// + Detachment, user-initiated).
+pub fn tnmm_detach_group(handle: u32, gssi: u32) -> Value {
+    json!({ "TnmmAttachDetachGroupIdentity": { "handle": handle, "request": {
+        "group_identity_attach_detach_mode": "Amendment",
+        "group_identity_request": [{
+            "gtsi": gssi,
+            "group_identity_attach_detach_type_identifier": "Detachment",
+            "class_of_usage": null,
+            "group_identity_detachment_request": "UserInitiatedDetachment",
+        }],
+        "group_identity_report": "ReportNotRequested",
+    }}})
+}
+
+/// Activate or deactivate a programmed scan list (interface-2, Plane B).
+pub fn activate_scanlist(handle: u32, name: &str, active: bool) -> Value {
+    management(json!({ "ActivateScanlist": { "handle": handle, "name": name, "active": active } }))
+}
+
 // --- Inbound parsing helpers -------------------------------------------------
 
 /// Return (variant_name, payload) for an externally-tagged message object.
@@ -320,6 +355,40 @@ mod tests {
                 }],
                 "group_identity_report": "ReportNotRequested"
             }}})
+        );
+    }
+
+    #[test]
+    fn attach_detach_and_scanlist_shapes() {
+        assert_eq!(
+            tnmm_attach_group(1, 220, 1),
+            json!({"TnmmAttachDetachGroupIdentity": {"handle": 1, "request": {
+                "group_identity_attach_detach_mode": "Amendment",
+                "group_identity_request": [{
+                    "gtsi": 220,
+                    "group_identity_attach_detach_type_identifier": "Attachment",
+                    "class_of_usage": "ClassOfUsage2",
+                    "group_identity_detachment_request": null
+                }],
+                "group_identity_report": "ReportNotRequested"
+            }}})
+        );
+        assert_eq!(
+            tnmm_detach_group(2, 220),
+            json!({"TnmmAttachDetachGroupIdentity": {"handle": 2, "request": {
+                "group_identity_attach_detach_mode": "Amendment",
+                "group_identity_request": [{
+                    "gtsi": 220,
+                    "group_identity_attach_detach_type_identifier": "Detachment",
+                    "class_of_usage": null,
+                    "group_identity_detachment_request": "UserInitiatedDetachment"
+                }],
+                "group_identity_report": "ReportNotRequested"
+            }}})
+        );
+        assert_eq!(
+            activate_scanlist(3, "Alpha", true),
+            json!({"Management": {"ActivateScanlist": {"handle": 3, "name": "Alpha", "active": true}}})
         );
     }
 

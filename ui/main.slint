@@ -14,7 +14,7 @@ import "fonts/Inter-Bold.ttf";
 import "fonts/Inter-ExtraBold.ttf";
 
 export enum DeviceInput { Touch, Keypad }
-enum Screen { Home, Menu, Info, Folders, Dialer, Logs, LogDetail }
+enum Screen { Home, Menu, Info, Folders, Dialer, Logs, LogDetail, Groups }
 
 export struct FolderRow {
     name: string,
@@ -27,6 +27,22 @@ export struct LogRow {
     variant: string,
     summary: string,
     detail: string,
+}
+
+export struct GroupRow {
+    gssi: int,
+    name: string,
+    sub: string,
+    tag: int, // 0 none, 1 scan, 2 tx
+    cou: int,
+    attached: bool,
+    is-tx: bool,
+}
+
+export struct ScanRow {
+    name: string,
+    sub: string,
+    active: bool,
 }
 
 // Palette lifted from the web UI's :root custom properties.
@@ -79,6 +95,8 @@ global Icons {
     out property <string> users: "M9 8a3 3 0 1 0 0.01 0M3.6 19c0-3 2.5-5.2 5.4-5.2S14.4 16 14.4 19M16.5 5.5a3 3 0 0 1 0 5.8M17.6 13.9c2 .6 3.3 2.5 3.3 5.1";
     out property <string> alert: "M12 3.5L22 20H2zM12 10v4.5M12 17.4v0.01";
     out property <string> logs: "M8 7L20 7M8 12L20 12M8 17L20 17M4 7v0.01M4 12v0.01M4 17v0.01";
+    out property <string> plus: "M12 5L12 19M5 12L19 12";
+    out property <string> minus: "M5 12L19 12";
 }
 
 // 5 signal bars, heights scaled up, bottom-aligned (web UI .sig).
@@ -674,6 +692,7 @@ component MenuScreen inherits Rectangle {
     in property <bool> show-event-log: true;
     callback open-info;
     callback open-logs;
+    callback open-groups;
     callback register;
     callback deregister;
     background: transparent;
@@ -681,6 +700,14 @@ component MenuScreen inherits Rectangle {
         padding: 18px;
         spacing: 12px;
         alignment: start;
+        ListRow {
+            title: "Talkgroups";
+            subtitle: "Select, scan, attach and detach groups";
+            icon: Icons.users;
+            clicked => {
+                root.open-groups();
+            }
+        }
         ListRow {
             title: "Radio Info";
             subtitle: "Registration, network, signal";
@@ -968,6 +995,232 @@ component FoldersScreen inherits Rectangle {
     }
 }
 
+component Toggle inherits Rectangle {
+    in property <bool> on;
+    callback toggled(bool);
+    width: 54px;
+    height: 32px;
+    border-radius: 16px;
+    border-width: 1px;
+    border-color: root.on ? #37c06a80 : Palette.line2;
+    background: root.on ? #37c06a3d : #ffffff10;
+    TouchArea {
+        clicked => {
+            root.toggled(!root.on);
+        }
+    }
+    Rectangle {
+        width: 24px;
+        height: 24px;
+        border-radius: 12px;
+        x: root.on ? parent.width - self.width - 4px : 4px;
+        y: 4px;
+        background: root.on ? #79dfa0 : #8fa3b8;
+        animate x { duration: 120ms; easing: ease; }
+    }
+}
+
+component TagPill inherits Rectangle {
+    in property <int> tag; // 1 scan, 2 tx
+    height: 22px;
+    border-radius: 999px;
+    background: root.tag == 2 ? #37c06a2e : #33a7dd29;
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        Text {
+            text: root.tag == 2 ? "TX" : "SCAN";
+            color: root.tag == 2 ? #79dfa0 : #7ecbef;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 0.8px;
+            vertical-alignment: center;
+        }
+    }
+}
+
+component GroupRowView inherits Rectangle {
+    in property <string> name;
+    in property <string> sub;
+    in property <int> tag;
+    in property <bool> attached;
+    in property <bool> is-tx;
+    callback select;
+    callback add;
+    callback detach;
+    height: 84px;
+    border-radius: 16px;
+    border-width: 1px;
+    border-color: root.is-tx ? #37c06a55 : Palette.line;
+    background: touch.pressed ? #16202b : Palette.surface;
+    touch := TouchArea {
+        clicked => {
+            root.select();
+        }
+    }
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 12px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 5px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Text {
+                    text: root.name;
+                    color: Palette.txt;
+                    font-size: 19px;
+                    font-weight: 600;
+                    overflow: elide;
+                }
+                if root.tag > 0: VerticalLayout { alignment: center; TagPill { tag: root.tag; } }
+                Rectangle { horizontal-stretch: 1; }
+            }
+            Text {
+                text: root.sub;
+                color: Palette.muted;
+                font-size: 14px;
+                overflow: elide;
+            }
+        }
+        if !root.is-tx: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 48px;
+                height: 48px;
+                border-radius: 13px;
+                border-width: 1px;
+                border-color: Palette.line2;
+                background: act.pressed
+                    ? #24303d
+                    : (root.attached ? #f0555a1f : #37c06a1f);
+                act := TouchArea {
+                    clicked => {
+                        if (root.attached) {
+                            root.detach();
+                        } else {
+                            root.add();
+                        }
+                    }
+                }
+                Icon {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    d: root.attached ? Icons.minus : Icons.plus;
+                    tint: root.attached ? #ff9a9d : #79dfa0;
+                    size: 24px;
+                }
+            }
+        }
+    }
+}
+
+component ScanRowView inherits Rectangle {
+    in property <string> name;
+    in property <string> sub;
+    in property <bool> active;
+    callback toggled(bool);
+    height: 76px;
+    border-radius: 16px;
+    border-width: 1px;
+    border-color: root.active ? #37c06a55 : Palette.line;
+    background: Palette.surface;
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            Text {
+                text: root.name;
+                color: Palette.txt;
+                font-size: 18px;
+                font-weight: 600;
+                overflow: elide;
+            }
+            if root.sub != "": Text {
+                text: root.sub;
+                color: Palette.muted;
+                font-size: 13px;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Toggle {
+                on: root.active;
+                toggled(v) => {
+                    root.toggled(v);
+                }
+            }
+        }
+    }
+}
+
+component SectionHeader inherits Text {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: Palette.faint;
+}
+
+component GroupsScreen inherits Rectangle {
+    in property <[GroupRow]> groups;
+    in property <[ScanRow]> scanlists;
+    callback select(int, int);
+    callback add(int, int);
+    callback detach(int);
+    callback toggle-scan(string, bool);
+    background: transparent;
+    Flickable {
+        viewport-height: col.preferred-height;
+        col := VerticalLayout {
+            padding: 16px;
+            spacing: 10px;
+            alignment: start;
+            if root.groups.length == 0: Text {
+                text: "No talkgroups programmed";
+                color: Palette.muted;
+                font-size: 16px;
+                horizontal-alignment: center;
+            }
+            if root.scanlists.length > 0: SectionHeader { text: "SCAN LISTS"; }
+            for s in root.scanlists: ScanRowView {
+                name: s.name;
+                sub: s.sub;
+                active: s.active;
+                toggled(v) => {
+                    root.toggle-scan(s.name, v);
+                }
+            }
+            if root.scanlists.length > 0 && root.groups.length > 0: SectionHeader {
+                text: "TALKGROUPS";
+            }
+            for g in root.groups: GroupRowView {
+                name: g.name;
+                sub: g.sub;
+                tag: g.tag;
+                attached: g.attached;
+                is-tx: g.is-tx;
+                select => {
+                    root.select(g.gssi, g.cou);
+                }
+                add => {
+                    root.add(g.gssi, g.cou);
+                }
+                detach => {
+                    root.detach(g.gssi);
+                }
+            }
+        }
+    }
+}
+
 component DialKey inherits Rectangle {
     in property <string> text;
     in property <string> sub;
@@ -1195,6 +1448,8 @@ export component MainWindow inherits Window {
     in property <string> dial-number: "";
     in property <[LogRow]> logs;
     in property <int> unread;
+    in property <[GroupRow]> groups;
+    in property <[ScanRow]> scanlists;
     in property <bool> alert-visible;
     in property <string> alert-title;
     in property <string> alert-message;
@@ -1211,6 +1466,10 @@ export component MainWindow inherits Window {
     callback dial-call;
     callback open-logs;
     callback alert-dismiss;
+    callback group-select(int, int);
+    callback group-attach(int, int);
+    callback group-detach(int);
+    callback scanlist-toggle(string, bool);
 
     // Detail of the event currently open on the LogDetail screen.
     property <string> detail-variant;
@@ -1236,12 +1495,15 @@ export component MainWindow inherits Window {
         if (root.screen == Screen.LogDetail) {
             return "Event";
         }
+        if (root.screen == Screen.Groups) {
+            return "Talkgroups";
+        }
         return root.clock + "   " + root.date;
     }
 
     // Parent screen for the Back softkey.
     function back-target() -> Screen {
-        if (root.screen == Screen.Info || root.screen == Screen.Logs) {
+        if (root.screen == Screen.Info || root.screen == Screen.Logs || root.screen == Screen.Groups) {
             return Screen.Menu;
         }
         if (root.screen == Screen.LogDetail) {
@@ -1305,6 +1567,9 @@ export component MainWindow inherits Window {
             open-info => {
                 root.screen = Screen.Info;
             }
+            open-groups => {
+                root.screen = Screen.Groups;
+            }
             open-logs => {
                 root.open-logs();
                 root.screen = Screen.Logs;
@@ -1343,6 +1608,24 @@ export component MainWindow inherits Window {
             select-folder(i) => {
                 root.select-folder(i);
                 root.screen = Screen.Home;
+            }
+        }
+
+        if root.device-input == DeviceInput.Touch && root.screen == Screen.Groups: GroupsScreen {
+            vertical-stretch: 1;
+            groups: root.groups;
+            scanlists: root.scanlists;
+            select(g, c) => {
+                root.group-select(g, c);
+            }
+            add(g, c) => {
+                root.group-attach(g, c);
+            }
+            detach(g) => {
+                root.group-detach(g);
+            }
+            toggle-scan(n, a) => {
+                root.scanlist-toggle(n, a);
             }
         }
 

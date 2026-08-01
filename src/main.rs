@@ -179,6 +179,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let _ = tx.send(app::AppEvent::UiAlertDismiss);
         });
     }
+    {
+        let tx = events_tx.clone();
+        window.on_group_select(move |gssi, cou| {
+            let _ = tx.send(app::AppEvent::UiGroupSelect(gssi, cou));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_group_attach(move |gssi, cou| {
+            let _ = tx.send(app::AppEvent::UiGroupAttach(gssi, cou));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_group_detach(move |gssi| {
+            let _ = tx.send(app::AppEvent::UiGroupDetach(gssi));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_scanlist_toggle(move |name, active| {
+            let _ = tx.send(app::AppEvent::UiScanlistToggle(name.to_string(), active));
+        });
+    }
 
     // The app loop owns state and is the sole UI writer.
     {

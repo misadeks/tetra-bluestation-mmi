@@ -28,9 +28,16 @@ pub struct Folder {
     pub talkgroups: Vec<Talkgroup>,
 }
 
+#[derive(Debug, Clone)]
+pub struct Scanlist {
+    pub name: String,
+    pub talkgroups: Vec<u32>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Codeplug {
     pub folders: Vec<Folder>,
+    pub scanlists: Vec<Scanlist>,
     #[allow(dead_code)] // used by name_of, handy for later screens/logs
     names: HashMap<u32, String>,
 }
@@ -41,6 +48,18 @@ struct Doc {
     folder: Vec<FolderDef>,
     #[serde(default)]
     talkgroup: Vec<TalkgroupDef>,
+    #[serde(default)]
+    scanlist: Vec<ScanlistDef>,
+}
+
+#[derive(Deserialize)]
+struct ScanlistDef {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    talkgroups: Vec<u32>,
+    #[serde(default)]
+    order: i64,
 }
 
 #[derive(Deserialize, Clone)]
@@ -152,7 +171,22 @@ impl Codeplug {
             })
             .collect();
 
-        Some(Codeplug { folders, names })
+        let mut scan_defs = doc.scanlist;
+        scan_defs.sort_by(|a, b| a.order.cmp(&b.order).then_with(|| a.name.cmp(&b.name)));
+        let scanlists = scan_defs
+            .into_iter()
+            .filter(|s| !s.name.is_empty())
+            .map(|s| Scanlist {
+                name: s.name,
+                talkgroups: s.talkgroups,
+            })
+            .collect();
+
+        Some(Codeplug {
+            folders,
+            scanlists,
+            names,
+        })
     }
 
     #[allow(dead_code)] // used in tests and by later screens/logs
@@ -209,6 +243,11 @@ order = 1
 [[talkgroup]]
 gssi = 91
 name = "Loose"
+
+[[scanlist]]
+name = "Alpha"
+talkgroups = [101, 300]
+order = 0
 "#;
 
     #[test]
@@ -225,6 +264,9 @@ name = "Loose"
         assert_eq!(cp.folders[2].talkgroups[0].gssi, 91);
         assert_eq!(cp.name_of(300), "Emergency");
         assert_eq!(cp.name_of(999), "TG 999");
+        assert_eq!(cp.scanlists.len(), 1);
+        assert_eq!(cp.scanlists[0].name, "Alpha");
+        assert_eq!(cp.scanlists[0].talkgroups, vec![101, 300]);
     }
 
     #[test]
