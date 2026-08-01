@@ -2412,6 +2412,10 @@ export component MainWindow inherits Window {
                 padding-right: 14px;
                 spacing: 10px;
 
+                // Fixed 3-slot bar: exactly one equal-width child per slot, so all
+                // buttons are the same size and three always fit.
+
+                // LEFT slot.
                 if root.screen == Screen.Home: Softkey {
                     text: "Menu";
                     icon: Icons.menu;
@@ -2420,7 +2424,40 @@ export component MainWindow inherits Window {
                         root.screen = Screen.Menu;
                     }
                 }
-                if root.screen == Screen.Home: Rectangle { horizontal-stretch: 1; }
+                if root.screen == Screen.InCall: Softkey {
+                    text: root.call-muted ? "Unmute" : "Mute";
+                    icon: root.call-muted ? Icons.mic-off : Icons.mic;
+                    horizontal-stretch: 1;
+                    clicked => {
+                        root.toggle-mute();
+                    }
+                }
+                if root.screen != Screen.Home && root.screen != Screen.InCall: Softkey {
+                    text: "Back";
+                    icon: Icons.back;
+                    horizontal-stretch: 1;
+                    clicked => {
+                        root.screen = root.back-target();
+                    }
+                }
+
+                // CENTER slot: Home on sub-menus, but not on Menu or the Dialer
+                // (nor Home/in-call, whose center is empty).
+                if root.screen != Screen.Home && root.screen != Screen.InCall
+                    && root.screen != Screen.Menu && root.screen != Screen.Dialer: Softkey {
+                    text: "Home";
+                    icon: Icons.home;
+                    horizontal-stretch: 1;
+                    clicked => {
+                        root.screen = Screen.Home;
+                    }
+                }
+                if root.screen == Screen.Home || root.screen == Screen.InCall
+                    || root.screen == Screen.Menu || root.screen == Screen.Dialer: Rectangle {
+                    horizontal-stretch: 1;
+                }
+
+                // RIGHT slot.
                 if root.screen == Screen.Home && !root.group-call-active: Softkey {
                     text: "Dialer";
                     icon: Icons.phone;
@@ -2438,27 +2475,15 @@ export component MainWindow inherits Window {
                         root.hangup-group();
                     }
                 }
-
-                if root.screen != Screen.Home && root.screen != Screen.InCall: Softkey {
-                    text: "Back";
-                    icon: Icons.back;
+                if root.screen == Screen.InCall: Softkey {
+                    text: "Hang up";
+                    icon: Icons.phone-off;
+                    danger: true;
                     horizontal-stretch: 1;
                     clicked => {
-                        root.screen = root.back-target();
+                        root.hangup-call();
                     }
                 }
-                // Center Home button to jump back to the home screen from any
-                // sub-menu (not in a call, where the center is call controls).
-                if root.screen != Screen.Home && root.screen != Screen.InCall: Softkey {
-                    text: "Home";
-                    icon: Icons.home;
-                    horizontal-stretch: 1;
-                    clicked => {
-                        root.screen = Screen.Home;
-                    }
-                }
-                // Dialer: Call (right) places a DUPLEX call; the keypad PTT places
-                // a simplex call. Other sub-menus keep the right slot empty.
                 if root.screen == Screen.Dialer: Softkey {
                     text: "Call";
                     icon: Icons.phone;
@@ -2468,26 +2493,9 @@ export component MainWindow inherits Window {
                         root.dial-call(true);
                     }
                 }
-                if root.screen != Screen.Home && root.screen != Screen.InCall && root.screen != Screen.Dialer: Rectangle { horizontal-stretch: 1; }
-
-                // In-call: Mute (left) + Hang up (right, danger).
-                if root.screen == Screen.InCall: Softkey {
-                    text: root.call-muted ? "Unmute" : "Mute";
-                    icon: root.call-muted ? Icons.mic-off : Icons.mic;
+                if root.screen != Screen.Home && root.screen != Screen.InCall
+                    && root.screen != Screen.Dialer: Rectangle {
                     horizontal-stretch: 1;
-                    clicked => {
-                        root.toggle-mute();
-                    }
-                }
-                if root.screen == Screen.InCall: Rectangle { horizontal-stretch: 1; }
-                if root.screen == Screen.InCall: Softkey {
-                    text: "Hang up";
-                    icon: Icons.phone-off;
-                    danger: true;
-                    horizontal-stretch: 1;
-                    clicked => {
-                        root.hangup-call();
-                    }
                 }
             }
         }
