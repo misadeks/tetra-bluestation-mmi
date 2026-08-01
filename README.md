@@ -113,18 +113,28 @@ exercise reconnect handling. (The WebSocket servers are wired up in M2.)
 | `[ui]` | `model` | Device model to use from the catalog (built-ins: `pi-1280x720`, `pi-720x1280`, `linht`, plus any `[[device]]`). |
 | `[ui]` | `width` / `height` | Explicit device-pixel size; overrides the selected model. |
 | `[ui]` | `scale` | UI scale factor. In dev it overrides the host display scaling (e.g. Windows 150%) so the window renders at the target 1:1; `1.0` = one window pixel per device pixel. |
+| `[ui]` | `input` | Interaction model / layout: `touch` (tap targets) or `keypad` (softkeys + Up/Down focus). Overrides the model. |
 | `[ui]` | `theme` | UI theme. |
-| `[[device]]` | `name` / `width` / `height` / `scale` | A device model in the catalog. Select it via `[ui].model`; a profile here overrides a built-in of the same name. |
+| `[[device]]` | `name` / `width` / `height` / `scale` / `input` | A device model in the catalog. Select it via `[ui].model`; a profile here overrides a built-in of the same name. |
 
-### Device models
+### Device models and layouts
 
-The window size targets a device model rather than a single hardcoded size, so
-the same binary drives different panels (a landscape Pi touchscreen, a portrait
-handheld, a LinHT-style device, etc.). Select one with `[ui].model`, or define
-your own under `[[device]]` and select that. `[ui].width` / `height` / `scale`
-override the selected model. The `scale` value also corrects the host display
-scaling during development: set it to `1.0` and the dev window occupies exactly
-`width x height` device pixels regardless of the Windows scaling setting.
+The window size and layout target a device model rather than a single hardcoded
+size, so the same binary drives different panels (a landscape Pi touchscreen, a
+portrait handheld, a LinHT-style keypad device, etc.). Select one with
+`[ui].model`, or define your own under `[[device]]` and select that.
+`[ui].width` / `height` / `scale` / `input` override the selected model.
+
+Each model also declares an `input` kind that selects the layout and
+interaction:
+
+- `touch` - a touch-first layout with large tap targets.
+- `keypad` - a softkey-driven layout navigated with Up/Down (focus based), for
+  devices without a touchscreen.
+
+The `scale` value also corrects the host display scaling during development: set
+it to `1.0` and the dev window occupies exactly `width x height` device pixels
+regardless of the Windows scaling setting.
 
 ## Status and milestones
 

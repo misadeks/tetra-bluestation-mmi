@@ -1,7 +1,161 @@
 // M1 hello window for the TETRA TN UI.
-// Portrait 720x1280, dark theme, single placeholder card.
-// This is a variant of the TN UI (server side of the BlueStation MS external
-// interface), a native/embedded sibling of the browser tetra-tn-web-ui.
+//
+// The window adapts to the device's interaction model (config [ui].input /
+// device profile): a touch-first layout with large tap targets, or a keypad
+// layout driven by softkeys and Up/Down focus navigation. This is the scaffold
+// for the per-device layout/behavior split; real screens land in later
+// milestones.
+
+export enum DeviceInput { Touch, Keypad }
+
+component StatusBar inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    height: 72px;
+    background: #12161d;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: #232a34;
+
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 12px;
+        alignment: space-between;
+
+        Text {
+            text: root.title;
+            color: #e8edf2;
+            font-size: 22px;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
+
+        Text {
+            text: root.subtitle;
+            color: #7f8b99;
+            font-size: 14px;
+            vertical-alignment: center;
+            horizontal-alignment: right;
+            overflow: elide;
+        }
+    }
+}
+
+// Large touch target for the touch layout.
+component BigButton inherits Rectangle {
+    in property <string> text;
+    callback clicked;
+    height: 96px;
+    background: touch.pressed ? #1c2a3a : #17202b;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: #2a3542;
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    Text {
+        text: root.text;
+        color: #e8edf2;
+        font-size: 22px;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// Touch-first layout: big tap targets.
+component TouchHome inherits Rectangle {
+    background: transparent;
+
+    VerticalLayout {
+        spacing: 16px;
+        alignment: start;
+
+        Text {
+            text: "Touch layout - tap to act";
+            color: #9aa6b3;
+            font-size: 15px;
+        }
+
+        BigButton { text: "Register"; }
+        BigButton { text: "Talkgroups"; }
+        BigButton { text: "Menu"; }
+    }
+}
+
+// Keypad layout: Up/Down move the selection, softkey bar along the bottom.
+component KeypadHome inherits FocusScope {
+    property <[string]> items: ["Talkgroups", "Logs", "Radio info", "Settings"];
+    property <int> selected: 0;
+
+    init => {
+        self.focus();
+    }
+
+    key-pressed(event) => {
+        if (event.text == Key.UpArrow) {
+            root.selected = Math.max(0, root.selected - 1);
+            return accept;
+        }
+        if (event.text == Key.DownArrow) {
+            root.selected = Math.min(root.items.length - 1, root.selected + 1);
+            return accept;
+        }
+        return reject;
+    }
+
+    VerticalLayout {
+        spacing: 12px;
+        alignment: start;
+
+        Text {
+            text: "Keypad layout - Up/Down to move, softkeys below";
+            color: #9aa6b3;
+            font-size: 15px;
+        }
+
+        for item[idx] in root.items: Rectangle {
+            height: 56px;
+            background: idx == root.selected ? #1f6feb : #12161d;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: idx == root.selected ? #4a8bff : #232a34;
+
+            HorizontalLayout {
+                padding-left: 16px;
+                Text {
+                    text: item;
+                    color: #e8edf2;
+                    font-size: 18px;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // Softkey bar.
+        Rectangle {
+            height: 56px;
+            background: #12161d;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: #232a34;
+
+            HorizontalLayout {
+                alignment: space-around;
+                Text { text: "Menu"; color: #4da3ff; font-size: 16px; vertical-alignment: center; }
+                Text { text: "Select"; color: #4da3ff; font-size: 16px; vertical-alignment: center; }
+                Text { text: "Back"; color: #4da3ff; font-size: 16px; vertical-alignment: center; }
+            }
+        }
+    }
+}
 
 export component MainWindow inherits Window {
     title: "TETRA TN UI";
@@ -11,6 +165,8 @@ export component MainWindow inherits Window {
     preferred-height: 1280px;
     background: #0a0d12;
 
+    // Set from config: selects the layout and interaction model.
+    in property <DeviceInput> device-input: DeviceInput.Touch;
     in property <string> status-line: "M1 toolchain spike";
 
     VerticalLayout {
@@ -18,72 +174,12 @@ export component MainWindow inherits Window {
         spacing: 24px;
         alignment: start;
 
-        // Top bar placeholder.
-        Rectangle {
-            height: 72px;
-            background: #12161d;
-            border-radius: 8px;
-            border-width: 1px;
-            border-color: #232a34;
-
-            HorizontalLayout {
-                padding-left: 20px;
-                padding-right: 20px;
-                alignment: space-between;
-
-                Text {
-                    text: "TETRA TN UI";
-                    color: #e8edf2;
-                    font-size: 22px;
-                    font-weight: 700;
-                    vertical-alignment: center;
-                }
-
-                Text {
-                    text: "BlueStation MS";
-                    color: #7f8b99;
-                    font-size: 16px;
-                    vertical-alignment: center;
-                }
-            }
+        StatusBar {
+            title: "TETRA TN UI";
+            subtitle: root.status-line;
         }
 
-        // Placeholder card.
-        Rectangle {
-            height: 220px;
-            background: #12161d;
-            border-radius: 12px;
-            border-width: 1px;
-            border-color: #232a34;
-
-            VerticalLayout {
-                padding: 24px;
-                spacing: 12px;
-                alignment: center;
-
-                Text {
-                    text: "Native Rust + Slint variant";
-                    color: #e8edf2;
-                    font-size: 20px;
-                    font-weight: 600;
-                    horizontal-alignment: center;
-                }
-
-                Text {
-                    text: "Server side of the BlueStation MS external interface";
-                    color: #9aa6b3;
-                    font-size: 15px;
-                    horizontal-alignment: center;
-                    wrap: word-wrap;
-                }
-
-                Text {
-                    text: root.status-line;
-                    color: #4da3ff;
-                    font-size: 15px;
-                    horizontal-alignment: center;
-                }
-            }
-        }
+        if root.device-input == DeviceInput.Touch: TouchHome { }
+        if root.device-input == DeviceInput.Keypad: KeypadHome { }
     }
 }

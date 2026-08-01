@@ -10,7 +10,7 @@
 
 mod config;
 
-use config::Config;
+use config::{Config, InputKind};
 
 slint::include_modules!();
 
@@ -31,6 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         width = ui.width,
         height = ui.height,
         scale = ui.scale,
+        input = ?ui.input,
         theme = %ui.theme,
         "loaded config (M1: servers not started yet)"
     );
@@ -43,25 +44,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Size the window so it occupies width x height device pixels on screen,
     // regardless of the host monitor's scaling. With SLINT_SCALE_FACTOR forced to
     // `scale`, physical = logical * scale, so request logical = width/scale.
-    window.window().set_size(slint::LogicalSize::new(
-        ui.width as f32 / ui.scale,
-        ui.height as f32 / ui.scale,
-    ));
+    window
+        .window()
+        .set_size(slint::LogicalSize::new(
+            ui.width as f32 / ui.scale,
+            ui.height as f32 / ui.scale,
+        ));
+    window.set_device_input(match ui.input {
+        InputKind::Touch => DeviceInput::Touch,
+        InputKind::Keypad => DeviceInput::Keypad,
+    });
     tracing::info!(
         width = ui.width,
         height = ui.height,
         scale = ui.scale,
-        "applied window size from config"
+        input = ?ui.input,
+        "applied window size and input layout from config"
     );
     window.set_status_line(
         format!(
-            "M1 spike - {} {}x{} @{}x  control :{}  telemetry :{}",
+            "{} {}x{} @{}x  {:?}",
             ui.model.as_deref().unwrap_or("custom"),
             ui.width,
             ui.height,
             ui.scale,
-            cfg.command.port,
-            cfg.telemetry.port
+            ui.input,
         )
         .into(),
     );

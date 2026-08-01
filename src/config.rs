@@ -62,9 +62,22 @@ pub struct AudioConfig {
     pub jitter_ms: u32,
 }
 
-/// A device model: a named window geometry plus a UI scale factor. Lets the
-/// same binary target different panels (a landscape Pi touchscreen, a portrait
-/// handheld, etc.) by selecting a model in config instead of editing code.
+/// How the operator interacts with the device. Drives which layout and input
+/// handling the UI uses: touch-first tap targets vs a keypad/softkey driven,
+/// focus-based interface. Extend this as new device classes appear.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum InputKind {
+    #[serde(alias = "touchscreen")]
+    Touch,
+    #[serde(alias = "keys", alias = "keyboard")]
+    Keypad,
+}
+
+/// A device model: a named window geometry plus a UI scale factor and input
+/// kind. Lets the same binary target different panels (a landscape Pi
+/// touchscreen, a keypad handheld, etc.) by selecting a model in config instead
+/// of editing code.
 #[derive(Debug, Clone, Deserialize)]
 pub struct DeviceProfile {
     pub name: String,
@@ -76,6 +89,9 @@ pub struct DeviceProfile {
     /// is multiplied by this. 1.0 = crisp 1:1 on the panel.
     #[serde(default = "default_scale")]
     pub scale: f32,
+    /// Interaction model for this device (touch or keypad).
+    #[serde(default = "default_input")]
+    pub input: InputKind,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -93,6 +109,9 @@ pub struct UiConfig {
     /// to override the host display scaling (e.g. Windows 150%) via SLINT_SCALE_FACTOR.
     #[serde(default)]
     pub scale: Option<f32>,
+    /// Explicit interaction-model override. Takes precedence over the model.
+    #[serde(default)]
+    pub input: Option<InputKind>,
     #[serde(default = "default_theme")]
     pub theme: String,
 }
@@ -104,6 +123,7 @@ pub struct ResolvedUi {
     pub width: u32,
     pub height: u32,
     pub scale: f32,
+    pub input: InputKind,
     pub theme: String,
     pub model: Option<String>,
 }
@@ -161,11 +181,17 @@ impl Config {
             .scale
             .or(base.as_ref().map(|d| d.scale))
             .unwrap_or_else(default_scale);
+        let input = self
+            .ui
+            .input
+            .or(base.as_ref().map(|d| d.input))
+            .unwrap_or_else(default_input);
 
         ResolvedUi {
             width,
             height,
             scale,
+            input,
             theme: self.ui.theme.clone(),
             model: self.ui.model.clone(),
         }
@@ -182,18 +208,21 @@ pub fn builtin_devices() -> Vec<DeviceProfile> {
             width: 1280,
             height: 720,
             scale: 1.0,
+            input: InputKind::Touch,
         },
         DeviceProfile {
             name: "pi-720x1280".to_string(),
             width: 720,
             height: 1280,
             scale: 1.0,
+            input: InputKind::Touch,
         },
         DeviceProfile {
             name: "linht".to_string(),
             width: 480,
             height: 800,
             scale: 1.0,
+            input: InputKind::Keypad,
         },
     ]
 }
@@ -249,6 +278,10 @@ fn default_height() -> u32 {
 
 fn default_scale() -> f32 {
     1.0
+}
+
+fn default_input() -> InputKind {
+    InputKind::Touch
 }
 
 fn default_theme() -> String {
@@ -314,6 +347,7 @@ impl Default for UiConfig {
             width: None,
             height: None,
             scale: None,
+            input: None,
             theme: default_theme(),
         }
     }
@@ -351,7 +385,28 @@ mod tests {
         let ui = cfg.resolve_ui();
         assert_eq!((ui.width, ui.height), (1280, 720));
         assert_eq!(ui.scale, 1.0);
+        assert_eq!(ui.input, InputKind::Touch);
         assert_eq!(ui.model.as_deref(), Some("pi-1280x720"));
+    }
+
+    #[test]
+    fn keypad_model_resolves_input_kind() {
+        let cfg: Config = toml::from_str("[ui]\nmodel = \"linht\"\n").unwrap();
+        let ui = cfg.resolve_ui();
+        assert_eq!(ui.input, InputKind::Keypad);
+    }
+
+    #[test]
+    fn explicit_input_overrides_model() {
+        let cfg: Config =
+            toml::from_str("[ui]\nmodel = \"pi-1280x720\"\ninput = \"keypad\"\n").unwrap();
+        assert_eq!(cfg.resolve_ui().input, InputKind::Keypad);
+    }
+
+    #[test]
+    fn input_kind_accepts_aliases() {
+        let cfg: Config = toml::from_str("[ui]\ninput = \"touchscreen\"\n").unwrap();
+        assert_eq!(cfg.resolve_ui().input, InputKind::Touch);
     }
 
     #[test]
