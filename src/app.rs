@@ -39,7 +39,7 @@ pub enum AppEvent {
     UiSelectFolder(i32),
     UiPtt,
     UiDialKey(String),
-    UiDialCall,
+    UiDialCall(bool),
     UiCallPttDown,
     UiCallPttUp,
     UiGroupPttDown,
@@ -523,7 +523,7 @@ pub fn run(
                 let weak = weak.clone();
                 let _ = weak.upgrade_in_event_loop(move |w| w.set_dial_number(n.into()));
             }
-            AppEvent::UiDialCall => {
+            AppEvent::UiDialCall(duplex) => {
                 if !app.require_online(&weak) {
                     continue;
                 }
@@ -541,12 +541,14 @@ pub fn run(
                     );
                     continue;
                 }
-                tracing::info!(number = %app.dial_number, "UI: dial call");
+                tracing::info!(number = %app.dial_number, duplex, "UI: dial call");
                 let ssi = app.dial_number.parse::<u32>().unwrap_or(0);
-                // Individual simplex call from the dialer.
+                // Individual call from the dialer: duplex (full-duplex, mic streams
+                // the whole call) or simplex (PTT-keyed).
+                app.mic_muted = false;
                 let h = app.next_handle();
-                app.send(protocol::tncc_setup(h, ssi, false, false));
-                app.dialing = Some(Dialing { peer_ssi: ssi, group: false, simplex: true });
+                app.send(protocol::tncc_setup(h, ssi, false, duplex));
+                app.dialing = Some(Dialing { peer_ssi: ssi, group: false, simplex: !duplex });
                 push_calls(&app, &weak);
             }
             AppEvent::UiCallPttDown => {

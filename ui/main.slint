@@ -1848,12 +1848,13 @@ component DialKey inherits Rectangle {
 component DialerScreen inherits Rectangle {
     in property <string> number;
     callback key(string);
-    callback call;
+    callback call-simplex;
     background: transparent;
     VerticalLayout {
         padding: 18px;
-        spacing: 14px;
+        spacing: 12px;
 
+        // Number readout at the top.
         VerticalLayout {
             alignment: center;
             spacing: 4px;
@@ -1866,7 +1867,7 @@ component DialerScreen inherits Rectangle {
                 horizontal-alignment: center;
             }
             Text {
-                text: "SSI / GROUP";
+                text: "PRIVATE NUMBER (ISSI)";
                 color: Palette.muted;
                 font-size: 11px;
                 letter-spacing: 3px;
@@ -1874,8 +1875,7 @@ component DialerScreen inherits Rectangle {
             }
         }
 
-        Rectangle { vertical-stretch: 1; }
-
+        // Keypad, moved up directly under the readout.
         for row in [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["*", "0", "#"]]: HorizontalLayout {
             spacing: 10px;
             for d in row: DialKey {
@@ -1887,54 +1887,37 @@ component DialerScreen inherits Rectangle {
             }
         }
 
-        HorizontalLayout {
-            spacing: 10px;
-            Rectangle {
-                height: 64px;
-                horizontal-stretch: 1;
-                border-radius: 16px;
-                border-width: 1px;
-                border-color: Palette.line2;
-                background: bstouch.pressed ? #1b2836 : Palette.surface;
-                bstouch := TouchArea {
-                    clicked => {
-                        root.key("back");
-                    }
-                }
-                Icon {
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    d: Icons.backspace;
-                    tint: Palette.muted;
-                    size: 24px;
+        // Backspace (full width).
+        Rectangle {
+            height: 60px;
+            border-radius: 16px;
+            border-width: 1px;
+            border-color: Palette.line2;
+            background: bstouch.pressed ? #1b2836 : Palette.surface;
+            bstouch := TouchArea {
+                clicked => {
+                    root.key("back");
                 }
             }
-            Rectangle {
-                height: 64px;
-                horizontal-stretch: 2;
-                border-radius: 16px;
-                border-width: 1px;
-                border-color: #2bb76880;
-                background: root.number == "" ? Palette.surface : (ctouch.pressed ? #17402a : @linear-gradient(180deg, #2bb768 0%, #1f9a55 100%));
-                opacity: root.number == "" ? 0.5 : 1.0;
-                ctouch := TouchArea {
-                    enabled: root.number != "";
-                    clicked => {
-                        root.call();
-                    }
-                }
-                HorizontalLayout {
-                    alignment: center;
-                    spacing: 10px;
-                    VerticalLayout { alignment: center; Icon { d: Icons.phone; tint: root.number == "" ? Palette.muted : #ffffff; size: 22px; } }
-                    Text {
-                        text: "Call";
-                        color: root.number == "" ? Palette.muted : #ffffff;
-                        font-size: 18px;
-                        font-weight: 700;
-                        vertical-alignment: center;
-                    }
-                }
+            Icon {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                d: Icons.backspace;
+                tint: Palette.muted;
+                size: 24px;
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // Docked PTT: press to place a SIMPLEX (PTT) private call. A DUPLEX call
+        // is placed from the "Call" softkey in the bottom bar.
+        Ptt {
+            text: "Push to talk";
+            enabled: root.number != "";
+            state: 0;
+            press-down => {
+                root.call-simplex();
             }
         }
     }
@@ -2086,7 +2069,7 @@ export component MainWindow inherits Window {
     callback select-folder(int);
     callback ptt;
     callback dial-key(string);
-    callback dial-call;
+    callback dial-call(bool);
     callback open-logs;
     callback alert-dismiss;
     callback group-select(int, int);
@@ -2354,8 +2337,8 @@ export component MainWindow inherits Window {
             key(k) => {
                 root.dial-key(k);
             }
-            call => {
-                root.dial-call();
+            call-simplex => {
+                root.dial-call(false);
             }
         }
 
@@ -2427,7 +2410,19 @@ export component MainWindow inherits Window {
                         root.screen = root.back-target();
                     }
                 }
-                if root.screen != Screen.Home && root.screen != Screen.InCall: Rectangle { horizontal-stretch: 2; }
+                // Dialer: Back (left) + Call (right) to place a DUPLEX call; the
+                // keypad PTT places a simplex call.
+                if root.screen == Screen.Dialer: Rectangle { horizontal-stretch: 1; }
+                if root.screen == Screen.Dialer: Softkey {
+                    text: "Call";
+                    icon: Icons.phone;
+                    horizontal-stretch: 1;
+                    enabled: root.dial-number != "";
+                    clicked => {
+                        root.dial-call(true);
+                    }
+                }
+                if root.screen != Screen.Home && root.screen != Screen.InCall && root.screen != Screen.Dialer: Rectangle { horizontal-stretch: 2; }
 
                 // In-call: Mute (left) + Hang up (right, danger).
                 if root.screen == Screen.InCall: Softkey {
