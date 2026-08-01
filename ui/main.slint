@@ -1,19 +1,23 @@
-// TETRA TN UI - Slint UI (M3).
+// TETRA TN UI - Slint UI (M4, Pi touch).
 //
-// Pi touch layout modeled on the browser tetra-tn-web-ui (Classic-style radio):
-// a status bar (signal bars, network, SCAN, per-channel link dots, registration
-// pill, clock) and an idle/home screen (hero talkgroup, status card, register
-// action). A parked keypad layout is kept for non-touch device models. All live
-// values are `in` properties set from Rust (app.rs) off MsRuntimeState.
+// The touch layout is modeled closely on the browser tetra-tn-web-ui
+// (Classic-style radio): a device frame of status bar + header + stage +
+// softkey grid, a home screen built around the talkgroup cycler and a docked
+// PTT, and a Radio Info screen. Colors and metrics are lifted from the web UI's
+// CSS. All live values are `in` properties set from Rust (app.rs) off
+// MsRuntimeState. A parked keypad layout is kept for non-touch models.
 
 export enum DeviceInput { Touch, Keypad }
+enum Screen { Home, Info }
 
-// Palette lifted from the web UI's CSS custom properties.
+// Palette lifted from the web UI's :root custom properties.
 global Palette {
     out property <color> bg: #06080b;
-    out property <color> glass: #0f1620;
+    out property <color> glass1: #0f1620;
+    out property <color> glass2: #0a0f16;
     out property <color> surface: #131c26;
     out property <color> line: #ffffff12;
+    out property <color> line2: #ffffff21;
     out property <color> txt: #eaf0f5;
     out property <color> muted: #8b98a5;
     out property <color> faint: #58656f;
@@ -23,12 +27,11 @@ global Palette {
     out property <color> amber: #e7a72b;
 }
 
-// 5 signal bars, heights 4/7/10/12/15px, bottom-aligned (web UI spec).
+// 5 signal bars, heights 4/7/10/12/15px, bottom-aligned (web UI .sig).
 component SignalBars inherits Rectangle {
     in property <int> bars;
     width: 27px;
-    height: 16px;
-
+    height: 15px;
     HorizontalLayout {
         spacing: 2px;
         alignment: start;
@@ -44,48 +47,51 @@ component SignalBars inherits Rectangle {
     }
 }
 
-// Small labeled connection dot (control / telemetry link).
-component LinkDot inherits HorizontalLayout {
-    in property <bool> on;
+// Small rounded channel-link badge with a letter (web UI .lnk).
+component LinkBadge inherits Rectangle {
     in property <string> label;
-    spacing: 5px;
-
-    Rectangle {
-        width: 9px;
-        height: 9px;
-        border-radius: 4.5px;
-        background: root.on ? Palette.green : Palette.red;
-    }
-
+    in property <bool> on;
+    width: 19px;
+    height: 18px;
+    border-radius: 6px;
+    background: root.on ? #37c06a2e : #f0555a24;
     Text {
         text: root.label;
-        color: Palette.muted;
-        font-size: 12px;
+        color: root.on ? #79dfa0 : #ff9a9d;
+        font-size: 10px;
         font-weight: 700;
+        horizontal-alignment: center;
         vertical-alignment: center;
     }
 }
 
-// Status pill: colored text + colored border on the surface.
-component Pill inherits Rectangle {
-    in property <string> text;
-    in property <color> tint;
-    height: 24px;
-    border-radius: 12px;
-    background: Palette.surface;
-    border-width: 1px;
-    border-color: root.tint;
-
-    HorizontalLayout {
-        padding-left: 10px;
-        padding-right: 10px;
-        Text {
-            text: root.text;
-            color: root.tint;
-            font-size: 12px;
-            font-weight: 700;
-            vertical-alignment: center;
+component Battery inherits Rectangle {
+    width: 27px;
+    height: 13px;
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: 24px;
+        height: 13px;
+        border-width: 1.5px;
+        border-color: #7f8f9b;
+        border-radius: 3px;
+        Rectangle {
+            x: 2px;
+            y: 2px;
+            width: 14px;
+            height: 9px;
+            background: Palette.green;
+            border-radius: 1px;
         }
+    }
+    Rectangle {
+        x: 24px;
+        y: 3.5px;
+        width: 2.5px;
+        height: 6px;
+        background: #7f8f9b;
+        border-radius: 1px;
     }
 }
 
@@ -95,58 +101,249 @@ component StatusBar inherits Rectangle {
     in property <bool> scan;
     in property <bool> control-on;
     in property <bool> telemetry-on;
-    in property <string> reg-text;
-    in property <color> reg-color;
     in property <string> clock;
 
     height: 46px;
-    background: Palette.glass;
+    background: @linear-gradient(180deg, #0e1822 0%, #0b131b 100%);
 
     HorizontalLayout {
         padding-left: 14px;
         padding-right: 14px;
-        spacing: 10px;
+        spacing: 9px;
         alignment: start;
+
+        VerticalLayout { alignment: center; SignalBars { bars: root.bars; } }
 
         VerticalLayout {
             alignment: center;
-            SignalBars { bars: root.bars; }
+            Text {
+                text: root.network;
+                color: Palette.muted;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
         }
 
-        Text {
-            text: root.network;
-            color: Palette.muted;
-            font-size: 12px;
-            font-weight: 600;
-            vertical-alignment: center;
-        }
-
-        if root.scan: Text {
-            text: "SCAN";
-            color: Palette.accent;
-            font-size: 12px;
-            font-weight: 800;
-            letter-spacing: 1px;
-            vertical-alignment: center;
+        if root.scan: VerticalLayout {
+            alignment: center;
+            Text {
+                text: "SCAN";
+                color: Palette.accent;
+                font-size: 12px;
+                font-weight: 800;
+                letter-spacing: 1px;
+                vertical-alignment: center;
+            }
         }
 
         Rectangle { horizontal-stretch: 1; }
 
-        VerticalLayout { alignment: center; LinkDot { label: "C"; on: root.control-on; } }
-        VerticalLayout { alignment: center; LinkDot { label: "T"; on: root.telemetry-on; } }
-
+        VerticalLayout { alignment: center; LinkBadge { label: "C"; on: root.control-on; } }
+        VerticalLayout { alignment: center; LinkBadge { label: "T"; on: root.telemetry-on; } }
         VerticalLayout {
             alignment: center;
-            Pill { text: root.reg-text; tint: root.reg-color; }
+            Text {
+                text: root.clock;
+                color: #cdd9e2;
+                font-size: 13px;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
         }
+        VerticalLayout { alignment: center; Battery { } }
+    }
+}
 
+component Header inherits Rectangle {
+    in property <string> title;
+    in property <bool> muted;
+    height: 46px;
+    background: @linear-gradient(180deg, #0e1822 0%, #0b131b 100%);
+    Text {
+        text: root.title;
+        color: root.muted ? Palette.muted : Palette.txt;
+        font-size: 16px;
+        font-weight: root.muted ? 500 : 600;
+        letter-spacing: root.muted ? 1px : 0.3px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// Chevron used by the cycler arrows.
+component Chevron inherits Path {
+    in property <bool> right;
+    width: 30px;
+    height: 30px;
+    viewbox-width: 30;
+    viewbox-height: 30;
+    stroke: #cfe0ec;
+    stroke-width: 3px;
+    MoveTo {
+        x: root.right ? 11 : 19;
+        y: 7;
+    }
+    LineTo {
+        x: root.right ? 21 : 9;
+        y: 15;
+    }
+    LineTo {
+        x: root.right ? 11 : 19;
+        y: 23;
+    }
+}
+
+component CyclerArrow inherits Rectangle {
+    in property <bool> right;
+    in property <bool> enabled: true;
+    callback clicked;
+    width: 58px;
+    height: 96px;
+    border-radius: 16px;
+    border-width: 1px;
+    border-color: Palette.line2;
+    background: touch.pressed ? #1b2836 : @linear-gradient(160deg, #17222f 0%, #0f1822 100%);
+    opacity: root.enabled ? 1.0 : 0.3;
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => {
+            root.clicked();
+        }
+    }
+    Chevron {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        right: root.right;
+    }
+}
+
+component FolderButton inherits Rectangle {
+    in property <string> name;
+    height: 34px;
+    border-radius: 999px;
+    border-width: 1px;
+    border-color: Palette.line;
+    background: Palette.surface;
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 12px;
+        spacing: 8px;
+        alignment: center;
+        Rectangle {
+            width: 8px;
+            height: 8px;
+            border-radius: 4px;
+            background: Palette.accent;
+        }
         Text {
-            text: root.clock;
-            color: Palette.txt;
+            text: root.name;
+            color: #cfe0ec;
             font-size: 13px;
-            font-weight: 700;
+            font-weight: 600;
             vertical-alignment: center;
         }
+        Text {
+            text: "v";
+            color: Palette.faint;
+            font-size: 12px;
+            vertical-alignment: center;
+        }
+    }
+}
+
+component Badge inherits Rectangle {
+    in property <string> text;
+    in property <color> fg;
+    in property <color> bg;
+    height: 20px;
+    border-radius: 999px;
+    background: root.bg;
+    HorizontalLayout {
+        padding-left: 11px;
+        padding-right: 11px;
+        Text {
+            text: root.text;
+            color: root.fg;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 1px;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// Docked push-to-talk button (voice lands in M5/M6; here it reflects state).
+component Ptt inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled;
+    callback pressed;
+    height: 92px;
+    border-radius: 18px;
+    border-width: 1px;
+    border-color: root.enabled ? Palette.line2 : #ffffff1f;
+    background: root.enabled
+        ? (touch.pressed ? @linear-gradient(180deg, #24303d 0%, #1a2430 100%)
+                         : @linear-gradient(180deg, #1a2430 0%, #131b24 100%))
+        : @linear-gradient(180deg, #1b1d22 0%, #141519 100%);
+    opacity: root.enabled ? 1.0 : 0.7;
+    touch := TouchArea {
+        enabled: root.enabled;
+        pointer-event(ev) => {
+            if (ev.kind == PointerEventKind.down) {
+                root.pressed();
+            }
+        }
+    }
+    VerticalLayout {
+        alignment: center;
+        spacing: 8px;
+        Rectangle {
+            height: 30px;
+            Rectangle {
+                width: 16px;
+                height: 26px;
+                x: (parent.width - self.width) / 2;
+                border-radius: 8px;
+                background: root.enabled ? Palette.txt : Palette.muted;
+            }
+        }
+        Text {
+            text: root.text;
+            color: root.enabled ? Palette.txt : Palette.muted;
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: 0.4px;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+component Softkey inherits Rectangle {
+    in property <string> text;
+    in property <bool> danger;
+    in property <bool> enabled: true;
+    callback clicked;
+    height: 44px;
+    border-radius: 11px;
+    border-width: 1px;
+    border-color: root.danger ? #b5343a : Palette.line;
+    background: root.danger
+        ? @linear-gradient(180deg, #d23b41 0%, #a82a2f 100%)
+        : (touch.pressed ? #16202b : Palette.surface);
+    opacity: root.enabled ? 1.0 : 0.4;
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => {
+            root.clicked();
+        }
+    }
+    Text {
+        text: root.text;
+        color: root.danger ? #ffffff : Palette.txt;
+        font-size: 13px;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
     }
 }
 
@@ -154,8 +351,7 @@ component InfoRow inherits HorizontalLayout {
     in property <string> label;
     in property <string> value;
     in property <color> value-color: Palette.txt;
-    height: 32px;
-
+    height: 34px;
     Text {
         text: root.label;
         color: Palette.muted;
@@ -173,116 +369,150 @@ component InfoRow inherits HorizontalLayout {
     }
 }
 
-component BigButton inherits Rectangle {
-    in property <string> text;
-    in property <color> tint: Palette.accent;
-    callback clicked;
-    height: 84px;
-    border-radius: 16px;
-    background: touch.pressed ? Palette.surface.brighter(0.25) : Palette.surface;
-    border-width: 1px;
-    border-color: root.tint;
-
-    touch := TouchArea {
-        clicked => {
-            root.clicked();
-        }
-    }
-
-    Text {
-        text: root.text;
-        color: root.tint;
-        font-size: 20px;
-        font-weight: 700;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-    }
-}
-
-// Touch-first idle/home screen.
-component TouchHome inherits Rectangle {
+// Home screen: talkgroup cycler hero + docked PTT.
+component HomeScreen inherits Rectangle {
+    in property <string> folder-name;
     in property <string> talkgroup-name;
     in property <string> talkgroup-id;
-    in property <bool> scan-active;
-    in property <string> reg-state;
-    in property <string> service-status;
-    in property <bool> in-service;
-    in property <bool> registered;
-    in property <string> issi;
-    in property <string> network;
-    in property <string> serving-la;
+    in property <string> badge;
+    in property <color> badge-fg;
+    in property <color> badge-bg;
+    in property <bool> can-cycle;
     in property <int> attached-count;
-    in property <string> rssi;
-    in property <bool> restart-required;
-    callback register;
-    callback deregister;
+    in property <bool> scan-active;
+    in property <bool> ptt-enabled;
+    in property <string> ptt-label;
+    callback cycle-prev;
+    callback cycle-next;
+    callback ptt;
 
     background: transparent;
 
     VerticalLayout {
-        padding: 20px;
-        spacing: 16px;
-        alignment: start;
+        padding: 14px;
+        spacing: 14px;
 
-        // Hero talkgroup.
-        VerticalLayout {
-            spacing: 4px;
-            Text {
-                text: "TALKGROUP";
-                color: Palette.muted;
-                font-size: 11px;
-                font-weight: 700;
-                letter-spacing: 2px;
-            }
-            Text {
-                text: root.talkgroup-name;
-                color: Palette.txt;
-                font-size: 46px;
-                font-weight: 800;
-                overflow: elide;
-            }
-            HorizontalLayout {
-                spacing: 10px;
-                Text {
-                    text: "GSSI " + root.talkgroup-id;
-                    color: Palette.muted;
-                    font-size: 13px;
-                    vertical-alignment: center;
+        // Cycler hero, vertically centered in the available space.
+        Rectangle {
+            vertical-stretch: 1;
+            VerticalLayout {
+                alignment: center;
+                spacing: 14px;
+
+                HorizontalLayout {
+                    alignment: center;
+                    FolderButton { name: root.folder-name; }
                 }
-                if root.scan-active: Text {
-                    text: "SCAN " + root.attached-count + " groups";
-                    color: Palette.accent;
-                    font-size: 13px;
-                    font-weight: 700;
-                    vertical-alignment: center;
+
+                HorizontalLayout {
+                    spacing: 10px;
+                    CyclerArrow {
+                        right: false;
+                        enabled: root.can-cycle;
+                        clicked => {
+                            root.cycle-prev();
+                        }
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        spacing: 3px;
+                        Text {
+                            text: root.talkgroup-name;
+                            color: #eef4f8;
+                            font-size: 40px;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: "GSSI " + root.talkgroup-id;
+                            color: Palette.muted;
+                            font-size: 13px;
+                            horizontal-alignment: center;
+                        }
+                        HorizontalLayout {
+                            alignment: center;
+                            Badge { text: root.badge; fg: root.badge-fg; bg: root.badge-bg; }
+                        }
+                    }
+                    CyclerArrow {
+                        right: true;
+                        enabled: root.can-cycle;
+                        clicked => {
+                            root.cycle-next();
+                        }
+                    }
+                }
+
+                if root.scan-active: HorizontalLayout {
+                    alignment: center;
+                    Text {
+                        text: "Scanning " + root.attached-count + " groups";
+                        color: Palette.accent;
+                        font-size: 12px;
+                        font-weight: 700;
+                        letter-spacing: 1px;
+                    }
                 }
             }
         }
 
-        // Status card.
+        // Fixed PTT dock.
+        Ptt {
+            text: root.ptt-label;
+            enabled: root.ptt-enabled;
+            pressed => {
+                root.ptt();
+            }
+        }
+    }
+}
+
+component InfoScreen inherits Rectangle {
+    in property <string> reg-state;
+    in property <bool> registered;
+    in property <string> service-status;
+    in property <bool> in-service;
+    in property <string> issi;
+    in property <string> network;
+    in property <string> serving-la;
+    in property <string> colour-code;
+    in property <string> rssi;
+    in property <int> attached-count;
+    in property <bool> restart-required;
+
+    background: transparent;
+
+    VerticalLayout {
+        padding: 14px;
+        spacing: 10px;
+        alignment: start;
+
         Rectangle {
             background: Palette.surface;
             border-radius: 14px;
             border-width: 1px;
             border-color: Palette.line;
-
             VerticalLayout {
                 padding: 16px;
                 spacing: 2px;
-                InfoRow {
-                    label: "Service";
-                    value: root.service-status;
-                    value-color: root.in-service ? Palette.green : Palette.red;
-                }
                 InfoRow {
                     label: "Registration";
                     value: root.reg-state;
                     value-color: root.registered ? Palette.green : Palette.muted;
                 }
-                InfoRow { label: "Network (MCC/MNC)"; value: root.network; }
+                InfoRow {
+                    label: "Service";
+                    value: root.service-status;
+                    value-color: root.in-service ? Palette.green : Palette.red;
+                }
                 InfoRow { label: "Own ISSI"; value: root.issi; }
+                InfoRow { label: "Network (MCC/MNC)"; value: root.network; }
                 InfoRow { label: "Serving LA"; value: root.serving-la; }
+                InfoRow { label: "Colour code"; value: root.colour-code; }
                 InfoRow { label: "Signal"; value: root.rssi; }
+                InfoRow { label: "Attached groups"; value: root.attached-count; }
             }
         }
 
@@ -292,20 +522,6 @@ component TouchHome inherits Rectangle {
             font-size: 13px;
             wrap: word-wrap;
         }
-
-        Rectangle { vertical-stretch: 1; }
-
-        BigButton {
-            text: root.registered ? "Deregister" : "Register";
-            tint: root.registered ? Palette.red : Palette.green;
-            clicked => {
-                if (root.registered) {
-                    root.deregister();
-                } else {
-                    root.register();
-                }
-            }
-        }
     }
 }
 
@@ -313,11 +529,9 @@ component TouchHome inherits Rectangle {
 component KeypadHome inherits FocusScope {
     property <[string]> items: ["Talkgroups", "Logs", "Radio info", "Settings"];
     property <int> selected: 0;
-
     init => {
         self.focus();
     }
-
     key-pressed(event) => {
         if (event.text == Key.UpArrow) {
             root.selected = Math.max(0, root.selected - 1);
@@ -329,18 +543,15 @@ component KeypadHome inherits FocusScope {
         }
         return reject;
     }
-
     VerticalLayout {
         padding: 16px;
         spacing: 12px;
         alignment: start;
-
         Text {
             text: "Keypad layout - Up/Down to move";
             color: Palette.muted;
             font-size: 14px;
         }
-
         for item[idx] in root.items: Rectangle {
             height: 52px;
             border-radius: 8px;
@@ -357,20 +568,7 @@ component KeypadHome inherits FocusScope {
                 }
             }
         }
-
         Rectangle { vertical-stretch: 1; }
-
-        Rectangle {
-            height: 52px;
-            border-radius: 8px;
-            background: Palette.surface;
-            HorizontalLayout {
-                alignment: space-around;
-                Text { text: "Menu"; color: Palette.accent; font-size: 15px; vertical-alignment: center; }
-                Text { text: "Select"; color: Palette.accent; font-size: 15px; vertical-alignment: center; }
-                Text { text: "Back"; color: Palette.accent; font-size: 15px; vertical-alignment: center; }
-            }
-        }
     }
 }
 
@@ -378,9 +576,10 @@ export component MainWindow inherits Window {
     title: "TETRA TN UI";
     preferred-width: 720px;
     preferred-height: 1280px;
-    background: Palette.bg;
+    background: @linear-gradient(180deg, #0f1620 0%, #0a0f16 100%);
 
     in property <DeviceInput> device-input: DeviceInput.Touch;
+    property <Screen> screen: Screen.Home;
 
     // Live state (set from Rust off MsRuntimeState + channel status).
     in property <bool> control-connected;
@@ -394,54 +593,129 @@ export component MainWindow inherits Window {
     in property <string> issi: "--";
     in property <string> network: "0 / 0";
     in property <string> serving-la: "0";
+    in property <string> colour-code: "0";
     in property <int> attached-count;
     in property <bool> scan-active;
     in property <string> talkgroup-name: "No group";
     in property <string> talkgroup-id: "--";
+    in property <string> badge: "SEL";
+    in property <bool> can-cycle;
+    in property <bool> ptt-enabled;
+    in property <string> ptt-label: "Register to talk";
+    in property <string> folder-name: "Talkgroups";
     in property <bool> restart-required;
     in property <string> clock: "--:--:--";
+    in property <string> date: "";
 
     callback register;
     callback deregister;
+    callback cycle-prev;
+    callback cycle-next;
+    callback ptt;
 
     VerticalLayout {
-        alignment: start;
-
         StatusBar {
             bars: root.signal-bars;
             network: root.network;
             scan: root.scan-active;
             control-on: root.control-connected;
             telemetry-on: root.telemetry-connected;
-            reg-text: root.reg-state;
-            reg-color: root.registered
-                ? Palette.green
-                : (root.reg-state == "Registering" ? Palette.amber : Palette.red);
             clock: root.clock;
         }
 
-        if root.device-input == DeviceInput.Touch: TouchHome {
+        Header {
+            title: root.screen == Screen.Info ? "Radio Info" : root.date;
+            muted: root.screen != Screen.Info;
+        }
+
+        if root.device-input == DeviceInput.Touch && root.screen == Screen.Home: HomeScreen {
+            vertical-stretch: 1;
+            folder-name: root.folder-name;
             talkgroup-name: root.talkgroup-name;
             talkgroup-id: root.talkgroup-id;
-            scan-active: root.scan-active;
-            reg-state: root.reg-state;
-            service-status: root.service-status;
-            in-service: root.in-service;
-            registered: root.registered;
-            issi: root.issi;
-            network: root.network;
-            serving-la: root.serving-la;
+            badge: root.badge;
+            badge-fg: root.registered ? #79dfa0 : Palette.muted;
+            badge-bg: root.registered ? #37c06a2e : #ffffff10;
+            can-cycle: root.can-cycle;
             attached-count: root.attached-count;
-            rssi: root.rssi;
-            restart-required: root.restart-required;
-            register => {
-                root.register();
+            scan-active: root.scan-active;
+            ptt-enabled: root.ptt-enabled;
+            ptt-label: root.ptt-label;
+            cycle-prev => {
+                root.cycle-prev();
             }
-            deregister => {
-                root.deregister();
+            cycle-next => {
+                root.cycle-next();
+            }
+            ptt => {
+                root.ptt();
             }
         }
 
-        if root.device-input == DeviceInput.Keypad: KeypadHome { }
+        if root.device-input == DeviceInput.Touch && root.screen == Screen.Info: InfoScreen {
+            vertical-stretch: 1;
+            reg-state: root.reg-state;
+            registered: root.registered;
+            service-status: root.service-status;
+            in-service: root.in-service;
+            issi: root.issi;
+            network: root.network;
+            serving-la: root.serving-la;
+            colour-code: root.colour-code;
+            rssi: root.rssi;
+            attached-count: root.attached-count;
+            restart-required: root.restart-required;
+        }
+
+        if root.device-input == DeviceInput.Keypad: KeypadHome {
+            vertical-stretch: 1;
+        }
+
+        // Softkey bar (3-column grid), context-dependent.
+        Rectangle {
+            height: 62px;
+            background: @linear-gradient(180deg, #0c141d 0%, #0a1017 100%);
+            HorizontalLayout {
+                padding: 9px;
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 8px;
+
+                if root.screen == Screen.Home: Softkey {
+                    text: "Radio Info";
+                    horizontal-stretch: 1;
+                    clicked => {
+                        root.screen = Screen.Info;
+                    }
+                }
+                if root.screen == Screen.Home: Softkey {
+                    text: root.registered ? "Deregister" : "Register";
+                    danger: root.registered;
+                    horizontal-stretch: 1;
+                    clicked => {
+                        if (root.registered) {
+                            root.deregister();
+                        } else {
+                            root.register();
+                        }
+                    }
+                }
+                if root.screen == Screen.Home: Softkey {
+                    text: "Menu";
+                    enabled: false;
+                    horizontal-stretch: 1;
+                    clicked => { }
+                }
+
+                if root.screen == Screen.Info: Softkey {
+                    text: "Back";
+                    horizontal-stretch: 1;
+                    clicked => {
+                        root.screen = Screen.Home;
+                    }
+                }
+                if root.screen == Screen.Info: Rectangle { horizontal-stretch: 2; }
+            }
+        }
     }
 }

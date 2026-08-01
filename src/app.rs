@@ -22,11 +22,14 @@ pub enum AppEvent {
     TelemetryMessage(Value),
     /// Periodic GetState poll tick.
     PollTick,
-    /// Wall clock update (pre-formatted HH:MM:SS).
-    ClockTick(String),
+    /// Wall clock update (pre-formatted).
+    ClockTick { time: String, date: String },
     /// UI actions.
     UiRegister,
     UiDeregister,
+    UiCyclePrev,
+    UiCycleNext,
+    UiPtt,
 }
 
 struct AppState {
@@ -38,6 +41,7 @@ struct AppState {
     reg_type: String,
     state: MsRuntimeState,
     logged_state: bool,
+    selected_tg: usize,
 }
 
 impl AppState {
@@ -67,6 +71,7 @@ pub fn run(rx: Receiver<AppEvent>, weak: slint::Weak<MainWindow>, reg_type: Stri
         reg_type,
         state: MsRuntimeState::default(),
         logged_state: false,
+        selected_tg: 0,
     };
 
     for event in rx.iter() {
@@ -117,9 +122,12 @@ pub fn run(rx: Receiver<AppEvent>, weak: slint::Weak<MainWindow>, reg_type: Stri
                     }
                 }
             }
-            AppEvent::ClockTick(text) => {
+            AppEvent::ClockTick { time, date } => {
                 let weak = weak.clone();
-                let _ = weak.upgrade_in_event_loop(move |w| w.set_clock(text.into()));
+                let _ = weak.upgrade_in_event_loop(move |w| {
+                    w.set_clock(time.into());
+                    w.set_date(date.into());
+                });
             }
             AppEvent::UiRegister => {
                 let h = app.next_handle();
@@ -139,6 +147,25 @@ pub fn run(rx: Receiver<AppEvent>, weak: slint::Weak<MainWindow>, reg_type: Stri
                 let issi = app.state.own_issi;
                 tracing::info!(issi, "UI: sending TnmmDeregistration");
                 app.send(protocol::tnmm_deregistration(h, Some(issi), None, None));
+            }
+            AppEvent::UiCyclePrev => {
+                let len = app.state.attached_groups.len();
+                if len > 1 {
+                    app.selected_tg = (app.selected_tg + len - 1) % len;
+                    push_ui(&app, &weak);
+                }
+            }
+            AppEvent::UiCycleNext => {
+                let len = app.state.attached_groups.len();
+                if len > 1 {
+                    app.selected_tg = (app.selected_tg + 1) % len;
+                    push_ui(&app, &weak);
+                }
+            }
+            AppEvent::UiPtt => {
+                // Voice calls land in M5/M6; for now just note the press.
+                let gssi = current_gssi(&app);
+                tracing::info!(?gssi, "UI: PTT pressed (voice calls arrive in a later milestone)");
             }
         }
     }
@@ -225,6 +252,16 @@ fn handle_telemetry(app: &mut AppState, message: &Value) {
     }
 }
 
+/// The currently selected (TX) group GSSI, if any.
+fn current_gssi(app: &AppState) -> Option<u32> {
+    let groups = &app.state.attached_groups;
+    if groups.is_empty() {
+        None
+    } else {
+        groups.get(app.selected_tg % groups.len()).copied()
+    }
+}
+
 /// Snapshot the state into plain values and push them onto the Slint event loop.
 fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
     let s = &app.state;
@@ -246,12 +283,25 @@ fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
     };
     let network = format!("{} / {}", s.home_mcc, s.home_mnc);
     let serving_la = s.serving_la.to_string();
-    let attached_count = s.attached_groups.len() as i32;
-    let scan_active = s.attached_groups.len() > 1;
-    let (talkgroup_name, talkgroup_id) = match s.attached_groups.first() {
+    let colour_code = s.colour_code.to_string();
+    let count = s.attached_groups.len();
+    let attached_count = count as i32;
+    let scan_active = count > 1;
+    let (talkgroup_name, talkgroup_id) = match current_gssi(app) {
         Some(gssi) => (format!("TG {gssi}"), gssi.to_string()),
         None => ("No group".to_string(), "--".to_string()),
     };
+    let can_cycle = count > 1;
+    let ptt_enabled = registered && count > 0;
+    let ptt_label = if ptt_enabled {
+        "Push to talk"
+    } else if registered {
+        "No talkgroup"
+    } else {
+        "Register to talk"
+    }
+    .to_string();
+    let badge = if registered { "TX" } else { "SEL" }.to_string();
     let restart_required = s.restart_required;
 
     let _ = weak.upgrade_in_event_loop(move |w| {
@@ -266,10 +316,15 @@ fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
         w.set_issi(issi.into());
         w.set_network(network.into());
         w.set_serving_la(serving_la.into());
+        w.set_colour_code(colour_code.into());
         w.set_attached_count(attached_count);
         w.set_scan_active(scan_active);
         w.set_talkgroup_name(talkgroup_name.into());
         w.set_talkgroup_id(talkgroup_id.into());
+        w.set_badge(badge.into());
+        w.set_can_cycle(can_cycle);
+        w.set_ptt_enabled(ptt_enabled);
+        w.set_ptt_label(ptt_label.into());
         w.set_restart_required(restart_required);
     });
 }

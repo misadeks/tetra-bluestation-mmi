@@ -143,19 +143,21 @@ regardless of the Windows scaling setting.
 
 ## Status and milestones
 
-Current: **M2/M3.** The two WebSocket servers are up (control 9102, telemetry
-9101) with a serde protocol layer, a central app state, bootstrap + 2s GetState
-polling, telemetry decode, and reconnect tolerance. The Pi touch UI shows a live
-status bar (signal bars, network, SCAN, per-channel link dots, registration
-pill, clock) and an idle/home screen (hero talkgroup, status card, register
-action) modeled on the browser tetra-tn-web-ui. Tested end to end against
-`fake_stack.py`. See `DECISIONS.md` for details.
+Current: **M4 (Pi touch look).** The touch UI is rebuilt as the web-UI device
+frame - status bar, header, a home talkgroup **cycler** with prev/next arrows and
+a docked PTT, a 3-column softkey bar, and a Radio Info screen - all styled from
+the browser tetra-tn-web-ui CSS and driven by live MsRuntimeState. The two
+WebSocket servers, protocol layer, bootstrap + 2s polling, telemetry decode, and
+reconnect (M2/M3) are underneath. Tested against `fake_stack.py` and the real
+BlueStation MS stack. See `DECISIONS.md`.
 
 - M1 toolchain spike (done).
-- M2 net + JSON (done): the two servers, bootstrap + poll, telemetry decode,
-  reconnect tolerant.
-- M3 state + status bar + home (done for the touch/Pi model).
-- M4+ navigation, actions, audio, calls, editors, Pi hardware I/O, kiosk polish.
+- M2 net + JSON (done).
+- M3 state + status bar + home (done).
+- M4 home look + navigation (done for the touch/Pi model): device frame,
+  talkgroup cycler, PTT dock, softkeys, Radio Info.
+- M4b+ codeplug talkgroup names + folder cycling, groups/logs screens, then
+  audio (M5), calls (M6), editors (M7), Pi hardware I/O (M8), kiosk polish.
 
 ## License
 

@@ -96,12 +96,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
-    // Wall clock for the status bar, once a second.
+    // Wall clock + date for the status bar/header, once a second.
     {
         let tx = events_tx.clone();
         thread::spawn(move || loop {
-            let now = chrono::Local::now().format("%H:%M:%S").to_string();
-            if tx.send(app::AppEvent::ClockTick(now)).is_err() {
+            let now = chrono::Local::now();
+            let tick = app::AppEvent::ClockTick {
+                time: now.format("%H:%M:%S").to_string(),
+                date: now.format("%a %d %b").to_string(),
+            };
+            if tx.send(tick).is_err() {
                 break;
             }
             thread::sleep(Duration::from_secs(1));
@@ -119,6 +123,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let tx = events_tx.clone();
         window.on_deregister(move || {
             let _ = tx.send(app::AppEvent::UiDeregister);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_cycle_prev(move || {
+            let _ = tx.send(app::AppEvent::UiCyclePrev);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_cycle_next(move || {
+            let _ = tx.send(app::AppEvent::UiCycleNext);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_ptt(move || {
+            let _ = tx.send(app::AppEvent::UiPtt);
         });
     }
 
