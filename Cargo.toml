@@ -1,0 +1,17 @@
+[package]
+name = "tetra-tn-ui"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.95"
+description = "Native Rust + Slint TETRA TN UI, a variant serving the server side of the BlueStation MS external interface"
+license = "MIT"
+
+[dependencies]
+slint = "1.17"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[build-dependencies]
+slint-build = "1.17"

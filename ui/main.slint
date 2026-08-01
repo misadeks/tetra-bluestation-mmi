@@ -1,0 +1,87 @@
+// M1 hello window for the TETRA TN UI.
+// Portrait 720x1280, dark theme, single placeholder card.
+// This is a variant of the TN UI (server side of the BlueStation MS external
+// interface), a native/embedded sibling of the browser tetra-tn-web-ui.
+
+export component MainWindow inherits Window {
+    title: "TETRA TN UI";
+    width: 720px;
+    height: 1280px;
+    background: #0a0d12;
+
+    in property <string> status-line: "M1 toolchain spike";
+
+    VerticalLayout {
+        padding: 24px;
+        spacing: 24px;
+        alignment: start;
+
+        // Top bar placeholder.
+        Rectangle {
+            height: 72px;
+            background: #12161d;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: #232a34;
+
+            HorizontalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                alignment: space-between;
+
+                Text {
+                    text: "TETRA TN UI";
+                    color: #e8edf2;
+                    font-size: 22px;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    text: "BlueStation MS";
+                    color: #7f8b99;
+                    font-size: 16px;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // Placeholder card.
+        Rectangle {
+            height: 220px;
+            background: #12161d;
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: #232a34;
+
+            VerticalLayout {
+                padding: 24px;
+                spacing: 12px;
+                alignment: center;
+
+                Text {
+                    text: "Native Rust + Slint variant";
+                    color: #e8edf2;
+                    font-size: 20px;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                }
+
+                Text {
+                    text: "Server side of the BlueStation MS external interface";
+                    color: #9aa6b3;
+                    font-size: 15px;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+
+                Text {
+                    text: root.status-line;
+                    color: #4da3ff;
+                    font-size: 15px;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,35 @@
+# TETRA TN UI configuration.
+#
+# This app is the SERVER side of the BlueStation MS external interface: the
+# stack (or fake_stack.py) is the WebSocket client and dials OUT to the host and
+# ports below. Networking is wired up in M2; M1 only parses this file.
+
+[command]     # control channel (subprotocol bluestation-control-v1)
+host = "0.0.0.0"
+port = 9102
+use_tls = false
+# ca_cert = "certs/server.pem"
+username = ""   # empty = accept all (demo)
+password = ""
+
+[telemetry]   # telemetry channel (subprotocol bluestation-telemetry-v1)
+host = "0.0.0.0"
+port = 9101
+use_tls = false
+username = ""
+password = ""
+
+[registration]  # operator preference, NOT identity
+registration_type = "RegistrationToIndicatedCell"   # or "PeriodicRegistration"
+
+[audio]
+output_device = "default"
+input_device  = "default"
+sample_rate   = 8000
+frame_ms      = 60
+jitter_ms     = 120
+
+[ui]
+width  = 720
+height = 1280
+theme  = "classic"

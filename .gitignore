@@ -1,0 +1,15 @@
+# Rust build artifacts
+/target
+**/*.rs.bk
+
+# Backup and editor files
+*~
+.idea/
+.vscode/
+
+# Local TLS material (never commit certs/keys)
+/certs/
+
+# OS noise
+Thumbs.db
+.DS_Store
