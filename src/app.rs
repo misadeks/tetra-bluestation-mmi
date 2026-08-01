@@ -39,7 +39,8 @@ pub enum AppEvent {
     UiSelectFolder(i32),
     UiPtt,
     UiDialKey(String),
-    UiDialCall(bool),
+    /// Place a dialer call: (call_type 0=private/1=pstn/2=pabx, duplex).
+    UiDialCall(i32, bool),
     UiCallPttDown,
     UiCallPttUp,
     UiGroupPttDown,
@@ -526,12 +527,23 @@ pub fn run(
                 let weak = weak.clone();
                 let _ = weak.upgrade_in_event_loop(move |w| w.set_dial_number(n.into()));
             }
-            AppEvent::UiDialCall(duplex) => {
+            AppEvent::UiDialCall(call_type, duplex) => {
                 if !app.require_online(&weak) {
                     continue;
                 }
                 if app.state.registration_state != protocol::RegistrationState::Registered {
                     app.notify(&weak, "Not registered", "Register the radio before placing a call.", 0);
+                    continue;
+                }
+                // PSTN/PABX gateway calls are not wired up yet (UI is ready; the
+                // wire encoding needs confirming against the stack).
+                if call_type != 0 {
+                    app.notify(
+                        &weak,
+                        "Not available",
+                        "PSTN and PABX calls are not supported yet.",
+                        0,
+                    );
                     continue;
                 }
                 let valid = app.dial_number.parse::<u32>().map(|n| n >= 1).unwrap_or(false);

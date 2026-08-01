@@ -173,8 +173,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     {
         let tx = events_tx.clone();
-        window.on_dial_call(move |duplex| {
-            let _ = tx.send(app::AppEvent::UiDialCall(duplex));
+        window.on_dial_call(move |call_type, duplex| {
+            let _ = tx.send(app::AppEvent::UiDialCall(call_type, duplex));
         });
     }
     {

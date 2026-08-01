@@ -1848,18 +1848,46 @@ component DialKey inherits Rectangle {
 
 component DialerScreen inherits Rectangle {
     in property <string> number;
+    // 0 = Private (ISSI), 1 = PSTN, 2 = PABX.
+    property <int> call-type: 0;
     callback key(string);
-    callback call-simplex;
-    callback call-duplex;
+    // place-call(call-type, duplex)
+    callback place-call(int, bool);
     background: transparent;
     VerticalLayout {
         padding: 18px;
         spacing: 12px;
 
+        // Call-type selector: Private / PSTN / PABX.
+        HorizontalLayout {
+            spacing: 8px;
+            for seg[i] in ["Private", "PSTN", "PABX"]: Rectangle {
+                height: 44px;
+                horizontal-stretch: 1;
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: root.call-type == i ? Palette.accent : Palette.line2;
+                background: root.call-type == i ? #33a7dd29 : Palette.surface;
+                TouchArea {
+                    clicked => {
+                        root.call-type = i;
+                    }
+                }
+                Text {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    text: seg;
+                    color: root.call-type == i ? #9fd3ef : Palette.muted;
+                    font-size: 15px;
+                    font-weight: 700;
+                }
+            }
+        }
+
         // Number readout. Fixed height so entering digits never shifts the
         // keypad below it.
         Rectangle {
-            height: 78px;
+            height: 74px;
             VerticalLayout {
                 alignment: center;
                 Text {
@@ -1927,7 +1955,8 @@ component DialerScreen inherits Rectangle {
                 ctouch := TouchArea {
                     enabled: root.number != "";
                     clicked => {
-                        root.call-duplex();
+                        // Green Call = duplex.
+                        root.place-call(root.call-type, true);
                     }
                 }
                 Icon {
@@ -1966,13 +1995,14 @@ component DialerScreen inherits Rectangle {
         // Extra distance between the action row and the PTT.
         Rectangle { height: 26px; }
 
-        // Docked PTT: press to place a SIMPLEX (PTT) private call.
+        // Docked PTT: press to place a SIMPLEX (PTT) private call. Only for
+        // Private calls; PSTN/PABX are phone calls (duplex only, use Call).
         Ptt {
-            text: "Push to talk";
-            enabled: root.number != "";
+            text: root.call-type == 0 ? "Push to talk" : "PTT (private only)";
+            enabled: root.number != "" && root.call-type == 0;
             state: 0;
             press-down => {
-                root.call-simplex();
+                root.place-call(root.call-type, false);
             }
         }
     }
@@ -2124,7 +2154,7 @@ export component MainWindow inherits Window {
     callback select-folder(int);
     callback ptt;
     callback dial-key(string);
-    callback dial-call(bool);
+    callback dial-call(int, bool);
     callback open-logs;
     callback alert-dismiss;
     callback group-select(int, int);
@@ -2392,14 +2422,10 @@ export component MainWindow inherits Window {
             key(k) => {
                 root.dial-key(k);
             }
-            call-simplex => {
-                root.dial-call(false);
-            }
-            call-duplex => {
-                root.dial-call(true);
+            place-call(t, d) => {
+                root.dial-call(t, d);
             }
         }
-
         if root.device-input == DeviceInput.Keypad: KeypadHome {
             vertical-stretch: 1;
         }
