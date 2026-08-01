@@ -160,6 +160,110 @@ pub fn camp_on_cell(handle: u32, carrier_hz: u64, register: bool) -> Value {
     management(json!({ "CampOnCell": { "handle": handle, "carrier_hz": carrier_hz, "register": register } }))
 }
 
+// --- Call control (TNCC / CMCE) ---------------------------------------------
+// Top-level ControlCommand variants (NOT wrapped in Management), answered with a
+// transport-only TnccAck; real call progress arrives later on telemetry.
+
+fn basic_service(communication_type: &str) -> Value {
+    json!({
+        "circuit_mode_service": "SpeechService",
+        "communication_type": communication_type,
+        "data_service": null,
+        "data_call_capacity": null,
+        "encryption_flag": "ClearEndToEndTransmission",
+        "speech_service": "TetraEncodedOneTimeslotSpeech",
+    })
+}
+
+/// Originate a call (TNCC-SETUP). `group` = PointToMultipoint to a GSSI, else
+/// PointToPoint individual. Simplex demands the floor (`request_tx`); duplex
+/// does not. Only Ssi addressing is implemented by the MS.
+pub fn tncc_setup(handle: u32, called_party_ssi: u32, group: bool, duplex: bool) -> Value {
+    let communication_type = if group { "PointToMultipoint" } else { "PointToPoint" };
+    json!({ "TnccSetup": { "handle": handle, "request": {
+        "access_priority": null,
+        "area_selection": null,
+        "basic_service_information": basic_service(communication_type),
+        "call_priority": "PriorityNotDefined",
+        "called_party_type_identifier": "Ssi",
+        "called_party_sna": null,
+        "called_party_ssi": called_party_ssi,
+        "called_party_extension": null,
+        "external_subscriber_number_called": null,
+        "clir_control": null,
+        "hook_method_selection": "NoHookSignallingDirectThroughConnect",
+        "request_to_transmit_send_data": if duplex {
+            "RequestThatOtherMsLsMayTransmitSendData"
+        } else {
+            "RequestToTransmitSendData"
+        },
+        "simplex_duplex_selection": if duplex { "DuplexOperation" } else { "SimplexOperation" },
+        "traffic_stealing": null,
+    }}})
+}
+
+/// Answer an incoming call (U-CONNECT / U-ALERT) named by `call_identifier`.
+pub fn tncc_setup_response(handle: u32, call_identifier: u32, duplex: bool, on_hook: bool) -> Value {
+    json!({ "TnccSetupResponse": { "handle": handle, "call_identifier": call_identifier, "response": {
+        "access_priority": null,
+        "basic_service_information": null,
+        "clir_control": null,
+        "hook_method_selection": if on_hook {
+            "HookOnHookOffSignallingOrCallAcceptanceSignalling"
+        } else {
+            "NoHookSignallingDirectThroughConnect"
+        },
+        "simplex_duplex_selection": if duplex { "DuplexOperation" } else { "SimplexOperation" },
+        "traffic_stealing": null,
+    }}})
+}
+
+/// Completion step for hook-signalling calls (U-CONNECT).
+pub fn tncc_complete(handle: u32, call_identifier: u32, duplex: bool) -> Value {
+    json!({ "TnccComplete": { "handle": handle, "call_identifier": call_identifier, "request": {
+        "access_priority": null,
+        "basic_service_information_offered": null,
+        "hook_method": "NoHookSignallingDirectThroughConnect",
+        "simplex_duplex": if duplex { "DuplexOperation" } else { "SimplexOperation" },
+        "traffic_stealing": null,
+    }}})
+}
+
+/// PTT: request the floor (`pressed`) or release it (TransmissionCeased).
+pub fn tncc_tx(handle: u32, call_identifier: u32, pressed: bool) -> Value {
+    json!({ "TnccTx": { "handle": handle, "call_identifier": call_identifier, "request": {
+        "access_priority": null,
+        "encryption_flag": "ClearEndToEndTransmission",
+        "traffic_stealing": null,
+        "transmission_condition": if pressed { "RequestToTransmit" } else { "TransmissionCeased" },
+        "tx_demand_priority": "LowPriority",
+    }}})
+}
+
+/// Hang up a call (DisconnectCall). `rejected` uses the called-party reject cause.
+pub fn tncc_release(handle: u32, call_identifier: u32, rejected: bool) -> Value {
+    json!({ "TnccRelease": { "handle": handle, "call_identifier": call_identifier, "request": {
+        "access_priority": null,
+        "disconnect_cause": if rejected {
+            "CallRejectedByTheCalledParty"
+        } else {
+            "UserRequestedDisconnection"
+        },
+        "disconnect_type": "DisconnectCall",
+        "traffic_stealing": null,
+    }}})
+}
+
+/// Uplink voice (fire-and-forget, no handle). `data` is codec bits, one per byte.
+#[allow(dead_code)] // wired by M5 audio
+pub fn ms_uplink_speech(call_identifier: u32, data: Vec<u8>, frame_bits: u32) -> Value {
+    json!({ "MsUplinkSpeech": {
+        "call_identifier": call_identifier,
+        "frame_bits": frame_bits,
+        "data": data,
+    }})
+}
+
 // --- Inbound parsing helpers -------------------------------------------------
 
 /// Return (variant_name, payload) for an externally-tagged message object.
@@ -313,6 +417,33 @@ mod tests {
         assert_eq!(
             camp_on_cell(7, 396_000_000, true),
             json!({"Management": {"CampOnCell": {"handle": 7, "carrier_hz": 396_000_000u64, "register": true}}})
+        );
+    }
+
+    #[test]
+    fn tncc_call_builders_shape() {
+        assert_eq!(
+            tncc_tx(3, 42, true),
+            json!({"TnccTx": {"handle": 3, "call_identifier": 42, "request": {
+                "access_priority": null,
+                "encryption_flag": "ClearEndToEndTransmission",
+                "traffic_stealing": null,
+                "transmission_condition": "RequestToTransmit",
+                "tx_demand_priority": "LowPriority",
+            }}})
+        );
+        assert_eq!(
+            tncc_release(4, 42, true)["TnccRelease"]["request"]["disconnect_cause"],
+            json!("CallRejectedByTheCalledParty")
+        );
+        let setup = tncc_setup(1, 1234567, true, false);
+        assert_eq!(
+            setup["TnccSetup"]["request"]["basic_service_information"]["communication_type"],
+            json!("PointToMultipoint")
+        );
+        assert_eq!(
+            setup["TnccSetup"]["request"]["called_party_ssi"],
+            json!(1234567)
         );
     }
 

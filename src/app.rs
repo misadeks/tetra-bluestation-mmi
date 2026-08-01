@@ -40,6 +40,14 @@ pub enum AppEvent {
     UiPtt,
     UiDialKey(String),
     UiDialCall,
+    UiCallPttDown,
+    UiCallPttUp,
+    UiGroupPttDown,
+    UiGroupPttUp,
+    UiAnswerCall,
+    UiRejectCall,
+    UiHangup,
+    UiHangupGroup,
     UiOpenLogs,
     UiAlertDismiss,
     AlertExpire(u64),
@@ -99,6 +107,61 @@ struct AppState {
     scan_complete: bool,
     /// Completion summary: (cells found, carriers scanned).
     scan_summary: (i32, i32),
+    /// Live calls keyed by call identifier.
+    calls: HashMap<u32, Call>,
+    /// Outgoing placeholder before the call identifier is known.
+    dialing: Option<Dialing>,
+    /// Persistent group-call/PTT context (floor decoupled from lifecycle).
+    grp_call: Option<GrpCall>,
+    /// The individual call whose PTT is physically held, if any.
+    ptt_held: Option<u32>,
+    /// Calls we hung up ourselves (suppresses the "Call ended" toast).
+    local_end: std::collections::HashSet<u32>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+enum CallState {
+    #[default]
+    Setup,
+    Proceeding,
+    Alerting,
+    Incoming,
+    Connecting,
+    Active,
+}
+
+#[derive(Clone, Default)]
+struct Call {
+    cid: u32,
+    /// "mo" (outgoing) or "mt" (incoming); None until known.
+    direction: Option<&'static str>,
+    state: CallState,
+    peer_ssi: Option<u32>,
+    group: bool,
+    simplex: bool,
+    hook_on: bool,
+    tx_status: Option<String>,
+    holds_floor: bool,
+    talker_ssi: Option<u32>,
+    can_request_tx: bool,
+    rang: bool,
+    answered: bool,
+    queued: bool,
+    active_since: Option<Instant>,
+}
+
+#[derive(Clone)]
+struct Dialing {
+    peer_ssi: u32,
+    group: bool,
+    simplex: bool,
+}
+
+#[derive(Clone)]
+struct GrpCall {
+    gssi: u32,
+    cid: Option<u32>,
+    talking: bool,
 }
 
 #[derive(Clone)]
@@ -237,6 +300,11 @@ pub fn run(
         scanning: false,
         scan_complete: false,
         scan_summary: (0, 0),
+        calls: HashMap::new(),
+        dialing: None,
+        grp_call: None,
+        ptt_held: None,
+        local_end: std::collections::HashSet::new(),
     };
 
     for event in rx.iter() {
@@ -260,8 +328,15 @@ pub fn run(
                 app.control_connected = false;
                 app.pending.clear();
                 app.timeout_notified = false;
+                // Tear down any live calls; the link that carried them is gone.
+                app.calls.clear();
+                app.dialing = None;
+                app.grp_call = None;
+                app.ptt_held = None;
+                app.local_end.clear();
                 tracing::info!("control: stack disconnected");
                 push_ui(&app, &weak);
+                push_calls(&app, &weak);
             }
             AppEvent::ControlMessage(value) => {
                 handle_control(&mut app, &value, &weak);
@@ -302,11 +377,15 @@ pub fn run(
                 }
             }
             AppEvent::ClockTick { time, date } => {
-                let weak = weak.clone();
-                let _ = weak.upgrade_in_event_loop(move |w| {
+                let weak2 = weak.clone();
+                let _ = weak2.upgrade_in_event_loop(move |w| {
                     w.set_clock(time.into());
                     w.set_date(date.into());
                 });
+                // Refresh call durations/floor timers once a second.
+                if !app.calls.is_empty() {
+                    push_calls(&app, &weak);
+                }
             }
             AppEvent::UiRegister => {
                 if !app.require_online(&weak) {
@@ -445,10 +524,139 @@ pub fn run(
                     );
                     continue;
                 }
-                tracing::info!(
-                    number = %app.dial_number,
-                    "UI: dial call (voice calls arrive in a later milestone)"
-                );
+                tracing::info!(number = %app.dial_number, "UI: dial call");
+                let ssi = app.dial_number.parse::<u32>().unwrap_or(0);
+                // Individual simplex call from the dialer.
+                let h = app.next_handle();
+                app.send(protocol::tncc_setup(h, ssi, false, false));
+                app.dialing = Some(Dialing { peer_ssi: ssi, group: false, simplex: true });
+                push_calls(&app, &weak);
+            }
+            AppEvent::UiCallPttDown => {
+                if !app.require_online(&weak) {
+                    continue;
+                }
+                if let Some(cid) = live_individual_call(&app) {
+                    app.ptt_held = Some(cid);
+                    let h = app.next_handle();
+                    app.send(protocol::tncc_tx(h, cid, true));
+                    push_calls(&app, &weak);
+                }
+            }
+            AppEvent::UiCallPttUp => {
+                if let Some(cid) = app.ptt_held.take() {
+                    let h = app.next_handle();
+                    app.send(protocol::tncc_tx(h, cid, false));
+                    push_calls(&app, &weak);
+                }
+            }
+            AppEvent::UiGroupPttDown => {
+                if !app.require_online(&weak) {
+                    continue;
+                }
+                if app.state.registration_state != protocol::RegistrationState::Registered {
+                    app.notify(&weak, "Not registered", "Register the radio before transmitting.", 0);
+                    continue;
+                }
+                let Some(sel) = effective_tx(&app) else {
+                    app.notify(&weak, "No talkgroup", "Attach a talkgroup before transmitting.", 0);
+                    continue;
+                };
+                if !ptt_allowed(&app) {
+                    continue;
+                }
+                let existing = active_group_call(&app);
+                if app.grp_call.is_none() && existing.is_none() {
+                    // Idle -> start the group call; TnccSetup demands the floor.
+                    app.grp_call = Some(GrpCall { gssi: sel, cid: None, talking: true });
+                    app.dialing = Some(Dialing { peer_ssi: sel, group: true, simplex: true });
+                    let h = app.next_handle();
+                    app.send(protocol::tncc_setup(h, sel, true, false));
+                } else {
+                    // A group call exists -> adopt it and demand the floor again.
+                    let cid = app
+                        .grp_call
+                        .as_ref()
+                        .and_then(|g| g.cid)
+                        .or(existing);
+                    app.grp_call = Some(GrpCall { gssi: sel, cid, talking: true });
+                    if let Some(cid) = cid {
+                        let h = app.next_handle();
+                        app.send(protocol::tncc_tx(h, cid, true));
+                    }
+                }
+                push_calls(&app, &weak);
+            }
+            AppEvent::UiGroupPttUp => {
+                if let Some(gc) = app.grp_call.as_mut() {
+                    let was = gc.talking;
+                    gc.talking = false;
+                    let cid = gc.cid.or_else(|| active_group_call(&app));
+                    if was {
+                        if let Some(cid) = cid {
+                            let h = app.next_handle();
+                            app.send(protocol::tncc_tx(h, cid, false));
+                        }
+                    }
+                }
+                push_calls(&app, &weak);
+            }
+            AppEvent::UiAnswerCall => {
+                if !app.require_online(&weak) {
+                    continue;
+                }
+                if let Some(cid) = incoming_call(&app) {
+                    let (on_hook, duplex) = app
+                        .calls
+                        .get(&cid)
+                        .map(|c| (c.hook_on, !c.simplex))
+                        .unwrap_or((false, false));
+                    let h = app.next_handle();
+                    if on_hook {
+                        app.send(protocol::tncc_complete(h, cid, duplex));
+                    } else {
+                        app.send(protocol::tncc_setup_response(h, cid, duplex, false));
+                    }
+                    if let Some(c) = app.calls.get_mut(&cid) {
+                        c.answered = true;
+                        c.state = CallState::Connecting;
+                    }
+                    push_calls(&app, &weak);
+                }
+            }
+            AppEvent::UiRejectCall => {
+                if let Some(cid) = incoming_call(&app) {
+                    let h = app.next_handle();
+                    app.send(protocol::tncc_release(h, cid, true));
+                    app.local_end.insert(cid);
+                    app.calls.remove(&cid);
+                    push_calls(&app, &weak);
+                }
+            }
+            AppEvent::UiHangup => {
+                if let Some(cid) = live_call(&app) {
+                    app.local_end.insert(cid);
+                    app.ptt_held = None;
+                    let h = app.next_handle();
+                    app.send(protocol::tncc_release(h, cid, false));
+                    app.calls.remove(&cid);
+                }
+                app.dialing = None;
+                push_calls(&app, &weak);
+            }
+            AppEvent::UiHangupGroup => {
+                let cid = active_group_call(&app).or_else(|| app.grp_call.as_ref().and_then(|g| g.cid));
+                if let Some(cid) = cid {
+                    app.local_end.insert(cid);
+                    let h = app.next_handle();
+                    app.send(protocol::tncc_release(h, cid, false));
+                    app.calls.remove(&cid);
+                }
+                app.grp_call = None;
+                if app.dialing.as_ref().map(|d| d.group).unwrap_or(false) {
+                    app.dialing = None;
+                }
+                push_calls(&app, &weak);
             }
             AppEvent::UiOpenLogs => {
                 app.unread = 0;
@@ -778,6 +986,12 @@ fn handle_telemetry(app: &mut AppState, message: &Value, weak: &slint::Weak<Main
         _ => {}
     }
 
+    // Call-control telemetry drives the call state machine + call UI.
+    if variant.starts_with("Tncc") {
+        apply_call_event(app, variant, payload, weak);
+        push_calls(app, weak);
+    }
+
     // A state change means MsRuntimeState just moved; pull it right away instead
     // of waiting for the next poll tick.
     if protocol::is_state_changing_event(variant) && app.control_connected {
@@ -787,6 +1001,291 @@ fn handle_telemetry(app: &mut AppState, message: &Value, weak: &slint::Weak<Main
             let h = app.next_handle();
             app.send(protocol::get_config(h));
         }
+    }
+}
+
+// --- Call state machine (M6) -------------------------------------------------
+
+/// Nested `indication`/`confirm`/`request`/`response` body of a call event.
+fn call_body(payload: &Value) -> &Value {
+    for k in ["indication", "confirm", "request", "response"] {
+        if let Some(b) = payload.get(k) {
+            if b.is_object() {
+                return b;
+            }
+        }
+    }
+    payload
+}
+
+/// Set a call's floor state from a TNCC transmission status + talker SSI.
+fn apply_floor(c: &mut Call, status: Option<&str>, talker: Option<u32>, own_issi: u32) {
+    let Some(status) = status else { return };
+    c.tx_status = Some(status.to_string());
+    let own_echo = talker.is_some() && own_issi != 0 && talker == Some(own_issi);
+    if status == "TransmissionGrantedToAnotherUser" && !own_echo {
+        c.talker_ssi = talker;
+        c.can_request_tx = false;
+        c.holds_floor = false;
+    } else {
+        c.talker_ssi = None;
+        c.can_request_tx = true;
+        c.holds_floor = status == "TransmissionGranted" || own_echo;
+    }
+}
+
+fn apply_call_event(
+    app: &mut AppState,
+    variant: &str,
+    payload: &Value,
+    weak: &slint::Weak<MainWindow>,
+) {
+    let Some(cid) = payload.get("call_identifier").and_then(Value::as_u64) else {
+        return;
+    };
+    let cid = cid as u32;
+    let own_issi = app.state.own_issi;
+    let body = call_body(payload).clone();
+
+    if variant == "TnccReleaseIndication" || variant == "TnccReleaseConfirm" {
+        let was_group = app.calls.get(&cid).map(|c| c.group).unwrap_or(false);
+        app.calls.remove(&cid);
+        if app.dialing.as_ref().map(|d| d.peer_ssi).is_some() {
+            app.dialing = None;
+        }
+        if app.grp_call.as_ref().and_then(|g| g.cid) == Some(cid) {
+            app.grp_call = None;
+        }
+        if app.ptt_held == Some(cid) {
+            app.ptt_held = None;
+        }
+        // Drop a group context that never bound to a real call (e.g. our setup
+        // was rejected before a confirm arrived) so the panel doesn't stick.
+        if active_group_call(app).is_none()
+            && app.grp_call.as_ref().map(|g| g.cid.is_none()).unwrap_or(false)
+        {
+            app.grp_call = None;
+        }
+        // "Call ended" toast unless we hung up ourselves.
+        if !app.local_end.remove(&cid) && !was_group {
+            let cause = body
+                .get("disconnect_cause")
+                .and_then(Value::as_str)
+                .map(pretty_cause)
+                .unwrap_or_else(|| "The call was released.".to_string());
+            app.notify(weak, "Call ended", &cause, 0);
+        }
+        return;
+    }
+
+    let c = app.calls.entry(cid).or_insert_with(|| Call {
+        cid,
+        can_request_tx: true,
+        simplex: true,
+        ..Call::default()
+    });
+
+    match variant {
+        "TnccSetupIndication" => {
+            let bsi = body.get("basic_service_information").cloned().unwrap_or(Value::Null);
+            let comm = bsi.get("communication_type").and_then(Value::as_str);
+            let is_group = comm.map(|t| t != "PointToPoint").unwrap_or(false);
+            c.group = c.group || is_group;
+            if c.group {
+                if let Some(g) = body.get("called_party_ssi").and_then(Value::as_u64) {
+                    c.peer_ssi = Some(g as u32);
+                }
+            } else {
+                c.direction = Some("mt");
+                if let Some(p) = body.get("calling_party_ssi").and_then(Value::as_u64) {
+                    c.peer_ssi = Some(p as u32);
+                }
+            }
+            c.simplex = body.get("simplex_duplex_selection").and_then(Value::as_str)
+                != Some("DuplexOperation");
+            c.hook_on = body.get("hook_method_selection").and_then(Value::as_str)
+                == Some("HookOnHookOffSignallingOrCallAcceptanceSignalling");
+            let caller = body.get("calling_party_ssi").and_then(Value::as_u64).map(|v| v as u32);
+            if caller.is_some() && caller != Some(own_issi) {
+                let grant = body.get("transmission_grant").and_then(Value::as_str);
+                apply_floor(c, grant, caller, own_issi);
+            }
+            c.state = if c.group { CallState::Active } else { CallState::Incoming };
+        }
+        "TnccProceedIndication" => {
+            if c.direction.is_none() {
+                c.direction = Some("mo");
+            }
+            c.state = CallState::Proceeding;
+            bind_dialing(app, cid);
+        }
+        "TnccAlertIndication" => {
+            if c.direction.is_none() {
+                c.direction = Some("mo");
+            }
+            c.state = CallState::Alerting;
+            c.queued = body.get("call_queued").and_then(Value::as_str) == Some("CallIsQueued");
+            bind_dialing(app, cid);
+        }
+        "TnccSetupConfirm" | "TnccCompleteConfirm" => {
+            if c.direction.is_none() {
+                c.direction = Some("mo");
+            }
+            c.state = CallState::Active;
+            let bsi = body.get("basic_service_information").cloned().unwrap_or(Value::Null);
+            if let Some(t) = bsi.get("communication_type").and_then(Value::as_str) {
+                if t != "PointToPoint" {
+                    c.group = true;
+                }
+            }
+            let grant = body
+                .get("transmission_grant")
+                .or_else(|| body.get("transmission_status"))
+                .and_then(Value::as_str);
+            apply_floor(c, grant, None, own_issi);
+            bind_dialing(app, cid);
+        }
+        "TnccTxIndication" | "TnccTxConfirm" => {
+            let st = body
+                .get("transmission_status")
+                .or_else(|| body.get("transmission_grant"))
+                .and_then(Value::as_str);
+            let who = body.get("transmitting_party_ssi").and_then(Value::as_u64).map(|v| v as u32);
+            apply_floor(c, st, who, own_issi);
+            if matches!(c.state, CallState::Setup) {
+                c.state = CallState::Active;
+            }
+        }
+        _ => {}
+    }
+
+    if let Some(c) = app.calls.get_mut(&cid) {
+        if c.state == CallState::Active && c.active_since.is_none() {
+            c.active_since = Some(Instant::now());
+        }
+        if c.state == CallState::Incoming {
+            c.rang = true;
+        }
+        if c.group {
+            // Keep the group PTT context bound to this call id.
+            if let Some(g) = app.grp_call.as_mut() {
+                if g.cid.is_none() {
+                    g.cid = Some(cid);
+                }
+            }
+        }
+    }
+}
+
+/// Absorb the outgoing placeholder into the real call once its id is known.
+fn bind_dialing(app: &mut AppState, cid: u32) {
+    let Some(d) = app.dialing.take() else { return };
+    if let Some(c) = app.calls.get_mut(&cid) {
+        if c.peer_ssi.is_none() {
+            c.peer_ssi = Some(d.peer_ssi);
+        }
+        if d.group {
+            c.group = true;
+        }
+        c.simplex = d.simplex;
+    }
+    if d.group {
+        if let Some(g) = app.grp_call.as_mut() {
+            if g.cid.is_none() {
+                g.cid = Some(cid);
+            }
+        }
+    }
+}
+
+fn pretty_cause(cause: &str) -> String {
+    // Split CamelCase into words.
+    let mut out = String::new();
+    for (i, ch) in cause.chars().enumerate() {
+        if i > 0 && ch.is_uppercase() {
+            out.push(' ');
+        }
+        out.push(ch);
+    }
+    out
+}
+
+/// First call in a live state, preferring a non-group individual call.
+fn live_call(app: &AppState) -> Option<u32> {
+    let live = |c: &&Call| {
+        matches!(
+            c.state,
+            CallState::Proceeding | CallState::Alerting | CallState::Connecting | CallState::Active
+        )
+    };
+    app.calls
+        .values()
+        .filter(live)
+        .find(|c| !c.group)
+        .or_else(|| app.calls.values().find(live))
+        .map(|c| c.cid)
+}
+
+/// The individual call shown on the in-call screen (excludes an unanswered ring).
+fn in_call_individual(app: &AppState) -> Option<u32> {
+    app.calls
+        .values()
+        .find(|c| {
+            !c.group
+                && matches!(
+                    c.state,
+                    CallState::Proceeding
+                        | CallState::Alerting
+                        | CallState::Connecting
+                        | CallState::Active
+                )
+                && !(c.rang && !c.answered)
+        })
+        .map(|c| c.cid)
+}
+
+/// The active individual simplex call whose floor the PTT controls.
+fn live_individual_call(app: &AppState) -> Option<u32> {
+    app.calls
+        .values()
+        .find(|c| !c.group && c.simplex && c.state == CallState::Active)
+        .map(|c| c.cid)
+}
+
+/// An incoming individual call still waiting to be answered.
+fn incoming_call(app: &AppState) -> Option<u32> {
+    app.calls
+        .values()
+        .find(|c| !c.group && c.rang && !c.answered)
+        .map(|c| c.cid)
+}
+
+/// The active group call (network- or self-established).
+fn active_group_call(app: &AppState) -> Option<u32> {
+    if let Some(g) = &app.grp_call {
+        if let Some(cid) = g.cid {
+            if app.calls.contains_key(&cid) {
+                return Some(cid);
+            }
+        }
+    }
+    app.calls
+        .values()
+        .find(|c| {
+            c.group
+                && matches!(
+                    c.state,
+                    CallState::Active | CallState::Proceeding | CallState::Alerting
+                )
+        })
+        .map(|c| c.cid)
+}
+
+/// Whether the SwMI currently permits us to key the active group call.
+fn ptt_allowed(app: &AppState) -> bool {
+    match active_group_call(app).and_then(|cid| app.calls.get(&cid)) {
+        Some(c) => c.can_request_tx,
+        None => true,
     }
 }
 
@@ -1148,3 +1647,182 @@ fn push_survey(app: &AppState, weak: &slint::Weak<MainWindow>) {
         w.set_survey_rows(ModelRc::new(VecModel::from(rows)));
     });
 }
+
+fn fmt_dur(d: Duration) -> String {
+    let s = d.as_secs();
+    format!("{:02}:{:02}", s / 60, s % 60)
+}
+
+/// Push the call/PTT UI state derived from the call map.
+fn push_calls(app: &AppState, weak: &slint::Weak<MainWindow>) {
+    let peer_name = |ssi: Option<u32>, group: bool| -> String {
+        match ssi {
+            Some(s) => {
+                if group {
+                    app.codeplug
+                        .as_ref()
+                        .map(|cp| cp.name_of(s))
+                        .unwrap_or_else(|| s.to_string())
+                } else {
+                    s.to_string()
+                }
+            }
+            None => "-".to_string(),
+        }
+    };
+
+    // Individual in-call screen.
+    let indiv = in_call_individual(app).and_then(|cid| app.calls.get(&cid));
+    let (call_live, call_peer, call_sub, call_state, call_clock, call_can_ptt, call_ptt_state) =
+        if let Some(c) = indiv {
+            let label = call_state_label(c);
+            let clock = if c.state == CallState::Active {
+                c.active_since.map(|t| fmt_dur(t.elapsed())).unwrap_or_default()
+            } else {
+                String::new()
+            };
+            let can_ptt = c.state == CallState::Active && c.simplex;
+            let holding = app.ptt_held == Some(c.cid);
+            let ptt_state = if holding && c.holds_floor {
+                2
+            } else if holding
+                && matches!(
+                    c.tx_status.as_deref(),
+                    Some("TransmissionRequestQueued") | Some("TransmissionWait") | None
+                )
+            {
+                1
+            } else {
+                0
+            };
+            (
+                true,
+                peer_name(c.peer_ssi, false),
+                c.peer_ssi.map(|s| s.to_string()).unwrap_or_default(),
+                label,
+                clock,
+                can_ptt,
+                ptt_state,
+            )
+        } else if let Some(d) = app.dialing.as_ref().filter(|d| !d.group) {
+            (
+                true,
+                peer_name(Some(d.peer_ssi), false),
+                d.peer_ssi.to_string(),
+                "Setting up...".to_string(),
+                String::new(),
+                false,
+                0,
+            )
+        } else {
+            (false, String::new(), String::new(), String::new(), String::new(), false, 0)
+        };
+
+    // Incoming ring overlay.
+    let inc = incoming_call(app).and_then(|cid| app.calls.get(&cid));
+    let (call_incoming, inc_peer, inc_sub) = match inc {
+        Some(c) => (
+            true,
+            peer_name(c.peer_ssi, false),
+            format!(
+                "{}{}",
+                c.peer_ssi.map(|s| s.to_string()).unwrap_or_default(),
+                if c.simplex { " - PTT" } else { " - duplex" }
+            ),
+        ),
+        None => (false, String::new(), String::new()),
+    };
+
+    // Group call panel + PTT.
+    let gcall = active_group_call(app).and_then(|cid| app.calls.get(&cid));
+    let group_active = gcall.is_some()
+        || app.grp_call.is_some()
+        || app.dialing.as_ref().map(|d| d.group).unwrap_or(false);
+    let i_am_talking = app.grp_call.as_ref().map(|g| g.talking).unwrap_or(false);
+    let other_talker = if i_am_talking {
+        None
+    } else {
+        gcall.and_then(|c| c.talker_ssi).filter(|s| *s != app.state.own_issi)
+    };
+    let group_gssi = app
+        .grp_call
+        .as_ref()
+        .map(|g| g.gssi)
+        .or_else(|| gcall.and_then(|c| c.peer_ssi))
+        .or_else(|| effective_tx(app));
+    let group_name = group_gssi
+        .map(|g| peer_name(Some(g), true))
+        .unwrap_or_else(|| "Group call".to_string());
+    let group_status = if i_am_talking {
+        "TALKING - You".to_string()
+    } else if let Some(o) = other_talker {
+        format!("TALKING - {}", peer_name(Some(o), true))
+    } else {
+        let floor = gcall.and_then(|c| c.tx_status.as_deref());
+        match floor {
+            Some("TransmissionRequestQueued") | Some("TransmissionWait") => {
+                "Requesting floor...".to_string()
+            }
+            _ if gcall.is_none() => "Connecting...".to_string(),
+            _ => "Floor free - push to talk".to_string(),
+        }
+    };
+    let group_ptt_state: i32 = if i_am_talking {
+        let req = matches!(
+            gcall.and_then(|c| c.tx_status.as_deref()),
+            Some("TransmissionRequestQueued") | Some("TransmissionWait")
+        );
+        if req {
+            1
+        } else {
+            2
+        }
+    } else if !ptt_allowed(app) {
+        3
+    } else {
+        0
+    };
+    let group_talking = i_am_talking || other_talker.is_some();
+
+    let _ = weak.upgrade_in_event_loop(move |w| {
+        w.set_call_live(call_live);
+        w.set_call_peer(call_peer.into());
+        w.set_call_sub(call_sub.into());
+        w.set_call_state(call_state.into());
+        w.set_call_clock(call_clock.into());
+        w.set_call_can_ptt(call_can_ptt);
+        w.set_call_ptt_state(call_ptt_state);
+        w.set_call_incoming(call_incoming);
+        w.set_incoming_peer(inc_peer.into());
+        w.set_incoming_sub(inc_sub.into());
+        w.set_group_call_active(group_active);
+        w.set_group_call_name(group_name.into());
+        w.set_group_call_status(group_status.into());
+        w.set_group_ptt_state(group_ptt_state);
+        w.set_group_talking(group_talking);
+    });
+}
+
+fn call_state_label(c: &Call) -> String {
+    match c.state {
+        CallState::Setup => "Setting up...".to_string(),
+        CallState::Proceeding => "Calling...".to_string(),
+        CallState::Alerting => {
+            if c.queued {
+                "Queued...".to_string()
+            } else {
+                "Ringing...".to_string()
+            }
+        }
+        CallState::Connecting => "Connecting...".to_string(),
+        CallState::Incoming => "Incoming...".to_string(),
+        CallState::Active => {
+            if c.group {
+                "Group call active".to_string()
+            } else {
+                "Connected".to_string()
+            }
+        }
+    }
+}
+

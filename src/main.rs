@@ -245,6 +245,54 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let _ = tx.send(app::AppEvent::UiCampCell(carrier as u64, register));
         });
     }
+    {
+        let tx = events_tx.clone();
+        window.on_call_ptt_down(move || {
+            let _ = tx.send(app::AppEvent::UiCallPttDown);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_call_ptt_up(move || {
+            let _ = tx.send(app::AppEvent::UiCallPttUp);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_group_ptt_down(move || {
+            let _ = tx.send(app::AppEvent::UiGroupPttDown);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_group_ptt_up(move || {
+            let _ = tx.send(app::AppEvent::UiGroupPttUp);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_answer_call(move || {
+            let _ = tx.send(app::AppEvent::UiAnswerCall);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_reject_call(move || {
+            let _ = tx.send(app::AppEvent::UiRejectCall);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_hangup_call(move || {
+            let _ = tx.send(app::AppEvent::UiHangup);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_hangup_group(move || {
+            let _ = tx.send(app::AppEvent::UiHangupGroup);
+        });
+    }
 
     // The app loop owns state and is the sole UI writer.
     {
