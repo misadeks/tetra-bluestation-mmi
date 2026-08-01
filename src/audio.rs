@@ -75,6 +75,9 @@ impl CodecLib {
     fn load(dir: &Path) -> Option<CodecLib> {
         let dec_path = dir.join(lib_name("tetra_acelp"));
         let enc_path = dir.join(lib_name("tetra_acelp_enc"));
+        // Build the libraries on demand from the ETSI sources when they are
+        // missing (mirrors app/acelp.py in the Python repo).
+        ensure_built(dir, &dec_path, &enc_path);
         unsafe {
             let dec_lib = Library::new(&dec_path)
                 .map_err(|e| tracing::warn!(path = %dec_path.display(), error = %e, "codec: decoder load failed"))
@@ -100,6 +103,86 @@ impl CodecLib {
                 enc_encode,
             })
         }
+    }
+}
+
+/// Shared ETSI DSP/maths units used by both the decoder and encoder builds.
+const SHARED_SRC: &[&str] = &[
+    "sub_sc_d.c",
+    "sub_dsp.c",
+    "fbas_tet.c",
+    "fexp_tet.c",
+    "fmat_tet.c",
+    "tetra_op.c",
+];
+
+/// Compile any missing codec library from the ETSI sources with clang, exactly
+/// like the Python repo's `acelp.build_library` / `build_encoder_library`:
+/// `clang -shared -O2 -I<etsi> -I<native> <sources> -o <lib>`. Does nothing if
+/// the sources or clang are absent (the caller then falls back to no-voice).
+fn ensure_built(dir: &Path, dec_path: &Path, enc_path: &Path) {
+    let etsi = dir.join("etsi");
+    if dec_path.exists() && enc_path.exists() {
+        return;
+    }
+    if !etsi.join("source.h").exists() {
+        tracing::info!(dir = %dir.display(), "codec: ETSI sources absent; cannot auto-build");
+        return;
+    }
+    let clang = find_clang();
+    let Some(clang) = clang else {
+        tracing::warn!("codec: clang not found on PATH; cannot auto-build the ACELP libraries");
+        return;
+    };
+    if !dec_path.exists() {
+        let mut srcs: Vec<PathBuf> =
+            std::iter::once("sdec_tet.c").chain(SHARED_SRC.iter().copied()).map(|s| etsi.join(s)).collect();
+        srcs.push(dir.join("acelp_decode.c"));
+        build_lib(&clang, &etsi, dir, &srcs, dec_path, "decoder");
+    }
+    if !enc_path.exists() {
+        let mut srcs: Vec<PathBuf> =
+            std::iter::once("scod_tet.c").chain(SHARED_SRC.iter().copied()).map(|s| etsi.join(s)).collect();
+        srcs.push(dir.join("acelp_encode.c"));
+        build_lib(&clang, &etsi, dir, &srcs, enc_path, "encoder");
+    }
+}
+
+fn find_clang() -> Option<String> {
+    for name in ["clang", "clang.exe"] {
+        if std::process::Command::new(name)
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+        {
+            return Some(name.to_string());
+        }
+    }
+    None
+}
+
+fn build_lib(clang: &str, etsi: &Path, native: &Path, srcs: &[PathBuf], out: &Path, kind: &str) {
+    let mut cmd = std::process::Command::new(clang);
+    cmd.arg("-shared").arg("-O2");
+    #[cfg(not(windows))]
+    cmd.arg("-fPIC");
+    cmd.arg(format!("-I{}", etsi.display()));
+    cmd.arg(format!("-I{}", native.display()));
+    for s in srcs {
+        cmd.arg(s);
+    }
+    cmd.arg("-o").arg(out);
+    tracing::info!(kind, out = %out.display(), "codec: building ACELP library with clang");
+    match cmd.output() {
+        Ok(o) if o.status.success() && out.exists() => {
+            tracing::info!(kind, "codec: build succeeded");
+        }
+        Ok(o) => {
+            let err = String::from_utf8_lossy(&o.stderr);
+            tracing::warn!(kind, status = ?o.status.code(), stderr = %err.trim(), "codec: build failed");
+        }
+        Err(e) => tracing::warn!(kind, error = %e, "codec: failed to run clang"),
     }
 }
 

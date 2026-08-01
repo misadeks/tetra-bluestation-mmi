@@ -65,7 +65,16 @@ duplex calls and concurrent encode/decode are safe.
 
 Requires `clang` (or any C compiler) on `PATH` and the ETSI sources in `etsi/`.
 
-### Windows / macOS / Linux (including Raspberry Pi)
+### Automatic (on first run)
+
+Like the Python repo's `app/acelp.py`, the app **builds the libraries on demand**:
+on startup, if `tetra_acelp*` are missing from `[audio].codec_dir` but the ETSI
+sources (`etsi/`) and `clang` are present, it compiles them with the exact same
+command as below and then loads them. If the sources or `clang` are absent it
+logs the reason and runs without voice. The scripts below do the same thing
+manually.
+
+### Manual
 
 From the repo root:
 
