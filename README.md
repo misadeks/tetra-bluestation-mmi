@@ -1,55 +1,129 @@
-# TETRA TN UI (native Rust + Slint)
+# TETRA TN UI - native Rust + Slint variant
 
-Another variant of the TN UI: a native, touchscreen radio UI for a BlueStation
-MS-mode TETRA terminal, built with Rust + Slint. This app implements the server
-side of the BlueStation MS external interface and presents a Classic-style
-radio UI over it.
+A native **Rust + Slint** touchscreen radio UI for a **BlueStation MS-mode** TETRA
+terminal. It is **another variant of the TN UI**, a sibling to the Python **TN web UI**
+(GitHub `misadeks/tetra-tn-web-ui`, whose app is titled "TNMM Demo UI" and is checked
+out locally as `tnmm_ui`). It is not a port of that browser front-end. Both variants
+play the same role: they implement the **server side of the BlueStation MS external
+interface** (`bluestation-ms-interface-2`) and present the operator a Classic-style
+radio UI over it. This variant is native/embedded rather than browser-based.
 
-It is a peer of the Python TNMM Demo UI (GitHub `misadeks/tetra-tn-web-ui`, the
-browser variant). Both variants play the same role; this one is native/embedded,
-the other is browser-based. This is NOT a port of the browser UI and NOT a
-dashboard client.
+It supersedes a prior C + LVGL attempt (`misadeks/tetra-tn-lvgl-ui`). We switched to
+Rust + Slint because the whole TETRA stack is Rust, the wire protocol is serde
+externally-tagged enums (so we get compile-checked wire parity), and cargo
+cross-compiles cleanly to the Pi, avoiding the ARM64 C-toolchain pain of the LVGL
+attempt.
 
-## Topology (get this right first)
+The stack (or the `fake_stack.py` simulator) is the WebSocket **client** and dials
+**out** to this app on two channels:
 
-- The stack is the WebSocket CLIENT and dials OUT to this UI.
-- This UI is the WebSocket SERVER and listens on two ports:
-  - Control `9102`, subprotocol `bluestation-control-v1` (UI to stack commands
-    and stack to UI responses on the same socket).
-  - Telemetry `9101`, subprotocol `bluestation-telemetry-v1` (stack to UI
-    events, receive-only).
-- App messages are JSON encoded as UTF-8 inside binary WebSocket frames.
-- Enums are externally tagged: `{"VariantName": { ...fields... }}`.
+| Channel   | This app listens on | Subprotocol                | Traffic                               |
+|-----------|---------------------|----------------------------|---------------------------------------|
+| Control   | `9102`              | `bluestation-control-v1`   | UI to stack commands, stack to UI responses |
+| Telemetry | `9101`              | `bluestation-telemetry-v1` | stack to UI events (receive-only)     |
 
-## Targets
+Messages are **JSON encoded as UTF-8 inside _binary_ WebSocket frames**, using the
+externally-tagged enum shape `{"Variant": {..}}`. This app does **not** reimplement any
+TETRA stack, protocol, registration, or codec-negotiation logic - it drives the MS over
+the fixed wire contract. See the TN web UI repo (`tetra-tn-web-ui`) and its
+`PROTOCOL.md` for the message catalog.
 
-- Raspberry Pi (aarch64 Linux) for deployment (Slint linuxkms backend).
-- Windows / RustRover for development (`cargo run`).
+Targets:
+- **Raspberry Pi** (aarch64 embedded Linux) - deployment device.
+- **Windows** - development/testing from RustRover.
 
-## Status
+## Repository layout
 
-M1 (toolchain spike): a Slint hello window (portrait 720x1280, dark) plus a
-config parsing stub. The two WebSocket servers land in M2.
+```
+Cargo.toml        crate manifest (Slint, serde, toml, tracing)
+build.rs          compiles ui/main.slint via slint-build
+ui/main.slint     Slint markup (portrait 720x1280 dark hello window)
+src/main.rs       init, logging, config load, Slint event loop
+src/config.rs     config.toml parsing (stub for M1)
+config.toml       runtime config (BlueStation MS listen ports, [audio], [ui])
+DECISIONS.md      running log of decisions and deviations
+```
 
-## Build and run (Windows dev)
+## Prerequisites
+
+- **Rust 1.95** or later (`cargo` / `rustc` on PATH).
+- On Windows: the **MSVC** toolchain (Visual Studio 2022 Build Tools, C++ workload).
+- For Pi cross-builds: the `aarch64-unknown-linux-gnu` target plus a cross linker, or
+  build on the Pi directly.
+
+No external native dependency setup is needed for the M1 spike; Slint fetches and builds
+its renderer stack through cargo.
+
+## Build and run - Windows (RustRover)
 
 ```powershell
 cargo run
 ```
 
-The window reads `config.toml` from the working directory. If the file is
-absent, built-in defaults are used (control `9102`, telemetry `9101`).
+A dark portrait window titled *"TETRA TN UI"* with a scaffold card should open. The app
+reads `config.toml` from the working directory; if the file is absent, built-in defaults
+are used (control `9102`, telemetry `9101`). Set `RUST_LOG=debug` for more verbose logs.
 
-## Configuration
+Run the unit tests with:
 
-See `config.toml`. This app is the server side of the interface, so `host` and
-`port` are the addresses the stack dials into. See DECISIONS.md for the rationale
-behind the current choices.
+```powershell
+cargo test
+```
 
-## Milestones
+## Build and run - Raspberry Pi (aarch64 Linux)
+
+Add the target and build (on the Pi, or cross-compile with a linker configured):
+
+```bash
+rustup target add aarch64-unknown-linux-gnu
+cargo build --release --target aarch64-unknown-linux-gnu
+```
+
+The Pi kiosk will use the Slint **linuxkms** (DRM/KMS) backend; that wiring and the
+systemd autostart land in a later milestone. For dev on the Pi you can also run under
+X/Wayland with the default winit backend.
+
+## Developing with no radio hardware
+
+The **TN web UI** repo (`tetra-tn-web-ui`, checked out locally as `tnmm_ui`) ships a
+`fake_stack.py` simulator that plays the stack (the WS **client**). Because this app is
+the **server**, point the simulator's control and telemetry URLs at the ports this app
+listens on:
+
+```powershell
+# in the tetra-tn-web-ui repo (locally tnmm_ui), on Windows:
+python fake_stack.py --control ws://127.0.0.1:9102 --telemetry ws://127.0.0.1:9101 [--chaos]
+```
+
+Leave `[command].port` / `[telemetry].port` in `config.toml` at their defaults
+(`9102` / `9101`) so the simulator connects. `--chaos` randomly drops channels so you can
+exercise reconnect handling. (The WebSocket servers are wired up in M2.)
+
+## Configuration (`config.toml`)
+
+| Section | Key | Meaning |
+|---|---|---|
+| `[command]` | `host` / `port` | Control-channel listen address (default `0.0.0.0:9102`). |
+| `[telemetry]` | `host` / `port` | Telemetry-channel listen address (default `0.0.0.0:9101`). |
+| `[command]` / `[telemetry]` | `use_tls` / `ca_cert` | `wss` + server cert PEM when TLS is enabled. |
+| `[command]` / `[telemetry]` | `username` / `password` | HTTP Basic auth to accept; empty = accept all (demo). |
+| `[registration]` | `registration_type` | Operator registration preference (identity comes from the MS, never configured). |
+| `[audio]` | `output_device` / `input_device` | Output/input device selection. |
+| `[audio]` | `sample_rate` / `frame_ms` / `jitter_ms` | Audio path timing. |
+| `[ui]` | `width` / `height` / `theme` | Window geometry and theme. |
+
+## Status and milestones
+
+Current: **M1 - toolchain spike.** A Slint hello window (portrait 720x1280, dark) plus a
+config parsing stub. The two WebSocket servers land in M2. See `DECISIONS.md` for the
+rationale behind each choice and any deviations.
 
 - M1 toolchain spike (this milestone).
-- M2 net + JSON: the two WebSocket servers, bootstrap + poll GetState, decode
-  telemetry, reconnect tolerant. Test against `fake_stack.py`.
-- M3+ state, status bar, home, navigation, audio, calls, editors, Pi hardware
-  I/O, and kiosk polish.
+- M2 net + JSON: the two WebSocket servers, bootstrap + poll GetState, decode telemetry,
+  reconnect tolerant. Test against `fake_stack.py`.
+- M3+ state, status bar, home, navigation, audio, calls, editors, Pi hardware I/O, and
+  kiosk polish.
+
+## License
+
+MIT. See `Cargo.toml`.
