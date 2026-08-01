@@ -1856,28 +1856,20 @@ component DialerScreen inherits Rectangle {
         padding: 18px;
         spacing: 12px;
 
-        // Number readout. Fixed height and font so entering digits never shifts
-        // the keypad below it.
+        // Number readout. Fixed height so entering digits never shifts the
+        // keypad below it.
         Rectangle {
             height: 78px;
             VerticalLayout {
                 alignment: center;
-                spacing: 2px;
                 Text {
                     text: root.number == "" ? "Enter number" : root.number;
                     color: root.number == "" ? Palette.faint : #ffffff;
-                    font-size: 30px;
+                    font-size: root.number == "" ? 26px : 44px;
                     font-weight: 800;
                     letter-spacing: 2px;
                     horizontal-alignment: center;
                     overflow: elide;
-                }
-                Text {
-                    text: "PRIVATE NUMBER (ISSI)";
-                    color: Palette.muted;
-                    font-size: 11px;
-                    letter-spacing: 3px;
-                    horizontal-alignment: center;
                 }
             }
         }
