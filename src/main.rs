@@ -33,6 +33,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let window = MainWindow::new()?;
+    window.window().set_size(slint::LogicalSize::new(
+        cfg.ui.width as f32,
+        cfg.ui.height as f32,
+    ));
+    tracing::info!(
+        width = cfg.ui.width,
+        height = cfg.ui.height,
+        "applied window size from config"
+    );
     window.set_status_line(
         format!(
             "M1 spike - control :{}  telemetry :{}",

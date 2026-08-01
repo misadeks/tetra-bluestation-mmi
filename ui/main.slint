@@ -5,8 +5,10 @@
 
 export component MainWindow inherits Window {
     title: "TETRA TN UI";
-    width: 720px;
-    height: 1280px;
+    // Design size. The actual window size is set at startup from config.toml
+    // ([ui] width/height) via window().set_size in main.rs.
+    preferred-width: 720px;
+    preferred-height: 1280px;
     background: #0a0d12;
 
     in property <string> status-line: "M1 toolchain spike";
