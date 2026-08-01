@@ -160,9 +160,8 @@ component StatusBar inherits Rectangle {
 
     HorizontalLayout {
         padding-left: 18px;
-        padding-right: 12px;
+        padding-right: 14px;
         spacing: 12px;
-        alignment: start;
 
         VerticalLayout { alignment: center; SignalBars { bars: root.bars; } }
         VerticalLayout {
@@ -399,13 +398,13 @@ component Softkey inherits Rectangle {
             if root.icon != "": Icon {
                 d: root.icon;
                 tint: root.danger ? #ffffff : Palette.txt;
-                size: 19px;
+                size: 22px;
             }
         }
         Text {
             text: root.text;
             color: root.danger ? #ffffff : Palette.txt;
-            font-size: 15px;
+            font-size: 18px;
             font-weight: 600;
             vertical-alignment: center;
         }
@@ -463,7 +462,7 @@ component ListRow inherits Rectangle {
     in property <bool> selected;
     in property <bool> show-chevron: true;
     callback clicked;
-    height: 78px;
+    height: 92px;
     border-radius: 16px;
     border-width: 1px;
     border-color: root.selected ? #33a7dd80 : Palette.line;
@@ -474,40 +473,40 @@ component ListRow inherits Rectangle {
         }
     }
     HorizontalLayout {
-        padding-left: 16px;
-        padding-right: 16px;
-        spacing: 14px;
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 16px;
         if root.icon != "": VerticalLayout {
             alignment: center;
             Rectangle {
-                width: 48px;
-                height: 48px;
-                border-radius: 13px;
+                width: 54px;
+                height: 54px;
+                border-radius: 15px;
                 background: root.danger ? #f0555a1f : #33a7dd1f;
                 Icon {
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
                     d: root.icon;
                     tint: root.danger ? Palette.red : root.icon-tint;
-                    size: 24px;
+                    size: 27px;
                 }
             }
         }
         VerticalLayout {
             alignment: center;
-            spacing: 3px;
+            spacing: 4px;
             horizontal-stretch: 1;
             Text {
                 text: root.title;
                 color: root.danger ? #ff9a9d : Palette.txt;
-                font-size: 19px;
+                font-size: 21px;
                 font-weight: 600;
                 overflow: elide;
             }
             if root.subtitle != "": Text {
                 text: root.subtitle;
                 color: Palette.muted;
-                font-size: 14px;
+                font-size: 15px;
                 overflow: elide;
             }
         }
@@ -516,17 +515,17 @@ component ListRow inherits Rectangle {
             Text {
                 text: root.trailing-text;
                 color: Palette.faint;
-                font-size: 14px;
+                font-size: 15px;
                 font-weight: 600;
             }
         }
         if root.selected: VerticalLayout {
             alignment: center;
-            Icon { d: Icons.check; tint: Palette.accent; size: 24px; }
+            Icon { d: Icons.check; tint: Palette.accent; size: 26px; }
         }
         if root.show-chevron && !root.selected && root.trailing-text == "": VerticalLayout {
             alignment: center;
-            Icon { d: Icons.chevron; tint: Palette.faint; size: 20px; }
+            Icon { d: Icons.chevron; tint: Palette.faint; size: 22px; }
         }
     }
 }
@@ -1379,11 +1378,11 @@ export component MainWindow inherits Window {
 
         // Softkey bar (3-column grid), context-dependent.
         Rectangle {
-            height: 84px;
+            height: 92px;
             background: @linear-gradient(180deg, #0c141d 0%, #0a1017 100%);
             HorizontalLayout {
-                padding-top: 12px;
-                padding-bottom: 12px;
+                padding-top: 14px;
+                padding-bottom: 14px;
                 padding-left: 14px;
                 padding-right: 14px;
                 spacing: 10px;
