@@ -88,6 +88,7 @@ component Icon inherits Path {
 
 global Icons {
     out property <string> menu: "M4 7L20 7M4 12L20 12M4 17L20 17";
+    out property <string> home: "M3 11L12 4L21 11M6 9.5V20H18V9.5";
     out property <string> phone: "M5 3.5h3.2l1.6 4-2 1.4a11 11 0 0 0 5.3 5.3l1.4-2 4 1.6V19a2 2 0 0 1-2.2 2A16.5 16.5 0 0 1 4 6.7 2 2 0 0 1 5 3.5z";
     out property <string> back: "M15 18L9 12L15 6";
     out property <string> chevron: "M9 6L15 12L9 18";
@@ -2410,9 +2411,18 @@ export component MainWindow inherits Window {
                         root.screen = root.back-target();
                     }
                 }
-                // Dialer: Back (left) + Call (right) to place a DUPLEX call; the
-                // keypad PTT places a simplex call.
-                if root.screen == Screen.Dialer: Rectangle { horizontal-stretch: 1; }
+                // Center Home button to jump back to the home screen from any
+                // sub-menu (not in a call, where the center is call controls).
+                if root.screen != Screen.Home && root.screen != Screen.InCall: Softkey {
+                    text: "Home";
+                    icon: Icons.home;
+                    horizontal-stretch: 1;
+                    clicked => {
+                        root.screen = Screen.Home;
+                    }
+                }
+                // Dialer: Call (right) places a DUPLEX call; the keypad PTT places
+                // a simplex call. Other sub-menus keep the right slot empty.
                 if root.screen == Screen.Dialer: Softkey {
                     text: "Call";
                     icon: Icons.phone;
@@ -2422,7 +2432,7 @@ export component MainWindow inherits Window {
                         root.dial-call(true);
                     }
                 }
-                if root.screen != Screen.Home && root.screen != Screen.InCall && root.screen != Screen.Dialer: Rectangle { horizontal-stretch: 2; }
+                if root.screen != Screen.Home && root.screen != Screen.InCall && root.screen != Screen.Dialer: Rectangle { horizontal-stretch: 1; }
 
                 // In-call: Mute (left) + Hang up (right, danger).
                 if root.screen == Screen.InCall: Softkey {
