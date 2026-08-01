@@ -34,6 +34,8 @@ pub enum AppEvent {
     UiSelectTalkgroup,
     UiSelectFolder(i32),
     UiPtt,
+    UiDialKey(String),
+    UiDialCall,
 }
 
 struct AppState {
@@ -52,6 +54,8 @@ struct AppState {
     cycle_gssi: Option<u32>,
     /// Last talkgroup the operator switched to (TX), if still attached.
     selected_tx: Option<u32>,
+    /// Number being entered on the dialer.
+    dial_number: String,
 }
 
 impl AppState {
@@ -85,6 +89,7 @@ pub fn run(rx: Receiver<AppEvent>, weak: slint::Weak<MainWindow>, reg_type: Stri
         sel_folder: 0,
         cycle_gssi: None,
         selected_tx: None,
+        dial_number: String::new(),
     };
 
     for event in rx.iter() {
@@ -195,6 +200,26 @@ pub fn run(rx: Receiver<AppEvent>, weak: slint::Weak<MainWindow>, reg_type: Stri
                 // Voice calls land in M5/M6; for now just note the press.
                 let gssi = effective_tx(&app);
                 tracing::info!(?gssi, "UI: PTT pressed (voice calls arrive in a later milestone)");
+            }
+            AppEvent::UiDialKey(k) => {
+                match k.as_str() {
+                    "back" => {
+                        app.dial_number.pop();
+                    }
+                    d if app.dial_number.chars().count() < 24 => {
+                        app.dial_number.push_str(d);
+                    }
+                    _ => {}
+                }
+                let n = app.dial_number.clone();
+                let weak = weak.clone();
+                let _ = weak.upgrade_in_event_loop(move |w| w.set_dial_number(n.into()));
+            }
+            AppEvent::UiDialCall => {
+                tracing::info!(
+                    number = %app.dial_number,
+                    "UI: dial call (voice calls arrive in a later milestone)"
+                );
             }
         }
     }

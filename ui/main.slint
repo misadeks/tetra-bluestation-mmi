@@ -1,14 +1,20 @@
-// TETRA TN UI - Slint UI (M4, Pi touch).
-//
-// The touch layout is modeled closely on the browser tetra-tn-web-ui
-// (Classic-style radio): a device frame of status bar + header + stage +
-// softkey grid, a home screen built around the talkgroup cycler and a docked
-// PTT, and a Radio Info screen. Colors and metrics are lifted from the web UI's
-// CSS. All live values are `in` properties set from Rust (app.rs) off
-// MsRuntimeState. A parked keypad layout is kept for non-touch models.
+// TETRA TN UI - Slint UI (Pi touch), styled to match the browser
+// tetra-tn-web-ui (Classic-style radio). Device frame of status bar + header +
+// stage + softkey grid; home is the talkgroup cycler with the select action
+// directly below and a docked PTT; Menu and Dialer reachable from the home
+// softkeys. Bundled Inter font, SVG-path icons, large touch metrics. Live values
+// are `in` properties set from Rust (app.rs) off MsRuntimeState.
+
+// Bundle the Inter font (matches the web UI) so the look is consistent on
+// Windows and the Pi regardless of installed system fonts.
+import "fonts/Inter-Regular.ttf";
+import "fonts/Inter-Medium.ttf";
+import "fonts/Inter-SemiBold.ttf";
+import "fonts/Inter-Bold.ttf";
+import "fonts/Inter-ExtraBold.ttf";
 
 export enum DeviceInput { Touch, Keypad }
-enum Screen { Home, Info, Folders }
+enum Screen { Home, Menu, Info, Folders, Dialer }
 
 export struct FolderRow {
     name: string,
@@ -22,6 +28,7 @@ global Palette {
     out property <color> glass1: #0f1620;
     out property <color> glass2: #0a0f16;
     out property <color> surface: #131c26;
+    out property <color> surface2: #17222f;
     out property <color> line: #ffffff12;
     out property <color> line2: #ffffff21;
     out property <color> txt: #eaf0f5;
@@ -33,18 +40,50 @@ global Palette {
     out property <color> amber: #e7a72b;
 }
 
-// 5 signal bars, heights 4/7/10/12/15px, bottom-aligned (web UI .sig).
+// Line icon rendered from an SVG path (24x24 viewbox), like the web UI icons.
+component Icon inherits Path {
+    in property <string> d;
+    in property <length> size: 22px;
+    in property <color> tint: Palette.txt;
+    in property <float> weight: 2.0;
+    width: root.size;
+    height: root.size;
+    viewbox-width: 24;
+    viewbox-height: 24;
+    commands: root.d;
+    fill: transparent;
+    stroke: root.tint;
+    stroke-width: root.weight * 1px;
+}
+
+global Icons {
+    out property <string> menu: "M4 7L20 7M4 12L20 12M4 17L20 17";
+    out property <string> phone: "M5 3.5h3.2l1.6 4-2 1.4a11 11 0 0 0 5.3 5.3l1.4-2 4 1.6V19a2 2 0 0 1-2.2 2A16.5 16.5 0 0 1 4 6.7 2 2 0 0 1 5 3.5z";
+    out property <string> back: "M15 18L9 12L15 6";
+    out property <string> chevron: "M9 6L15 12L9 18";
+    out property <string> chevron-down: "M6 9L12 15L18 9";
+    out property <string> info: "M12 3a9 9 0 1 0 0.001 0M12 11L12 16.5";
+    out property <string> folder: "M3 7.5a2 2 0 0 1 2-2h3.6l2 2H19a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z";
+    out property <string> check: "M4 12L10 18L20 6";
+    out property <string> login: "M14 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 8L14 12L10 16M14 12L3 12";
+    out property <string> logout: "M10 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4M16 8L20 12L16 16M20 12L9 12";
+    out property <string> mic: "M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3M6 11a6 6 0 0 0 12 0M12 17v4M8.5 21h7";
+    out property <string> backspace: "M9 5.5h11a1.5 1.5 0 0 1 1.5 1.5v10a1.5 1.5 0 0 1-1.5 1.5H9L2.5 12zM12 9.5L17 14.5M17 9.5L12 14.5";
+    out property <string> users: "M9 8a3 3 0 1 0 0.01 0M3.6 19c0-3 2.5-5.2 5.4-5.2S14.4 16 14.4 19M16.5 5.5a3 3 0 0 1 0 5.8M17.6 13.9c2 .6 3.3 2.5 3.3 5.1";
+}
+
+// 5 signal bars, heights scaled up, bottom-aligned (web UI .sig).
 component SignalBars inherits Rectangle {
     in property <int> bars;
-    width: 27px;
-    height: 15px;
+    width: 32px;
+    height: 20px;
     HorizontalLayout {
-        spacing: 2px;
+        spacing: 2.5px;
         alignment: start;
-        for h[i] in [4, 7, 10, 12, 15]: VerticalLayout {
+        for h[i] in [6, 9, 13, 16, 20]: VerticalLayout {
             alignment: end;
             Rectangle {
-                width: 3px;
+                width: 4px;
                 height: h * 1px;
                 border-radius: 1px;
                 background: i < root.bars ? #dbe6ee : #35424c;
@@ -53,18 +92,18 @@ component SignalBars inherits Rectangle {
     }
 }
 
-// Small rounded channel-link badge with a letter (web UI .lnk).
+// Rounded channel-link badge with a letter (web UI .lnk).
 component LinkBadge inherits Rectangle {
     in property <string> label;
     in property <bool> on;
-    width: 19px;
-    height: 18px;
-    border-radius: 6px;
+    width: 24px;
+    height: 22px;
+    border-radius: 7px;
     background: root.on ? #37c06a2e : #f0555a24;
     Text {
         text: root.label;
         color: root.on ? #79dfa0 : #ff9a9d;
-        font-size: 10px;
+        font-size: 12px;
         font-weight: 700;
         horizontal-alignment: center;
         vertical-alignment: center;
@@ -72,30 +111,30 @@ component LinkBadge inherits Rectangle {
 }
 
 component Battery inherits Rectangle {
-    width: 27px;
-    height: 13px;
+    width: 32px;
+    height: 16px;
     Rectangle {
         x: 0;
         y: 0;
-        width: 24px;
-        height: 13px;
+        width: 28px;
+        height: 16px;
         border-width: 1.5px;
         border-color: #7f8f9b;
         border-radius: 3px;
         Rectangle {
-            x: 2px;
-            y: 2px;
-            width: 14px;
-            height: 9px;
+            x: 2.5px;
+            y: 2.5px;
+            width: 17px;
+            height: 11px;
             background: Palette.green;
             border-radius: 1px;
         }
     }
     Rectangle {
-        x: 24px;
-        y: 3.5px;
-        width: 2.5px;
-        height: 6px;
+        x: 28px;
+        y: 4.5px;
+        width: 3px;
+        height: 7px;
         background: #7f8f9b;
         border-radius: 1px;
     }
@@ -108,28 +147,26 @@ component StatusBar inherits Rectangle {
     in property <bool> control-on;
     in property <bool> telemetry-on;
     in property <string> clock;
-
-    height: 46px;
+    height: 54px;
     background: @linear-gradient(180deg, #0e1822 0%, #0b131b 100%);
 
     HorizontalLayout {
-        padding-left: 14px;
-        padding-right: 14px;
-        spacing: 9px;
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 12px;
         alignment: start;
 
         VerticalLayout { alignment: center; SignalBars { bars: root.bars; } }
-
         VerticalLayout {
             alignment: center;
             Text {
                 text: root.network;
                 color: Palette.muted;
-                font-size: 12px;
+                font-size: 13px;
+                font-weight: 500;
                 vertical-alignment: center;
             }
         }
-
         if root.scan: VerticalLayout {
             alignment: center;
             Text {
@@ -137,13 +174,11 @@ component StatusBar inherits Rectangle {
                 color: Palette.accent;
                 font-size: 12px;
                 font-weight: 800;
-                letter-spacing: 1px;
+                letter-spacing: 1.5px;
                 vertical-alignment: center;
             }
         }
-
         Rectangle { horizontal-stretch: 1; }
-
         VerticalLayout { alignment: center; LinkBadge { label: "C"; on: root.control-on; } }
         VerticalLayout { alignment: center; LinkBadge { label: "T"; on: root.telemetry-on; } }
         VerticalLayout {
@@ -151,7 +186,7 @@ component StatusBar inherits Rectangle {
             Text {
                 text: root.clock;
                 color: #cdd9e2;
-                font-size: 13px;
+                font-size: 15px;
                 font-weight: 600;
                 vertical-alignment: center;
             }
@@ -163,12 +198,12 @@ component StatusBar inherits Rectangle {
 component Header inherits Rectangle {
     in property <string> title;
     in property <bool> muted;
-    height: 46px;
+    height: 52px;
     background: @linear-gradient(180deg, #0e1822 0%, #0b131b 100%);
     Text {
         text: root.title;
         color: root.muted ? Palette.muted : Palette.txt;
-        font-size: 16px;
+        font-size: 18px;
         font-weight: root.muted ? 500 : 600;
         letter-spacing: root.muted ? 1px : 0.3px;
         horizontal-alignment: center;
@@ -176,36 +211,13 @@ component Header inherits Rectangle {
     }
 }
 
-// Chevron used by the cycler arrows.
-component Chevron inherits Path {
-    in property <bool> right;
-    width: 30px;
-    height: 30px;
-    viewbox-width: 30;
-    viewbox-height: 30;
-    stroke: #cfe0ec;
-    stroke-width: 3px;
-    MoveTo {
-        x: root.right ? 11 : 19;
-        y: 7;
-    }
-    LineTo {
-        x: root.right ? 21 : 9;
-        y: 15;
-    }
-    LineTo {
-        x: root.right ? 11 : 19;
-        y: 23;
-    }
-}
-
 component CyclerArrow inherits Rectangle {
     in property <bool> right;
     in property <bool> enabled: true;
     callback clicked;
-    width: 58px;
-    height: 96px;
-    border-radius: 16px;
+    width: 80px;
+    height: 168px;
+    border-radius: 18px;
     border-width: 1px;
     border-color: Palette.line2;
     background: touch.pressed ? #1b2836 : @linear-gradient(160deg, #17222f 0%, #0f1822 100%);
@@ -216,17 +228,20 @@ component CyclerArrow inherits Rectangle {
             root.clicked();
         }
     }
-    Chevron {
-        x: (parent.width - self.width) / 2;
+    Icon {
+        x: (parent.width - self.width) / 2 + (root.right ? 2px : -2px);
         y: (parent.height - self.height) / 2;
-        right: root.right;
+        d: root.right ? Icons.chevron : Icons.back;
+        tint: #cfe0ec;
+        size: 40px;
+        weight: 2.4;
     }
 }
 
 component FolderButton inherits Rectangle {
     in property <string> name;
     callback clicked;
-    height: 34px;
+    height: 48px;
     border-radius: 999px;
     border-width: 1px;
     border-color: Palette.line;
@@ -238,29 +253,19 @@ component FolderButton inherits Rectangle {
         }
     }
     HorizontalLayout {
-        padding-left: 14px;
-        padding-right: 12px;
-        spacing: 8px;
+        padding-left: 18px;
+        padding-right: 16px;
+        spacing: 10px;
         alignment: center;
-        Rectangle {
-            width: 8px;
-            height: 8px;
-            border-radius: 4px;
-            background: Palette.accent;
-        }
+        VerticalLayout { alignment: center; Icon { d: Icons.folder; tint: Palette.accent; size: 18px; } }
         Text {
             text: root.name;
             color: #cfe0ec;
-            font-size: 13px;
+            font-size: 17px;
             font-weight: 600;
             vertical-alignment: center;
         }
-        Text {
-            text: "v";
-            color: Palette.faint;
-            font-size: 12px;
-            vertical-alignment: center;
-        }
+        VerticalLayout { alignment: center; Icon { d: Icons.chevron-down; tint: Palette.faint; size: 16px; } }
     }
 }
 
@@ -268,18 +273,54 @@ component Badge inherits Rectangle {
     in property <string> text;
     in property <color> fg;
     in property <color> bg;
-    height: 20px;
+    height: 28px;
     border-radius: 999px;
     background: root.bg;
     HorizontalLayout {
-        padding-left: 11px;
-        padding-right: 11px;
+        padding-left: 14px;
+        padding-right: 14px;
         Text {
             text: root.text;
             color: root.fg;
-            font-size: 10px;
+            font-size: 12px;
             font-weight: 800;
-            letter-spacing: 1px;
+            letter-spacing: 1.5px;
+            vertical-alignment: center;
+        }
+    }
+}
+
+component PrimaryButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    in property <string> icon: Icons.check;
+    callback clicked;
+    height: 64px;
+    border-radius: 16px;
+    border-width: 1px;
+    border-color: root.enabled ? #37c06a80 : Palette.line;
+    background: root.enabled
+        ? (touch.pressed ? #16321f : @linear-gradient(180deg, #16351f 0%, #10281a 100%))
+        : Palette.surface;
+    opacity: root.enabled ? 1.0 : 0.45;
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => {
+            root.clicked();
+        }
+    }
+    HorizontalLayout {
+        alignment: center;
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            Icon { d: root.icon; tint: root.enabled ? #8fe6ab : Palette.muted; size: 20px; }
+        }
+        Text {
+            text: root.text;
+            color: root.enabled ? #8fe6ab : Palette.muted;
+            font-size: 18px;
+            font-weight: 700;
             vertical-alignment: center;
         }
     }
@@ -290,8 +331,8 @@ component Ptt inherits Rectangle {
     in property <string> text;
     in property <bool> enabled;
     callback pressed;
-    height: 92px;
-    border-radius: 18px;
+    height: 138px;
+    border-radius: 22px;
     border-width: 1px;
     border-color: root.enabled ? Palette.line2 : #ffffff1f;
     background: root.enabled
@@ -309,21 +350,15 @@ component Ptt inherits Rectangle {
     }
     VerticalLayout {
         alignment: center;
-        spacing: 8px;
-        Rectangle {
-            height: 30px;
-            Rectangle {
-                width: 16px;
-                height: 26px;
-                x: (parent.width - self.width) / 2;
-                border-radius: 8px;
-                background: root.enabled ? Palette.txt : Palette.muted;
-            }
+        spacing: 10px;
+        HorizontalLayout {
+            alignment: center;
+            Icon { d: Icons.mic; tint: root.enabled ? Palette.txt : Palette.muted; size: 34px; }
         }
         Text {
             text: root.text;
             color: root.enabled ? Palette.txt : Palette.muted;
-            font-size: 15px;
+            font-size: 18px;
             font-weight: 700;
             letter-spacing: 0.4px;
             horizontal-alignment: center;
@@ -333,30 +368,41 @@ component Ptt inherits Rectangle {
 
 component Softkey inherits Rectangle {
     in property <string> text;
+    in property <string> icon;
     in property <bool> danger;
     in property <bool> enabled: true;
     callback clicked;
-    height: 44px;
-    border-radius: 11px;
+    border-radius: 14px;
     border-width: 1px;
     border-color: root.danger ? #b5343a : Palette.line;
     background: root.danger
         ? @linear-gradient(180deg, #d23b41 0%, #a82a2f 100%)
         : (touch.pressed ? #16202b : Palette.surface);
-    opacity: root.enabled ? 1.0 : 0.4;
+    opacity: root.enabled ? 1.0 : 0.35;
     touch := TouchArea {
         enabled: root.enabled;
         clicked => {
             root.clicked();
         }
     }
-    Text {
-        text: root.text;
-        color: root.danger ? #ffffff : Palette.txt;
-        font-size: 13px;
-        font-weight: 600;
-        horizontal-alignment: center;
-        vertical-alignment: center;
+    HorizontalLayout {
+        alignment: center;
+        spacing: 8px;
+        VerticalLayout {
+            alignment: center;
+            if root.icon != "": Icon {
+                d: root.icon;
+                tint: root.danger ? #ffffff : Palette.txt;
+                size: 19px;
+            }
+        }
+        Text {
+            text: root.text;
+            color: root.danger ? #ffffff : Palette.txt;
+            font-size: 15px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
     }
 }
 
@@ -364,25 +410,82 @@ component InfoRow inherits HorizontalLayout {
     in property <string> label;
     in property <string> value;
     in property <color> value-color: Palette.txt;
-    height: 34px;
+    height: 40px;
     Text {
         text: root.label;
         color: Palette.muted;
-        font-size: 14px;
+        font-size: 15px;
         vertical-alignment: center;
     }
     Rectangle { horizontal-stretch: 1; }
     Text {
         text: root.value;
         color: root.value-color;
-        font-size: 14px;
+        font-size: 15px;
         font-weight: 600;
         vertical-alignment: center;
         horizontal-alignment: right;
     }
 }
 
-// Home screen: talkgroup cycler hero + select action + docked PTT.
+component ListRow inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    in property <string> icon;
+    in property <color> icon-tint: Palette.accent;
+    in property <bool> danger;
+    callback clicked;
+    height: 68px;
+    border-radius: 14px;
+    border-width: 1px;
+    border-color: Palette.line;
+    background: touch.pressed ? #16202b : Palette.surface;
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 14px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 42px;
+                height: 42px;
+                border-radius: 12px;
+                background: root.danger ? #f0555a1f : #33a7dd1f;
+                Icon {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    d: root.icon;
+                    tint: root.danger ? Palette.red : root.icon-tint;
+                    size: 20px;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.title;
+                color: root.danger ? #ff9a9d : Palette.txt;
+                font-size: 17px;
+                font-weight: 600;
+            }
+            if root.subtitle != "": Text {
+                text: root.subtitle;
+                color: Palette.muted;
+                font-size: 13px;
+            }
+        }
+        Rectangle { horizontal-stretch: 1; }
+        VerticalLayout { alignment: center; Icon { d: Icons.chevron; tint: Palette.faint; size: 18px; } }
+    }
+}
+
+// ---- Home screen: talkgroup cycler + select action + docked PTT ----
 component HomeScreen inherits Rectangle {
     in property <bool> has-codeplug;
     in property <string> folder-name;
@@ -408,15 +511,15 @@ component HomeScreen inherits Rectangle {
     background: transparent;
 
     VerticalLayout {
-        padding: 14px;
-        spacing: 12px;
+        padding: 22px;
+        spacing: 18px;
 
-        // Cycler hero, vertically centered in the available space.
+        // Cycler group, vertically centered.
         Rectangle {
             vertical-stretch: 1;
             VerticalLayout {
                 alignment: center;
-                spacing: 14px;
+                spacing: 20px;
 
                 if root.has-codeplug: HorizontalLayout {
                     alignment: center;
@@ -429,7 +532,7 @@ component HomeScreen inherits Rectangle {
                 }
 
                 HorizontalLayout {
-                    spacing: 10px;
+                    spacing: 12px;
                     CyclerArrow {
                         right: false;
                         enabled: root.can-cycle;
@@ -440,27 +543,27 @@ component HomeScreen inherits Rectangle {
                     VerticalLayout {
                         horizontal-stretch: 1;
                         alignment: center;
-                        spacing: 4px;
+                        spacing: 6px;
                         Text {
                             text: "TALKGROUP";
                             color: Palette.faint;
-                            font-size: 11px;
+                            font-size: 12px;
                             font-weight: 700;
-                            letter-spacing: 3px;
+                            letter-spacing: 4px;
                             horizontal-alignment: center;
                         }
                         Text {
                             text: root.talkgroup-name;
-                            color: #eef4f8;
-                            font-size: 40px;
+                            color: #f2f7fb;
+                            font-size: 64px;
                             font-weight: 800;
                             horizontal-alignment: center;
-                            overflow: elide;
+                            wrap: word-wrap;
                         }
                         Text {
                             text: root.tg-sub;
                             color: Palette.muted;
-                            font-size: 13px;
+                            font-size: 15px;
                             horizontal-alignment: center;
                         }
                         if root.badge != "": HorizontalLayout {
@@ -477,42 +580,35 @@ component HomeScreen inherits Rectangle {
                     }
                 }
 
-                if root.scan-active: HorizontalLayout {
-                    alignment: center;
-                    Text {
-                        text: "Scanning " + root.attached-count + " groups";
-                        color: Palette.accent;
-                        font-size: 12px;
-                        font-weight: 700;
-                        letter-spacing: 1px;
+                // Select-talkgroup action, directly below the cycler.
+                if root.has-codeplug: PrimaryButton {
+                    text: root.badge-kind == 2 ? "On air" : "Select talkgroup";
+                    enabled: root.select-enabled;
+                    clicked => {
+                        root.select-tg();
                     }
                 }
-            }
-        }
 
-        // Select-talkgroup action (attaches the shown group as TX).
-        if root.has-codeplug: Rectangle {
-            height: 52px;
-            border-radius: 14px;
-            border-width: 1px;
-            border-color: root.select-enabled ? #37c06a80 : Palette.line;
-            background: root.select-enabled
-                ? (seltouch.pressed ? #16321f : #12281a)
-                : Palette.surface;
-            opacity: root.select-enabled ? 1.0 : 0.45;
-            seltouch := TouchArea {
-                enabled: root.select-enabled;
-                clicked => {
-                    root.select-tg();
+                if root.scan-active: HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        height: 40px;
+                        border-radius: 999px;
+                        background: #33a7dd29;
+                        HorizontalLayout {
+                            padding-left: 16px;
+                            padding-right: 16px;
+                            Text {
+                                text: "SCAN - " + root.attached-count + " groups";
+                                color: #7ecbef;
+                                font-size: 13px;
+                                font-weight: 700;
+                                letter-spacing: 1px;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
                 }
-            }
-            Text {
-                text: root.badge-kind == 2 ? "On air" : "Select talkgroup";
-                color: root.select-enabled ? #8fe6ab : Palette.muted;
-                font-size: 15px;
-                font-weight: 700;
-                horizontal-alignment: center;
-                vertical-alignment: center;
             }
         }
 
@@ -527,81 +623,36 @@ component HomeScreen inherits Rectangle {
     }
 }
 
-// A folder row for the folder selector screen.
-component FolderRowView inherits Rectangle {
-    in property <string> name;
-    in property <int> count;
-    in property <bool> selected;
-    callback clicked;
-    height: 62px;
-    border-radius: 14px;
-    border-width: 1px;
-    border-color: root.selected ? #33a7dd80 : Palette.line;
-    background: touch.pressed ? #16202b : (root.selected ? #33a7dd1a : Palette.surface);
-    touch := TouchArea {
-        clicked => {
-            root.clicked();
-        }
-    }
-    HorizontalLayout {
-        padding-left: 14px;
-        padding-right: 14px;
-        spacing: 14px;
-        Rectangle {
-            width: 38px;
-            height: 38px;
-            y: (parent.height - self.height) / 2;
-            border-radius: 11px;
-            background: #33a7dd24;
-            Text {
-                text: "F";
-                color: Palette.accent;
-                font-size: 16px;
-                font-weight: 700;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-        }
-        VerticalLayout {
-            alignment: center;
-            spacing: 2px;
-            Text {
-                text: root.name;
-                color: Palette.txt;
-                font-size: 16px;
-                font-weight: 600;
-            }
-            Text {
-                text: root.count + (root.count == 1 ? " talkgroup" : " talkgroups");
-                color: Palette.muted;
-                font-size: 12px;
-            }
-        }
-        Rectangle { horizontal-stretch: 1; }
-        if root.selected: Text {
-            text: "OK";
-            color: Palette.accent;
-            font-size: 13px;
-            font-weight: 700;
-            vertical-alignment: center;
-        }
-    }
-}
-
-component FoldersScreen inherits Rectangle {
-    in property <[FolderRow]> folders;
-    callback select-folder(int);
+component MenuScreen inherits Rectangle {
+    in property <bool> registered;
+    callback open-info;
+    callback register;
+    callback deregister;
     background: transparent;
     VerticalLayout {
-        padding: 14px;
-        spacing: 10px;
+        padding: 18px;
+        spacing: 12px;
         alignment: start;
-        for f[idx] in root.folders: FolderRowView {
-            name: f.name;
-            count: f.count;
-            selected: f.selected;
+        ListRow {
+            title: "Radio Info";
+            subtitle: "Registration, network, signal";
+            icon: Icons.info;
             clicked => {
-                root.select-folder(idx);
+                root.open-info();
+            }
+        }
+        ListRow {
+            title: root.registered ? "Deregister" : "Register";
+            subtitle: root.registered ? "Detach from the network" : "Attach to the network";
+            icon: root.registered ? Icons.logout : Icons.login;
+            danger: root.registered;
+            icon-tint: Palette.green;
+            clicked => {
+                if (root.registered) {
+                    root.deregister();
+                } else {
+                    root.register();
+                }
             }
         }
     }
@@ -619,21 +670,18 @@ component InfoScreen inherits Rectangle {
     in property <string> rssi;
     in property <int> attached-count;
     in property <bool> restart-required;
-
     background: transparent;
-
     VerticalLayout {
-        padding: 14px;
-        spacing: 10px;
+        padding: 18px;
+        spacing: 12px;
         alignment: start;
-
         Rectangle {
             background: Palette.surface;
-            border-radius: 14px;
+            border-radius: 16px;
             border-width: 1px;
             border-color: Palette.line;
             VerticalLayout {
-                padding: 16px;
+                padding: 18px;
                 spacing: 2px;
                 InfoRow {
                     label: "Registration";
@@ -653,12 +701,218 @@ component InfoScreen inherits Rectangle {
                 InfoRow { label: "Attached groups"; value: root.attached-count; }
             }
         }
-
         if root.restart-required: Text {
             text: "Restart required to apply staged config";
             color: Palette.amber;
-            font-size: 13px;
+            font-size: 14px;
             wrap: word-wrap;
+        }
+    }
+}
+
+component FolderRowView inherits Rectangle {
+    in property <string> name;
+    in property <int> count;
+    in property <bool> selected;
+    callback clicked;
+    height: 70px;
+    border-radius: 16px;
+    border-width: 1px;
+    border-color: root.selected ? #33a7dd80 : Palette.line;
+    background: touch.pressed ? #16202b : (root.selected ? #33a7dd1a : Palette.surface);
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 14px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 44px;
+                height: 44px;
+                border-radius: 12px;
+                background: #33a7dd24;
+                Icon {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    d: Icons.folder;
+                    tint: Palette.accent;
+                    size: 22px;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.name;
+                color: Palette.txt;
+                font-size: 18px;
+                font-weight: 600;
+            }
+            Text {
+                text: root.count + (root.count == 1 ? " talkgroup" : " talkgroups");
+                color: Palette.muted;
+                font-size: 13px;
+            }
+        }
+        Rectangle { horizontal-stretch: 1; }
+        if root.selected: VerticalLayout {
+            alignment: center;
+            Icon { d: Icons.check; tint: Palette.accent; size: 22px; }
+        }
+    }
+}
+
+component FoldersScreen inherits Rectangle {
+    in property <[FolderRow]> folders;
+    callback select-folder(int);
+    background: transparent;
+    VerticalLayout {
+        padding: 18px;
+        spacing: 12px;
+        alignment: start;
+        for f[idx] in root.folders: FolderRowView {
+            name: f.name;
+            count: f.count;
+            selected: f.selected;
+            clicked => {
+                root.select-folder(idx);
+            }
+        }
+    }
+}
+
+component DialKey inherits Rectangle {
+    in property <string> text;
+    in property <string> sub;
+    callback clicked;
+    height: 76px;
+    border-radius: 16px;
+    border-width: 1px;
+    border-color: Palette.line2;
+    background: touch.pressed ? #1b2836 : @linear-gradient(180deg, #17222f 0%, #0f1822 100%);
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+    VerticalLayout {
+        alignment: center;
+        spacing: 0px;
+        Text {
+            text: root.text;
+            color: #e8f0f6;
+            font-size: 26px;
+            font-weight: 600;
+            horizontal-alignment: center;
+        }
+        if root.sub != "": Text {
+            text: root.sub;
+            color: Palette.faint;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+component DialerScreen inherits Rectangle {
+    in property <string> number;
+    callback key(string);
+    callback call;
+    background: transparent;
+    VerticalLayout {
+        padding: 18px;
+        spacing: 14px;
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 4px;
+            Text {
+                text: root.number == "" ? "Enter number" : root.number;
+                color: root.number == "" ? Palette.faint : #ffffff;
+                font-size: root.number == "" ? 20px : 34px;
+                font-weight: root.number == "" ? 600 : 800;
+                letter-spacing: 2px;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: "SSI / GROUP";
+                color: Palette.muted;
+                font-size: 11px;
+                letter-spacing: 3px;
+                horizontal-alignment: center;
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        for row in [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["*", "0", "#"]]: HorizontalLayout {
+            spacing: 10px;
+            for d in row: DialKey {
+                text: d;
+                horizontal-stretch: 1;
+                clicked => {
+                    root.key(d);
+                }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 10px;
+            Rectangle {
+                height: 64px;
+                horizontal-stretch: 1;
+                border-radius: 16px;
+                border-width: 1px;
+                border-color: Palette.line2;
+                background: bstouch.pressed ? #1b2836 : Palette.surface;
+                bstouch := TouchArea {
+                    clicked => {
+                        root.key("back");
+                    }
+                }
+                Icon {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    d: Icons.backspace;
+                    tint: Palette.muted;
+                    size: 24px;
+                }
+            }
+            Rectangle {
+                height: 64px;
+                horizontal-stretch: 2;
+                border-radius: 16px;
+                border-width: 1px;
+                border-color: #2bb76880;
+                background: root.number == "" ? Palette.surface : (ctouch.pressed ? #17402a : @linear-gradient(180deg, #2bb768 0%, #1f9a55 100%));
+                opacity: root.number == "" ? 0.5 : 1.0;
+                ctouch := TouchArea {
+                    enabled: root.number != "";
+                    clicked => {
+                        root.call();
+                    }
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 10px;
+                    VerticalLayout { alignment: center; Icon { d: Icons.phone; tint: root.number == "" ? Palette.muted : #ffffff; size: 22px; } }
+                    Text {
+                        text: "Call";
+                        color: root.number == "" ? Palette.muted : #ffffff;
+                        font-size: 18px;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+                }
+            }
         }
     }
 }
@@ -682,17 +936,17 @@ component KeypadHome inherits FocusScope {
         return reject;
     }
     VerticalLayout {
-        padding: 16px;
+        padding: 18px;
         spacing: 12px;
         alignment: start;
         Text {
             text: "Keypad layout - Up/Down to move";
             color: Palette.muted;
-            font-size: 14px;
+            font-size: 15px;
         }
         for item[idx] in root.items: Rectangle {
-            height: 52px;
-            border-radius: 8px;
+            height: 56px;
+            border-radius: 10px;
             border-width: 1px;
             background: idx == root.selected ? #1f6feb : Palette.surface;
             border-color: idx == root.selected ? #4a8bff : Palette.line;
@@ -712,6 +966,8 @@ component KeypadHome inherits FocusScope {
 
 export component MainWindow inherits Window {
     title: "TETRA TN UI";
+    default-font-family: "Inter";
+    default-font-size: 15px;
     preferred-width: 720px;
     preferred-height: 1280px;
     background: @linear-gradient(180deg, #0f1620 0%, #0a0f16 100%);
@@ -750,6 +1006,7 @@ export component MainWindow inherits Window {
     in property <bool> restart-required;
     in property <string> clock: "--:--:--";
     in property <string> date: "";
+    in property <string> dial-number: "";
 
     callback register;
     callback deregister;
@@ -758,6 +1015,24 @@ export component MainWindow inherits Window {
     callback select-talkgroup;
     callback select-folder(int);
     callback ptt;
+    callback dial-key(string);
+    callback dial-call;
+
+    function screen-title() -> string {
+        if (root.screen == Screen.Menu) {
+            return "Menu";
+        }
+        if (root.screen == Screen.Info) {
+            return "Radio Info";
+        }
+        if (root.screen == Screen.Folders) {
+            return "Folders";
+        }
+        if (root.screen == Screen.Dialer) {
+            return "Dialer";
+        }
+        return root.date;
+    }
 
     VerticalLayout {
         StatusBar {
@@ -770,7 +1045,7 @@ export component MainWindow inherits Window {
         }
 
         Header {
-            title: root.screen == Screen.Info ? "Radio Info" : (root.screen == Screen.Folders ? "Folders" : root.date);
+            title: root.screen-title();
             muted: root.screen == Screen.Home;
         }
 
@@ -805,6 +1080,22 @@ export component MainWindow inherits Window {
             }
         }
 
+        if root.device-input == DeviceInput.Touch && root.screen == Screen.Menu: MenuScreen {
+            vertical-stretch: 1;
+            registered: root.registered;
+            open-info => {
+                root.screen = Screen.Info;
+            }
+            register => {
+                root.register();
+                root.screen = Screen.Home;
+            }
+            deregister => {
+                root.deregister();
+                root.screen = Screen.Home;
+            }
+        }
+
         if root.device-input == DeviceInput.Touch && root.screen == Screen.Folders: FoldersScreen {
             vertical-stretch: 1;
             folders: root.folders;
@@ -829,50 +1120,53 @@ export component MainWindow inherits Window {
             restart-required: root.restart-required;
         }
 
+        if root.device-input == DeviceInput.Touch && root.screen == Screen.Dialer: DialerScreen {
+            vertical-stretch: 1;
+            number: root.dial-number;
+            key(k) => {
+                root.dial-key(k);
+            }
+            call => {
+                root.dial-call();
+            }
+        }
+
         if root.device-input == DeviceInput.Keypad: KeypadHome {
             vertical-stretch: 1;
         }
 
         // Softkey bar (3-column grid), context-dependent.
         Rectangle {
-            height: 62px;
+            height: 84px;
             background: @linear-gradient(180deg, #0c141d 0%, #0a1017 100%);
             HorizontalLayout {
-                padding: 9px;
-                padding-left: 12px;
-                padding-right: 12px;
-                spacing: 8px;
+                padding-top: 12px;
+                padding-bottom: 12px;
+                padding-left: 14px;
+                padding-right: 14px;
+                spacing: 10px;
 
                 if root.screen == Screen.Home: Softkey {
-                    text: "Radio Info";
+                    text: "Menu";
+                    icon: Icons.menu;
                     horizontal-stretch: 1;
                     clicked => {
-                        root.screen = Screen.Info;
+                        root.screen = Screen.Menu;
                     }
                 }
+                if root.screen == Screen.Home: Rectangle { horizontal-stretch: 1; }
                 if root.screen == Screen.Home: Softkey {
-                    text: root.registered ? "Deregister" : "Register";
-                    danger: root.registered;
+                    text: "Dialer";
+                    icon: Icons.phone;
                     horizontal-stretch: 1;
                     clicked => {
-                        if (root.registered) {
-                            root.deregister();
-                        } else {
-                            root.register();
-                        }
-                    }
-                }
-                if root.screen == Screen.Home: Softkey {
-                    text: "Folders";
-                    enabled: root.has-codeplug;
-                    horizontal-stretch: 1;
-                    clicked => {
-                        root.screen = Screen.Folders;
+                        root.screen = Screen.Dialer;
                     }
                 }
 
                 if root.screen != Screen.Home: Softkey {
                     text: "Back";
+                    icon: Icons.back;
                     horizontal-stretch: 1;
                     clicked => {
                         root.screen = Screen.Home;

@@ -16,3 +16,6 @@ Thumbs.db
 
 # Runtime logs
 *.log
+
+# Local screenshots
+*.png

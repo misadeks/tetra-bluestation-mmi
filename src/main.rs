@@ -156,6 +156,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let _ = tx.send(app::AppEvent::UiSelectFolder(i));
         });
     }
+    {
+        let tx = events_tx.clone();
+        window.on_dial_key(move |k| {
+            let _ = tx.send(app::AppEvent::UiDialKey(k.to_string()));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_dial_call(move || {
+            let _ = tx.send(app::AppEvent::UiDialCall);
+        });
+    }
 
     // The app loop owns state and is the sole UI writer.
     {
