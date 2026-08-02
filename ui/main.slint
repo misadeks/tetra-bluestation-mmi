@@ -366,9 +366,9 @@ component CyclerArrow inherits Rectangle {
     in property <bool> right;
     in property <bool> enabled: true;
     callback clicked;
-    width: 80px;
-    height: 168px;
-    border-radius: 18px;
+    width: 96px;
+    height: 208px;
+    border-radius: 20px;
     border-width: 1px;
     border-color: Palette.line2;
     background: touch.pressed ? #1b2836 : @linear-gradient(160deg, #17222f 0%, #0f1822 100%);
@@ -384,8 +384,8 @@ component CyclerArrow inherits Rectangle {
         y: (parent.height - self.height) / 2;
         d: root.right ? Icons.chevron : Icons.back;
         tint: #cfe0ec;
-        size: 40px;
-        weight: 2.4;
+        size: 48px;
+        weight: 2.6;
     }
 }
 
@@ -424,16 +424,16 @@ component Badge inherits Rectangle {
     in property <string> text;
     in property <color> fg;
     in property <color> bg;
-    height: 28px;
-    border-radius: 999px;
+    height: 36px;
+    border-radius: 11px;
     background: root.bg;
     HorizontalLayout {
-        padding-left: 14px;
-        padding-right: 14px;
+        padding-left: 18px;
+        padding-right: 18px;
         Text {
             text: root.text;
             color: root.fg;
-            font-size: 12px;
+            font-size: 15px;
             font-weight: 800;
             letter-spacing: 1.5px;
             vertical-alignment: center;
@@ -653,7 +653,7 @@ component Softkey inherits Rectangle {
         y: -8px;
         width: max(20px, txt.preferred-width + 10px);
         height: 20px;
-        border-radius: 10px;
+        border-radius: 8px;
         background: Palette.red;
         border-width: 2px;
         border-color: #0b1017;
@@ -773,6 +773,7 @@ component ListRow inherits Rectangle {
 component HomeScreen inherits Rectangle {
     in property <bool> has-codeplug;
     in property <string> folder-name;
+    in property <string> home-display;
     in property <string> talkgroup-name;
     in property <string> tg-sub;
     in property <string> badge;
@@ -808,6 +809,36 @@ component HomeScreen inherits Rectangle {
         padding: 22px;
         spacing: 18px;
 
+        // Home-mode display: operator banner pushed by the network, shown above
+        // the selected talkgroup. Only present when the network has sent text.
+        if root.home-display != "": Rectangle {
+            height: hd-row.preferred-height + 24px;
+            border-radius: 14px;
+            border-width: 1px;
+            border-color: #33a7dd3d;
+            background: #12212e;
+            hd-row := HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 12px;
+                padding-bottom: 12px;
+                spacing: 12px;
+                VerticalLayout {
+                    alignment: center;
+                    Icon { d: Icons.info; tint: Palette.accent; size: 22px; }
+                }
+                Text {
+                    text: root.home-display;
+                    color: #dbeafc;
+                    font-size: 20px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    wrap: word-wrap;
+                }
+            }
+        }
+
         // Cycler group, vertically centered. Replaced by the group-call panel
         // while a group call is up.
         Rectangle {
@@ -819,7 +850,7 @@ component HomeScreen inherits Rectangle {
                     alignment: center;
                     Rectangle {
                         height: 30px;
-                        border-radius: 999px;
+                        border-radius: 10px;
                         background: #d23b4133;
                         HorizontalLayout {
                             padding-left: 16px;
@@ -886,15 +917,7 @@ component HomeScreen inherits Rectangle {
                     VerticalLayout {
                         horizontal-stretch: 1;
                         alignment: center;
-                        spacing: 6px;
-                        Text {
-                            text: "TALKGROUP";
-                            color: Palette.faint;
-                            font-size: 12px;
-                            font-weight: 700;
-                            letter-spacing: 4px;
-                            horizontal-alignment: center;
-                        }
+                        spacing: 8px;
                         Text {
                             text: root.talkgroup-name;
                             color: #f2f7fb;
@@ -906,7 +929,8 @@ component HomeScreen inherits Rectangle {
                         Text {
                             text: root.tg-sub;
                             color: Palette.muted;
-                            font-size: 15px;
+                            font-size: 21px;
+                            font-weight: 600;
                             horizontal-alignment: center;
                         }
                         if root.badge != "": HorizontalLayout {
@@ -949,7 +973,7 @@ component HomeScreen inherits Rectangle {
                     alignment: center;
                     Rectangle {
                         height: 40px;
-                        border-radius: 999px;
+                        border-radius: 12px;
                         background: #33a7dd29;
                         HorizontalLayout {
                             padding-left: 16px;
@@ -1541,7 +1565,7 @@ component Toggle inherits Rectangle {
 component TagPill inherits Rectangle {
     in property <int> tag; // 1 scan, 2 tx
     height: 22px;
-    border-radius: 999px;
+    border-radius: 8px;
     background: root.tag == 2 ? #37c06a2e : #33a7dd29;
     HorizontalLayout {
         padding-left: 10px;
@@ -2502,7 +2526,7 @@ component ConvRowView inherits Rectangle {
                     y: -6px;
                     width: 22px;
                     height: 22px;
-                    border-radius: 11px;
+                    border-radius: 8px;
                     background: Palette.red;
                     Text {
                         x: (parent.width - self.width) / 2;
@@ -4901,6 +4925,7 @@ export component MainWindow inherits Window {
     in property <bool> ptt-enabled;
     in property <string> ptt-label: "Register to talk";
     in property <string> folder-name: "Talkgroups";
+    in property <string> home-display: "";
     in property <int> sel-folder;
     in property <[FolderRow]> folders;
     in property <[ContactRow]> contacts;
@@ -5205,6 +5230,7 @@ export component MainWindow inherits Window {
             vertical-stretch: 1;
             has-codeplug: root.has-codeplug;
             folder-name: root.folder-name;
+            home-display: root.home-display;
             talkgroup-name: root.talkgroup-name;
             tg-sub: root.tg-sub;
             badge: root.badge;
@@ -5767,7 +5793,10 @@ export component MainWindow inherits Window {
             }
         }
 
-        // Softkey bar (3-column grid), context-dependent.
+        // Softkey bar: three fixed equal-width slots (LEFT / CENTER / RIGHT).
+        // Each slot is a stretch:1 wrapper whose width never depends on its
+        // content, so buttons stay the same size and never shift between screens.
+        // Only the button shown inside each slot changes per screen.
         Rectangle {
             height: 92px;
             background: @linear-gradient(180deg, #0c141d 0%, #0a1017 100%);
@@ -5778,80 +5807,85 @@ export component MainWindow inherits Window {
                 padding-right: 14px;
                 spacing: 10px;
 
-                // Fixed 3-slot bar: exactly one equal-width child per slot, so all
-                // buttons are the same size and three always fit.
-
                 // LEFT slot.
-                if root.screen == Screen.Home: Softkey {
-                    text: "Menu";
-                    icon: Icons.menu;
+                Rectangle {
                     horizontal-stretch: 1;
-                    clicked => {
-                        root.screen = Screen.Menu;
+                    if root.screen == Screen.Home: Softkey {
+                        width: 100%;
+                        height: 100%;
+                        text: "Menu";
+                        icon: Icons.menu;
+                        clicked => {
+                            root.screen = Screen.Menu;
+                        }
                     }
-                }
-                if root.screen == Screen.InCall: Softkey {
-                    text: root.call-muted ? "Unmute" : "Mute";
-                    icon: root.call-muted ? Icons.mic-off : Icons.mic;
-                    horizontal-stretch: 1;
-                    clicked => {
-                        root.toggle-mute();
+                    if root.screen == Screen.InCall: Softkey {
+                        width: 100%;
+                        height: 100%;
+                        text: root.call-muted ? "Unmute" : "Mute";
+                        icon: root.call-muted ? Icons.mic-off : Icons.mic;
+                        clicked => {
+                            root.toggle-mute();
+                        }
                     }
-                }
-                if root.screen != Screen.Home && root.screen != Screen.InCall: Softkey {
-                    text: "Back";
-                    icon: Icons.back;
-                    horizontal-stretch: 1;
-                    clicked => {
-                        root.nav-back();
+                    if root.screen != Screen.Home && root.screen != Screen.InCall: Softkey {
+                        width: 100%;
+                        height: 100%;
+                        text: "Back";
+                        icon: Icons.back;
+                        clicked => {
+                            root.nav-back();
+                        }
                     }
                 }
 
-                // CENTER slot: Home on sub-menus, but not on Menu or the Dialer
-                // (nor Home/in-call, whose center is empty).
-                if root.screen != Screen.Home && root.screen != Screen.InCall
-                    && root.screen != Screen.Menu && root.screen != Screen.Dialer: Softkey {
-                    text: "Home";
-                    icon: Icons.home;
+                // CENTER slot: Home on sub-menus, empty on Home/in-call/Menu/Dialer.
+                Rectangle {
                     horizontal-stretch: 1;
-                    clicked => {
-                        root.screen = Screen.Home;
+                    if root.screen != Screen.Home && root.screen != Screen.InCall
+                        && root.screen != Screen.Menu && root.screen != Screen.Dialer: Softkey {
+                        width: 100%;
+                        height: 100%;
+                        text: "Home";
+                        icon: Icons.home;
+                        clicked => {
+                            root.screen = Screen.Home;
+                        }
                     }
-                }
-                if root.screen == Screen.Home || root.screen == Screen.InCall
-                    || root.screen == Screen.Menu || root.screen == Screen.Dialer: Rectangle {
-                    horizontal-stretch: 1;
                 }
 
                 // RIGHT slot.
-                if root.screen == Screen.Home && !root.group-call-active: Softkey {
-                    text: "Dialer";
-                    icon: Icons.phone;
+                Rectangle {
                     horizontal-stretch: 1;
-                    clicked => {
-                        root.screen = Screen.Dialer;
+                    if root.screen == Screen.Home && !root.group-call-active: Softkey {
+                        width: 100%;
+                        height: 100%;
+                        text: "Dialer";
+                        icon: Icons.phone;
+                        clicked => {
+                            root.screen = Screen.Dialer;
+                        }
                     }
-                }
-                if root.screen == Screen.Home && root.group-call-active: Softkey {
-                    text: "Hang up";
-                    icon: Icons.phone-off;
-                    danger: true;
-                    horizontal-stretch: 1;
-                    clicked => {
-                        root.hangup-group();
+                    if root.screen == Screen.Home && root.group-call-active: Softkey {
+                        width: 100%;
+                        height: 100%;
+                        text: "Hang up";
+                        icon: Icons.phone-off;
+                        danger: true;
+                        clicked => {
+                            root.hangup-group();
+                        }
                     }
-                }
-                if root.screen == Screen.InCall: Softkey {
-                    text: "Hang up";
-                    icon: Icons.phone-off;
-                    danger: true;
-                    horizontal-stretch: 1;
-                    clicked => {
-                        root.hangup-call();
+                    if root.screen == Screen.InCall: Softkey {
+                        width: 100%;
+                        height: 100%;
+                        text: "Hang up";
+                        icon: Icons.phone-off;
+                        danger: true;
+                        clicked => {
+                            root.hangup-call();
+                        }
                     }
-                }
-                if root.screen != Screen.Home && root.screen != Screen.InCall: Rectangle {
-                    horizontal-stretch: 1;
                 }
             }
         }

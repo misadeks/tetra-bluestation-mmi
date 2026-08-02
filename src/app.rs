@@ -3107,6 +3107,12 @@ fn reconcile_home_view(app: &mut AppState) {
 }
 
 /// Snapshot the state into plain values and push them onto the Slint event loop.
+/// Push the persisted home-mode-display banner text to the home screen.
+fn push_home_display(app: &AppState, weak: &slint::Weak<MainWindow>) {
+    let text = app.prefs.home_display_text.clone().unwrap_or_default();
+    let _ = weak.upgrade_in_event_loop(move |w| w.set_home_display(text.into()));
+}
+
 fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
     let s = &app.state;
     let control_connected = app.control_connected;
@@ -3222,6 +3228,7 @@ fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
     }
     .to_string();
     let restart_required = s.restart_required;
+    let home_display_text = app.prefs.home_display_text.clone().unwrap_or_default();
 
     let _ = weak.upgrade_in_event_loop(move |w| {
         w.set_control_connected(control_connected);
@@ -3241,6 +3248,7 @@ fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
         w.set_scan_active(scan_active);
         w.set_has_codeplug(has_codeplug);
         w.set_folder_name(folder_name.into());
+        w.set_home_display(home_display_text.into());
         w.set_talkgroup_name(tg_name.into());
         w.set_talkgroup_id(tg_id.into());
         w.set_tg_sub(tg_sub.into());
@@ -3465,10 +3473,31 @@ fn send_message(app: &mut AppState, weak: &slint::Weak<MainWindow>) {
 
 /// Store an inbound text message and surface it.
 fn handle_sds_message_in(app: &mut AppState, payload: &Value, weak: &slint::Weak<MainWindow>) {
+    let protocol_id = payload.get("protocol_id").and_then(Value::as_u64).unwrap_or(0) as u32;
+
+    // Home-mode display: when the codeplug enables the feature and the SDS
+    // arrives on the configured protocol id, decode it as operator text and show
+    // it as a banner on the home screen instead of routing it to the inbox.
+    let hd = app.codeplug.as_ref().and_then(|cp| cp.settings.home_display.clone());
+    if let Some(hd) = hd {
+        if hd.enabled && protocol_id == hd.pid as u32 {
+            let bytes: Vec<u8> = payload
+                .get("user_data")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(|v| v.as_u64().map(|n| n as u8)).collect())
+                .unwrap_or_default();
+            let text = protocol::decode_text_sdu(&bytes).trim().to_string();
+            tracing::info!(%text, pid = protocol_id, "home-mode display update");
+            app.prefs.home_display_text = if text.is_empty() { None } else { Some(text) };
+            app.prefs.save();
+            push_home_display(app, weak);
+            return;
+        }
+    }
+
     // Only Text Messaging (SDS-TL, protocol_id 0x82) is a "message". Other
     // protocol IDs (proprietary/other SDS-TL services) aren't shown in the
     // messages app.
-    let protocol_id = payload.get("protocol_id").and_then(Value::as_u64).unwrap_or(0) as u32;
     if protocol_id != protocol::SDS_TEXT_PROTOCOL_ID {
         tracing::info!(protocol_id, "SDS message with non-text protocol id ignored");
         return;
