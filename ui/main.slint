@@ -197,11 +197,13 @@ global Icons {
     out property <string> search: "M11 4a7 7 0 1 0 0.01 0M16.5 16.5L21 21";
     out property <string> message: "M4 5h16a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H9l-4 4v-4H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z";
     out property <string> send: "M4 12L20 4L13 20L11 13L4 12Z";
+    out property <string> antenna: "M12 8.4a1.4 1.4 0 1 0 0.01 0M8.9 5.3a5.4 5.4 0 0 0 0 7.4M15.1 5.3a5.4 5.4 0 0 1 0 7.4M12 9.8L9.6 21M12 9.8L14.4 21M10.2 17h3.6";
 }
 
 // 5 signal bars, heights scaled up, bottom-aligned (web UI .sig).
 component SignalBars inherits Rectangle {
     in property <int> bars;
+    in property <bool> registered;
     width: 32px;
     height: 20px;
     HorizontalLayout {
@@ -213,7 +215,7 @@ component SignalBars inherits Rectangle {
                 width: 4px;
                 height: h * 1px;
                 border-radius: 1px;
-                background: i < root.bars ? #dbe6ee : #35424c;
+                background: i < root.bars ? (root.registered ? #55d98a : Palette.red) : #35424c;
             }
         }
     }
@@ -269,6 +271,7 @@ component Battery inherits Rectangle {
 
 component StatusBar inherits Rectangle {
     in property <int> bars;
+    in property <bool> registered;
     in property <string> network;
     in property <bool> scan;
     in property <bool> control-on;
@@ -281,7 +284,16 @@ component StatusBar inherits Rectangle {
         padding-right: 14px;
         spacing: 12px;
 
-        VerticalLayout { alignment: center; SignalBars { bars: root.bars; } }
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                d: Icons.antenna;
+                size: 22px;
+                weight: 2.0;
+                tint: root.registered ? #55d98a : Palette.red;
+            }
+        }
+        VerticalLayout { alignment: center; SignalBars { bars: root.bars; registered: root.registered; } }
         VerticalLayout {
             alignment: center;
             Text {
@@ -975,8 +987,6 @@ component MenuScreen inherits Rectangle {
     callback open-settings;
     callback open-survey;
     callback open-network;
-    callback register;
-    callback deregister;
     background: transparent;
     VerticalLayout {
         padding: 18px;
@@ -1053,20 +1063,6 @@ component MenuScreen inherits Rectangle {
             icon: Icons.gear;
             clicked => {
                 root.open-settings();
-            }
-        }
-        ListRow {
-            title: root.registered ? "Deregister" : "Register";
-            subtitle: root.registered ? "Detach from the network" : "Attach to the network";
-            icon: root.registered ? Icons.logout : Icons.login;
-            danger: root.registered;
-            icon-tint: Palette.green;
-            clicked => {
-                if (root.registered) {
-                    root.deregister();
-                } else {
-                    root.register();
-                }
             }
         }
     }
@@ -1416,6 +1412,8 @@ component NetworkScreen inherits Rectangle {
     in property <int> attached-count;
     in property <bool> restart-required;
     callback open-survey;
+    callback register;
+    callback deregister;
     background: transparent;
     VerticalLayout {
         padding: 18px;
@@ -1459,6 +1457,20 @@ component NetworkScreen inherits Rectangle {
             icon: Icons.radio;
             clicked => {
                 root.open-survey();
+            }
+        }
+        ListRow {
+            title: root.registered ? "Deregister" : "Register";
+            subtitle: root.registered ? "Detach from the network" : "Attach to the network";
+            icon: root.registered ? Icons.logout : Icons.login;
+            danger: root.registered;
+            icon-tint: Palette.green;
+            clicked => {
+                if (root.registered) {
+                    root.deregister();
+                } else {
+                    root.register();
+                }
             }
         }
     }
@@ -5078,6 +5090,7 @@ export component MainWindow inherits Window {
         height: 100%;
         StatusBar {
             bars: root.signal-bars;
+            registered: root.registered;
             network: root.network;
             scan: root.scan-active;
             control-on: root.control-connected;
@@ -5184,14 +5197,6 @@ export component MainWindow inherits Window {
                 root.refresh();
                 root.screen = Screen.Survey;
             }
-            register => {
-                root.register();
-                root.screen = Screen.Home;
-            }
-            deregister => {
-                root.deregister();
-                root.screen = Screen.Home;
-            }
         }
 
         if root.device-input == DeviceInput.Touch && root.screen == Screen.Logs: LogsScreen {
@@ -5270,6 +5275,12 @@ export component MainWindow inherits Window {
             open-survey => {
                 root.refresh();
                 root.screen = Screen.Survey;
+            }
+            register => {
+                root.register();
+            }
+            deregister => {
+                root.deregister();
             }
         }
 
