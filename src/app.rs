@@ -1966,6 +1966,25 @@ fn apply_call_event(
         return;
     }
 
+    // For an inbound external (gateway) call, the setup indication carries the
+    // caller's external number in `external_subscriber_number_calling` while
+    // `calling_party_ssi` is just the gateway. Resolve both before we take the
+    // mutable `app.calls` borrow so we can show the number, not the gateway ISSI.
+    let ext_calling = body
+        .get("external_subscriber_number_calling")
+        .and_then(Value::as_str)
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let ext_gw_name = ext_calling.as_ref().and_then(|_| {
+        let ssi = body.get("calling_party_ssi").and_then(Value::as_u64)? as u32;
+        app.codeplug
+            .as_ref()?
+            .gateways
+            .iter()
+            .find(|g| g.gateway_issi == ssi)
+            .map(|g| g.name.clone())
+    });
+
     let c = app.calls.entry(cid).or_insert_with(|| Call {
         cid,
         can_request_tx: true,
@@ -1987,6 +2006,15 @@ fn apply_call_event(
                 c.direction = Some("mt");
                 if let Some(p) = body.get("calling_party_ssi").and_then(Value::as_u64) {
                     c.peer_ssi = Some(p as u32);
+                }
+                // External inbound call: show the caller's external number (and
+                // which gateway it arrived through) instead of the gateway ISSI.
+                if let Some(ext) = ext_calling {
+                    c.peer_label = Some(ext);
+                    c.peer_sub = Some(match ext_gw_name {
+                        Some(name) => format!("via {name}"),
+                        None => "External call".to_string(),
+                    });
                 }
             }
             c.simplex = body.get("simplex_duplex_selection").and_then(Value::as_str)
@@ -3986,15 +4014,18 @@ fn push_calls(app: &AppState, weak: &slint::Weak<MainWindow>) {
     // Incoming ring overlay.
     let inc = incoming_call(app).and_then(|cid| app.calls.get(&cid));
     let (call_incoming, inc_peer, inc_sub) = match inc {
-        Some(c) => (
-            true,
-            peer_name(c.peer_ssi, false),
-            format!(
-                "{}{}",
-                c.peer_ssi.map(|s| s.to_string()).unwrap_or_default(),
-                if c.simplex { " - PTT" } else { " - duplex" }
-            ),
-        ),
+        Some(c) => {
+            let peer = c.peer_label.clone().unwrap_or_else(|| peer_name(c.peer_ssi, false));
+            let base = c
+                .peer_sub
+                .clone()
+                .unwrap_or_else(|| c.peer_ssi.map(|s| s.to_string()).unwrap_or_default());
+            (
+                true,
+                peer,
+                format!("{}{}", base, if c.simplex { " - PTT" } else { " - duplex" }),
+            )
+        }
         None => (false, String::new(), String::new()),
     };
 
