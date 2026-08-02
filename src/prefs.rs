@@ -44,6 +44,9 @@ pub struct UiPrefs {
     /// Ringtone for external (gateway) calls.
     #[serde(default = "default_ringtone")]
     pub ring_gateway: String,
+    /// Whether the Event Log entry is shown in the main menu (UI-only setting).
+    #[serde(default = "default_true")]
+    pub show_event_log: bool,
     /// Legacy single-ringtone field (pre per-type); migrated on load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     ringtone: Option<String>,
@@ -58,6 +61,7 @@ impl Default for UiPrefs {
             ring_simplex: default_ringtone(),
             ring_duplex: default_ringtone(),
             ring_gateway: default_ringtone(),
+            show_event_log: true,
             ringtone: None,
             path: PathBuf::new(),
         }

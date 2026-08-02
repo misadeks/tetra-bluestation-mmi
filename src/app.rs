@@ -168,6 +168,8 @@ pub enum AppEvent {
     UiOpenRingtones,
     /// Open the settings hub screen.
     UiOpenSettings,
+    /// Toggle whether the Event Log appears in the main menu (persists).
+    UiToggleEventLog,
     /// Switch which call category the ringtone screen is editing (0/1/2).
     UiRingCategory(i32),
     /// Select a ringtone by index for the current category (persists + previews).
@@ -278,9 +280,9 @@ struct AppState {
     prog_draft: Option<ProgDraft>,
     /// Tree: folder ids (or "__other__") whose groups are collapsed.
     collapsed_folders: std::collections::HashSet<String>,
-    /// Home folder-picker collapse state, keyed by folder index (independent of
-    /// the programming tree's collapse set).
-    picker_collapsed: std::collections::HashSet<usize>,
+    /// Home folder-picker expansion state, keyed by folder index. Folders start
+    /// collapsed (empty set); tapping a header adds it here to expand it.
+    picker_expanded: std::collections::HashSet<usize>,
     /// Ringtone player (None if no output device). Plays on incoming calls.
     ringtone: Option<crate::ringtone::RingtonePlayer>,
     /// Local UI-only preferences (ringtone selection, etc.).
@@ -660,7 +662,7 @@ pub fn run(
         prog_section: ProgSection::Networks,
         prog_draft: None,
         collapsed_folders: std::collections::HashSet::new(),
-        picker_collapsed: std::collections::HashSet::new(),
+        picker_expanded: std::collections::HashSet::new(),
         ringtone: crate::ringtone::RingtonePlayer::new(),
         prefs: crate::prefs::UiPrefs::load(&storage_dir),
         ring_preview_gen: 0,
@@ -670,6 +672,10 @@ pub fn run(
         recent_detail: None,
         home_display_text: None,
     };
+
+    // Apply UI-only prefs (e.g. Event Log visibility) immediately, before any
+    // stack connection, so they take effect even while offline.
+    push_ui(&app, &weak);
 
     for event in rx.iter() {
         match event {
@@ -1394,8 +1400,8 @@ pub fn run(
             }
             AppEvent::UiTogglePickerFolder(i) => {
                 let idx = i as usize;
-                if !app.picker_collapsed.remove(&idx) {
-                    app.picker_collapsed.insert(idx);
+                if !app.picker_expanded.remove(&idx) {
+                    app.picker_expanded.insert(idx);
                 }
                 push_picker(&app, &weak);
             }
@@ -1718,6 +1724,12 @@ pub fn run(
             }
             AppEvent::UiOpenSettings => {
                 let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::Settings));
+            }
+            AppEvent::UiToggleEventLog => {
+                app.prefs.show_event_log = !app.prefs.show_event_log;
+                app.prefs.save();
+                let show = app.prefs.show_event_log;
+                let _ = weak.upgrade_in_event_loop(move |w| w.set_show_event_log(show));
             }
             AppEvent::UiOpenRingtones => {
                 app.ring_category = crate::prefs::RingCategory::Simplex;
@@ -3244,6 +3256,7 @@ fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
     }
     .to_string();
     let restart_required = s.restart_required;
+    let show_event_log = app.prefs.show_event_log;
     let home_display_text = {
         let hd_enabled = app
             .codeplug
@@ -3289,6 +3302,7 @@ fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
         w.set_ptt_enabled(ptt_enabled);
         w.set_ptt_label(ptt_label.into());
         w.set_restart_required(restart_required);
+        w.set_show_event_log(show_event_log);
 
         let rows: Vec<FolderRow> = folder_rows
             .into_iter()
@@ -4587,7 +4601,7 @@ fn push_picker(app: &AppState, weak: &slint::Weak<MainWindow>) {
     let mut rows: Vec<PickRow> = Vec::new();
     if let Some(cp) = &app.codeplug {
         for (fidx, folder) in cp.folders.iter().enumerate() {
-            let collapsed = app.picker_collapsed.contains(&fidx);
+            let collapsed = !app.picker_expanded.contains(&fidx);
             rows.push(PickRow {
                 kind: 0,
                 findex: fidx as i32,

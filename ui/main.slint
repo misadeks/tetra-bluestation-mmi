@@ -3600,7 +3600,9 @@ component RingtoneScreen inherits Rectangle {
 
 // Settings hub: entry points for UI-only settings.
 component SettingsScreen inherits Rectangle {
+    in property <bool> event-log-on: true;
     callback open-ringtones;
+    callback toggle-event-log;
     background: transparent;
     VerticalLayout {
         padding: 16px;
@@ -3612,6 +3614,13 @@ component SettingsScreen inherits Rectangle {
             icon: Icons.bell;
             clicked => {
                 root.open-ringtones();
+            }
+        }
+        ToggleRow {
+            label: "Show Event Log in menu";
+            on: root.event-log-on;
+            toggled => {
+                root.toggle-event-log();
             }
         }
     }
@@ -5172,6 +5181,7 @@ export component MainWindow inherits Window {
     callback tree-move-down(int);
     callback open-ringtones;
     callback open-settings;
+    callback toggle-event-log;
     callback ring-select(int);
     callback ring-toggle;
     callback ring-pick-category(int);
@@ -5552,8 +5562,12 @@ export component MainWindow inherits Window {
 
         if root.device-input == DeviceInput.Touch && root.screen == Screen.Settings: SettingsScreen {
             vertical-stretch: 1;
+            event-log-on: root.show-event-log;
             open-ringtones => {
                 root.open-ringtones();
+            }
+            toggle-event-log => {
+                root.toggle-event-log();
             }
         }
 

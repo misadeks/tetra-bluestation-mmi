@@ -176,9 +176,6 @@ pub struct UiConfig {
     /// Explicit interaction-model override. Takes precedence over the model.
     #[serde(default)]
     pub input: Option<InputKind>,
-    /// Whether the Event Log entry appears in the Menu (default true).
-    #[serde(default)]
-    pub show_event_log: Option<bool>,
     #[serde(default = "default_theme")]
     pub theme: String,
 }
@@ -191,7 +188,6 @@ pub struct ResolvedUi {
     pub height: u32,
     pub scale: f32,
     pub input: InputKind,
-    pub show_event_log: bool,
     pub theme: String,
     pub model: Option<String>,
 }
@@ -260,7 +256,6 @@ impl Config {
             height,
             scale,
             input,
-            show_event_log: self.ui.show_event_log.unwrap_or(true),
             theme: self.ui.theme.clone(),
             model: self.ui.model.clone(),
         }
@@ -430,7 +425,6 @@ impl Default for UiConfig {
             height: None,
             scale: None,
             input: None,
-            show_event_log: None,
             theme: default_theme(),
         }
     }

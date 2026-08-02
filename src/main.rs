@@ -64,7 +64,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         InputKind::Touch => DeviceInput::Touch,
         InputKind::Keypad => DeviceInput::Keypad,
     });
-    window.set_show_event_log(ui.show_event_log);
 
     // --- Wire the network + app event loop --------------------------------
     let (events_tx, events_rx) = crossbeam_channel::unbounded::<app::AppEvent>();
@@ -557,6 +556,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let tx = events_tx.clone();
         window.on_open_settings(move || {
             let _ = tx.send(app::AppEvent::UiOpenSettings);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_toggle_event_log(move || {
+            let _ = tx.send(app::AppEvent::UiToggleEventLog);
         });
     }
     {
