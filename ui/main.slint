@@ -128,6 +128,7 @@ global Icons {
     out property <string> radio: "M6.3 6.3a8 8 0 0 0 0 11.4M17.7 6.3a8 8 0 0 1 0 11.4M9.2 9.2a4 4 0 0 0 0 5.6M14.8 9.2a4 4 0 0 1 0 5.6M12 12v0.01";
     out property <string> edit: "M4 20h4L17 11L13 7L4 16ZM14 6L18 10";
     out property <string> trash: "M5 7h14M9 7V5h6v2M6 7l1 13h10l1-13";
+    out property <string> search: "M11 4a7 7 0 1 0 0.01 0M16.5 16.5L21 21";
 }
 
 // 5 signal bars, heights scaled up, bottom-aligned (web UI .sig).
@@ -1504,50 +1505,6 @@ component ContactRowView inherits Rectangle {
     }
 }
 
-component ContactsScreen inherits Rectangle {
-    in property <[ContactRow]> contacts;
-    callback open-contact(int);
-    callback call-contact(int);
-    callback add-contact;
-    background: transparent;
-    VerticalLayout {
-        padding: 16px;
-        spacing: 10px;
-        Flickable {
-            vertical-stretch: 1;
-            viewport-height: col.preferred-height;
-            col := VerticalLayout {
-                spacing: 10px;
-                alignment: start;
-                if root.contacts.length == 0: Text {
-                    text: "No contacts programmed";
-                    color: Palette.muted;
-                    font-size: 16px;
-                    horizontal-alignment: center;
-                }
-                for c in root.contacts: ContactRowView {
-                    title: c.name;
-                    sub: c.sub;
-                    kind: c.kind;
-                    open => {
-                        root.open-contact(c.index);
-                    }
-                    call => {
-                        root.call-contact(c.index);
-                    }
-                }
-            }
-        }
-        PrimaryButton {
-            text: "Add contact";
-            icon: Icons.plus;
-            clicked => {
-                root.add-contact();
-            }
-        }
-    }
-}
-
 component TargetSeg inherits Rectangle {
     in property <string> label;
     in property <bool> selected;
@@ -1890,6 +1847,139 @@ component EditFieldRow inherits Rectangle {
                 font-size: 20px;
                 font-weight: 600;
                 overflow: elide;
+            }
+        }
+    }
+}
+
+// Contacts search bar: tap to search, shows the query and a clear button.
+component SearchBar inherits Rectangle {
+    in property <string> query;
+    callback activate;
+    callback clear;
+    height: 58px;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: Palette.line2;
+    background: Palette.surface;
+    focus-ta := TouchArea {
+        clicked => {
+            root.activate();
+        }
+    }
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 8px;
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            Icon { d: Icons.search; tint: Palette.muted; size: 22px; }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: root.query == "" ? "Search contacts" : root.query;
+                color: root.query == "" ? Palette.faint : Palette.txt;
+                font-size: 20px;
+                overflow: elide;
+            }
+        }
+        if root.query != "": Rectangle {
+            width: 46px;
+            clear-ta := TouchArea {
+                clicked => {
+                    root.clear();
+                }
+            }
+            Icon {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                d: Icons.close;
+                tint: Palette.muted;
+                size: 22px;
+            }
+        }
+    }
+}
+
+component ContactsScreen inherits Rectangle {
+    in property <[ContactRow]> contacts;
+    in property <string> query;
+    property <bool> searching: false;
+    callback open-contact(int);
+    callback call-contact(int);
+    callback add-contact;
+    callback search-key(string);
+    callback search-backspace;
+    callback search-clear;
+    background: transparent;
+    VerticalLayout {
+        padding: 16px;
+        spacing: 10px;
+        SearchBar {
+            query: root.query;
+            activate => {
+                root.searching = true;
+            }
+            clear => {
+                root.search-clear();
+            }
+        }
+        Flickable {
+            vertical-stretch: 1;
+            viewport-height: col.preferred-height;
+            col := VerticalLayout {
+                spacing: 10px;
+                alignment: start;
+                if root.contacts.length == 0: Text {
+                    text: root.query == "" ? "No contacts programmed" : "No matches for '\{root.query}'";
+                    color: Palette.muted;
+                    font-size: 16px;
+                    horizontal-alignment: center;
+                }
+                for c in root.contacts: ContactRowView {
+                    title: c.name;
+                    sub: c.sub;
+                    kind: c.kind;
+                    open => {
+                        root.searching = false;
+                        root.open-contact(c.index);
+                    }
+                    call => {
+                        root.call-contact(c.index);
+                    }
+                }
+            }
+        }
+        // Bottom: the search keyboard while searching, otherwise the Add button.
+        if root.searching: VerticalLayout {
+            spacing: 10px;
+            OnScreenKeyboard {
+                numeric: false;
+                shift: false;
+                key(c) => {
+                    root.search-key(c);
+                }
+                backspace => {
+                    root.search-backspace();
+                }
+                shift-toggle => {
+                }
+            }
+            SecondaryButton {
+                text: "Done";
+                icon: Icons.check;
+                clicked => {
+                    root.searching = false;
+                }
+            }
+        }
+        if !root.searching: PrimaryButton {
+            text: "Add contact";
+            icon: Icons.plus;
+            clicked => {
+                root.add-contact();
             }
         }
     }
@@ -2794,6 +2884,7 @@ export component MainWindow inherits Window {
     in property <int> sel-folder;
     in property <[FolderRow]> folders;
     in property <[ContactRow]> contacts;
+    in property <string> contact-query;
     in property <[DialTarget]> dial-targets: [{ label: "Private", max-len: 8 }];
     // Contact detail page.
     in property <int> detail-index: -1;
@@ -2862,6 +2953,9 @@ export component MainWindow inherits Window {
     callback call-dtmf-key(string);
     callback call-contact(int, bool);
     callback open-contact(int);
+    callback contact-search-key(string);
+    callback contact-search-backspace;
+    callback contact-search-clear;
     callback contact-new;
     callback contact-edit(int);
     callback contact-delete(int);
@@ -3033,6 +3127,7 @@ export component MainWindow inherits Window {
                 root.screen = Screen.Groups;
             }
             open-contacts => {
+                root.contact-search-clear();
                 root.screen = Screen.Contacts;
             }
             open-logs => {
@@ -3131,12 +3226,22 @@ export component MainWindow inherits Window {
         if root.device-input == DeviceInput.Touch && root.screen == Screen.Contacts: ContactsScreen {
             vertical-stretch: 1;
             contacts: root.contacts;
+            query: root.contact-query;
             open-contact(i) => {
                 root.open-contact(i);
                 root.screen = Screen.ContactDetail;
             }
             call-contact(i) => {
                 root.call-contact(i, true);
+            }
+            search-key(c) => {
+                root.contact-search-key(c);
+            }
+            search-backspace => {
+                root.contact-search-backspace();
+            }
+            search-clear => {
+                root.contact-search-clear();
             }
             add-contact => {
                 root.contact-new();

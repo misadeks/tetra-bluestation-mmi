@@ -67,6 +67,12 @@ pub enum AppEvent {
     UiEditTarget(i32),
     /// Send a single DTMF digit on the active in-call session.
     UiDtmf(String),
+    /// Append a character to the contacts search query.
+    UiContactSearchKey(String),
+    /// Remove the last character of the contacts search query.
+    UiContactSearchBackspace,
+    /// Clear the contacts search query.
+    UiContactSearchClear,
     UiCallPttDown,
     UiCallPttUp,
     UiGroupPttDown,
@@ -155,6 +161,8 @@ struct AppState {
     contact_draft: Option<ContactDraft>,
     /// Locally-echoed DTMF digits sent during the current in-call session.
     dtmf_echo: String,
+    /// Current contacts search query (case-insensitive substring filter).
+    contact_query: String,
 }
 
 /// Which field of the contact editor the on-screen keyboard is editing.
@@ -409,6 +417,7 @@ pub fn run(
         sel_contact: None,
         contact_draft: None,
         dtmf_echo: String::new(),
+        contact_query: String::new(),
     };
 
     for event in rx.iter() {
@@ -904,6 +913,20 @@ pub fn run(
                     }
                     push_calls(&app, &weak);
                 }
+            }
+            AppEvent::UiContactSearchKey(s) => {
+                for ch in s.chars() {
+                    app.contact_query.push(ch);
+                }
+                push_contacts(&app, &weak);
+            }
+            AppEvent::UiContactSearchBackspace => {
+                app.contact_query.pop();
+                push_contacts(&app, &weak);
+            }
+            AppEvent::UiContactSearchClear => {
+                app.contact_query.clear();
+                push_contacts(&app, &weak);
             }
             AppEvent::UiCallPttDown => {
                 if !app.require_online(&weak) {
@@ -2208,9 +2231,23 @@ fn push_dial_targets(app: &AppState, weak: &slint::Weak<MainWindow>) {
 /// Build the Contacts model (phone book) from the codeplug, in `order`. Each row
 /// shows the target (ISSI, or number via a named gateway) and its kind badge.
 fn push_contacts(app: &AppState, weak: &slint::Weak<MainWindow>) {
+    let query = app.contact_query.trim().to_lowercase();
     let mut rows: Vec<ContactRow> = Vec::new();
     if let Some(cp) = &app.codeplug {
         for (i, c) in cp.contacts.iter().enumerate() {
+            // Case-insensitive substring filter over name, callsign, ISSI, number.
+            if !query.is_empty() {
+                let hay = format!(
+                    "{} {} {} {}",
+                    c.name.to_lowercase(),
+                    c.callsign.as_deref().unwrap_or("").to_lowercase(),
+                    c.issi.map(|x| x.to_string()).unwrap_or_default(),
+                    c.number.as_deref().unwrap_or("")
+                );
+                if !hay.contains(&query) {
+                    continue;
+                }
+            }
             // kind: 0 = individual (ISSI), 1 = external phone (PABX/PSTN).
             let (kind, sub) = if let Some(issi) = c.issi {
                 (0, format!("ISSI {issi}"))
@@ -2240,8 +2277,10 @@ fn push_contacts(app: &AppState, weak: &slint::Weak<MainWindow>) {
             });
         }
     }
+    let query_out = app.contact_query.clone();
     let _ = weak.upgrade_in_event_loop(move |w| {
         w.set_contacts(ModelRc::new(VecModel::from(rows)));
+        w.set_contact_query(query_out.into());
     });
 }
 

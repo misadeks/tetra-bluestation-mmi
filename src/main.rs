@@ -257,6 +257,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     {
         let tx = events_tx.clone();
+        window.on_contact_search_key(move |s| {
+            let _ = tx.send(app::AppEvent::UiContactSearchKey(s.to_string()));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_contact_search_backspace(move || {
+            let _ = tx.send(app::AppEvent::UiContactSearchBackspace);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_contact_search_clear(move || {
+            let _ = tx.send(app::AppEvent::UiContactSearchClear);
+        });
+    }
+    {
+        let tx = events_tx.clone();
         window.on_open_logs(move || {
             let _ = tx.send(app::AppEvent::UiOpenLogs);
         });
