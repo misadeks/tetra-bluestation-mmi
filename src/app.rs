@@ -14,7 +14,7 @@ use slint::{ModelRc, VecModel};
 
 use crate::codeplug::Codeplug;
 use crate::protocol::{self, MsRuntimeState, ServiceStatus};
-use crate::{ContactRow, DialTarget, FolderRow, GroupRow, LogRow, MainWindow, ScanRow, SurveyRow};
+use crate::{ContactRow, DialTarget, FolderRow, GroupRow, LogRow, MainWindow, ScanRow, Screen, SurveyRow};
 
 /// Events fed into the app loop from net threads, timers, and the UI.
 pub enum AppEvent {
@@ -39,10 +39,34 @@ pub enum AppEvent {
     UiSelectFolder(i32),
     UiPtt,
     UiDialKey(String),
-    /// Place a dialer call: (call_type 0=private/1=pstn/2=pabx, duplex).
+    /// Place a dialer call: (target index 0=private, 1.. = gateway; duplex).
     UiDialCall(i32, bool),
-    /// Place a call to a phone-book contact by its index in the pushed list.
-    UiCallContact(i32),
+    /// Place a call to a phone-book contact: (contact index, duplex).
+    UiCallContact(i32, bool),
+    /// Open the detail page for a contact by index.
+    UiOpenContact(i32),
+    /// Start a new blank contact draft in the editor.
+    UiContactNew,
+    /// Open the editor on an existing contact by index.
+    UiContactEdit(i32),
+    /// Delete a contact by index.
+    UiContactDelete(i32),
+    /// Commit the current contact draft (SetConfig + ApplyConfig).
+    UiContactSave,
+    /// Discard the current contact draft.
+    UiContactCancel,
+    /// Move keyboard focus to a form field (0 name, 1 callsign, 2 issi, 3 number).
+    UiEditFocus(i32),
+    /// Insert a character into the focused field.
+    UiEditKey(String),
+    /// Remove the last character of the focused field.
+    UiEditBackspace,
+    /// Toggle the QWERTY shift latch.
+    UiEditShift,
+    /// Switch the contact form (false = ISSI, true = phone).
+    UiEditToggleForm(bool),
+    /// Choose the gateway for a phone contact by index into codeplug.gateways.
+    UiEditGateway(i32),
     UiCallPttDown,
     UiCallPttUp,
     UiGroupPttDown,
@@ -125,6 +149,54 @@ struct AppState {
     local_end: std::collections::HashSet<u32>,
     /// Microphone muted for the current call (gates uplink transmission).
     mic_muted: bool,
+    /// Contact whose detail page is open (index into codeplug.contacts).
+    sel_contact: Option<usize>,
+    /// In-progress contact add/edit form, if the editor is open.
+    contact_draft: Option<ContactDraft>,
+}
+
+/// Which field of the contact editor the on-screen keyboard is editing.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EditField {
+    Name,
+    Callsign,
+    Issi,
+    Number,
+}
+
+impl EditField {
+    /// Digit-only fields drive the numeric keypad instead of the QWERTY board.
+    fn numeric(self) -> bool {
+        matches!(self, EditField::Issi | EditField::Number)
+    }
+}
+
+/// Editable draft backing the contact add/edit form.
+struct ContactDraft {
+    /// Original (unique) name when editing an existing contact; None when new.
+    key_name: Option<String>,
+    name: String,
+    callsign: String,
+    /// false = ISSI (individual) form; true = phone (number + gateway) form.
+    is_phone: bool,
+    issi: String,
+    number: String,
+    /// Selected gateway id for the phone form ("" = none chosen).
+    gateway_id: String,
+    focus: EditField,
+    /// Shift latch for the next letter typed on the QWERTY keyboard.
+    shift: bool,
+}
+
+impl ContactDraft {
+    fn field_mut(&mut self) -> &mut String {
+        match self.focus {
+            EditField::Name => &mut self.name,
+            EditField::Callsign => &mut self.callsign,
+            EditField::Issi => &mut self.issi,
+            EditField::Number => &mut self.number,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
@@ -332,6 +404,8 @@ pub fn run(
         ptt_held: None,
         local_end: std::collections::HashSet::new(),
         mic_muted: false,
+        sel_contact: None,
+        contact_draft: None,
     };
 
     for event in rx.iter() {
@@ -609,7 +683,7 @@ pub fn run(
                 });
                 push_calls(&app, &weak);
             }
-            AppEvent::UiCallContact(idx) => {
+            AppEvent::UiCallContact(idx, duplex) => {
                 if !app.require_online(&weak) {
                     continue;
                 }
@@ -632,29 +706,171 @@ pub fn run(
                     Some(cs) => format!("{} ({})", contact.name, cs),
                     None => contact.name.clone(),
                 };
-                // Phone-book calls are duplex (hands-free), like the green Call button.
                 app.mic_muted = false;
                 let h = app.next_handle();
-                let (peer_ssi, sub) = match target {
+                // External (phone) calls are always duplex; ISSI honors the flag.
+                let (peer_ssi, sub, simplex) = match target {
                     crate::codeplug::CallTarget::Individual(ssi) => {
-                        tracing::info!(name = %contact.name, ssi, "UI: call contact (individual)");
-                        app.send(protocol::tncc_setup(h, ssi, false, true));
-                        (ssi, ssi.to_string())
+                        tracing::info!(name = %contact.name, ssi, duplex, "UI: call contact (individual)");
+                        app.send(protocol::tncc_setup(h, ssi, false, duplex));
+                        (ssi, ssi.to_string(), !duplex)
                     }
                     crate::codeplug::CallTarget::External { gateway_ssi, digits } => {
                         tracing::info!(name = %contact.name, gateway_ssi, %digits, "UI: call contact (external)");
                         app.send(protocol::tncc_setup_external(h, gateway_ssi, &digits, true));
-                        (gateway_ssi, digits)
+                        (gateway_ssi, digits, false)
                     }
                 };
                 app.dialing = Some(Dialing {
                     peer_ssi,
                     group: false,
-                    simplex: false,
+                    simplex,
                     peer_label: Some(label),
                     peer_sub: Some(sub),
                 });
                 push_calls(&app, &weak);
+            }
+            AppEvent::UiOpenContact(idx) => {
+                let n = app.codeplug.as_ref().map(|cp| cp.contacts.len()).unwrap_or(0);
+                if (idx as usize) < n {
+                    app.sel_contact = Some(idx as usize);
+                    push_contact_detail(&app, &weak);
+                }
+            }
+            AppEvent::UiContactNew => {
+                app.contact_draft = Some(ContactDraft {
+                    key_name: None,
+                    name: String::new(),
+                    callsign: String::new(),
+                    is_phone: false,
+                    issi: String::new(),
+                    number: String::new(),
+                    gateway_id: String::new(),
+                    focus: EditField::Name,
+                    shift: true,
+                });
+                push_contact_editor(&app, &weak);
+            }
+            AppEvent::UiContactEdit(idx) => {
+                if let Some(c) = app.codeplug.as_ref().and_then(|cp| cp.contacts.get(idx as usize)) {
+                    app.contact_draft = Some(ContactDraft {
+                        key_name: Some(c.name.clone()),
+                        name: c.name.clone(),
+                        callsign: c.callsign.clone().unwrap_or_default(),
+                        is_phone: c.is_phone(),
+                        issi: c.issi.map(|i| i.to_string()).unwrap_or_default(),
+                        number: c.number.clone().unwrap_or_default(),
+                        gateway_id: c.gateway.clone().unwrap_or_default(),
+                        focus: EditField::Name,
+                        shift: false,
+                    });
+                    push_contact_editor(&app, &weak);
+                }
+            }
+            AppEvent::UiContactDelete(idx) => {
+                let name = app
+                    .codeplug
+                    .as_ref()
+                    .and_then(|cp| cp.contacts.get(idx as usize))
+                    .map(|c| c.name.clone());
+                let Some(name) = name else { continue };
+                match crate::codeplug::delete_contact(&app.last_config_toml, &name) {
+                    Ok(toml) => {
+                        app.sel_contact = None;
+                        write_codeplug(&mut app, &weak, toml, &format!("Deleted {name}"));
+                    }
+                    Err(e) => app.notify(&weak, "Delete failed", &e, 0),
+                }
+            }
+            AppEvent::UiEditFocus(field) => {
+                if let Some(d) = app.contact_draft.as_mut() {
+                    d.focus = match field {
+                        1 => EditField::Callsign,
+                        2 => EditField::Issi,
+                        3 => EditField::Number,
+                        _ => EditField::Name,
+                    };
+                    push_contact_editor(&app, &weak);
+                }
+            }
+            AppEvent::UiEditKey(s) => {
+                if let Some(d) = app.contact_draft.as_mut() {
+                    let numeric = d.focus.numeric();
+                    for ch in s.chars() {
+                        if numeric {
+                            // Digit fields accept the dial set only.
+                            if ch.is_ascii_digit() || ch == '*' || ch == '#' || ch == '+' {
+                                d.field_mut().push(ch);
+                            }
+                        } else {
+                            let ch = if d.shift { ch.to_ascii_uppercase() } else { ch };
+                            d.field_mut().push(ch);
+                            d.shift = false;
+                        }
+                    }
+                    push_contact_editor(&app, &weak);
+                }
+            }
+            AppEvent::UiEditBackspace => {
+                if let Some(d) = app.contact_draft.as_mut() {
+                    d.field_mut().pop();
+                    push_contact_editor(&app, &weak);
+                }
+            }
+            AppEvent::UiEditShift => {
+                if let Some(d) = app.contact_draft.as_mut() {
+                    d.shift = !d.shift;
+                    push_contact_editor(&app, &weak);
+                }
+            }
+            AppEvent::UiEditToggleForm(is_phone) => {
+                if let Some(d) = app.contact_draft.as_mut() {
+                    d.is_phone = is_phone;
+                    // Move focus to a sensible field for the new form.
+                    d.focus = if is_phone { EditField::Number } else { EditField::Issi };
+                    push_contact_editor(&app, &weak);
+                }
+            }
+            AppEvent::UiEditGateway(gidx) => {
+                let gid = app
+                    .codeplug
+                    .as_ref()
+                    .and_then(|cp| cp.gateways.get(gidx as usize))
+                    .map(|g| g.id.clone());
+                if let (Some(d), Some(gid)) = (app.contact_draft.as_mut(), gid) {
+                    d.gateway_id = gid;
+                    push_contact_editor(&app, &weak);
+                }
+            }
+            AppEvent::UiContactCancel => {
+                app.contact_draft = None;
+            }
+            AppEvent::UiContactSave => {
+                let Some(d) = app.contact_draft.as_ref() else { continue };
+                let input = crate::codeplug::ContactInput {
+                    name: d.name.trim().to_string(),
+                    callsign: Some(d.callsign.trim().to_string()).filter(|s| !s.is_empty()),
+                    issi: if d.is_phone { None } else { d.issi.parse::<u32>().ok() },
+                    number: if d.is_phone { Some(d.number.clone()) } else { None },
+                    gateway: if d.is_phone { Some(d.gateway_id.clone()).filter(|s| !s.is_empty()) } else { None },
+                };
+                let key = d.key_name.clone();
+                let Some(cp) = app.codeplug.as_ref() else {
+                    app.notify(&weak, "No codeplug", "Configuration not loaded yet.", 0);
+                    continue;
+                };
+                if let Err(e) = input.validate(cp) {
+                    app.notify(&weak, "Invalid contact", &e, 0);
+                    continue;
+                }
+                match crate::codeplug::upsert_contact(&app.last_config_toml, &input, key.as_deref()) {
+                    Ok(toml) => {
+                        let saved = input.name.clone();
+                        app.contact_draft = None;
+                        write_codeplug(&mut app, &weak, toml, &format!("Saved {saved}"));
+                    }
+                    Err(e) => app.notify(&weak, "Save failed", &e, 0),
+                }
             }
             AppEvent::UiCallPttDown => {
                 if !app.require_online(&weak) {
@@ -1992,6 +2208,111 @@ fn push_contacts(app: &AppState, weak: &slint::Weak<MainWindow>) {
     }
     let _ = weak.upgrade_in_event_loop(move |w| {
         w.set_contacts(ModelRc::new(VecModel::from(rows)));
+    });
+}
+
+/// Stage + commit an edited codeplug TOML: SetConfig, ApplyConfig, then GetConfig
+/// to pull back the canonical version. Applies the change locally at once for
+/// instant UI feedback (the stack commits contacts/gateways live, no restart).
+fn write_codeplug(app: &mut AppState, weak: &slint::Weak<MainWindow>, toml: String, msg: &str) {
+    let h = app.next_handle();
+    app.send(protocol::set_config(h, &toml));
+    let h2 = app.next_handle();
+    app.send(protocol::apply_config(h2));
+
+    // Optimistic local update so the list reflects the edit immediately.
+    app.last_config_toml = toml.clone();
+    if let Some(cp) = Codeplug::parse(&toml) {
+        app.codeplug = Some(cp);
+        reconcile_home_view(app);
+    }
+    push_ui(app, weak);
+
+    let h3 = app.next_handle();
+    app.send(protocol::get_config(h3));
+    app.notify(weak, "Contacts", msg, 0);
+    // Return to the contacts list after a successful edit.
+    let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::Contacts));
+}
+
+/// Push the open contact's detail-page fields.
+fn push_contact_detail(app: &AppState, weak: &slint::Weak<MainWindow>) {
+    let mut name = String::new();
+    let mut callsign = String::new();
+    let mut sub = String::new();
+    let mut is_phone = false;
+    let mut idx: i32 = -1;
+    if let (Some(cp), Some(i)) = (app.codeplug.as_ref(), app.sel_contact) {
+        if let Some(c) = cp.contacts.get(i) {
+            idx = i as i32;
+            name = c.name.clone();
+            callsign = c.callsign.clone().unwrap_or_default();
+            is_phone = c.is_phone();
+            sub = if let Some(issi) = c.issi {
+                format!("Private call - ISSI {issi}")
+            } else if let (Some(num), Some(gw_id)) = (c.number.as_ref(), c.gateway.as_ref()) {
+                let gw = cp.gateway_by_id(gw_id);
+                let gw_name = gw.map(|g| g.name.clone()).unwrap_or_else(|| gw_id.clone());
+                format!("{num} via {gw_name}")
+            } else {
+                "Invalid contact".to_string()
+            };
+        }
+    }
+    let _ = weak.upgrade_in_event_loop(move |w| {
+        w.set_detail_index(idx);
+        w.set_detail_name(name.into());
+        w.set_detail_callsign(callsign.into());
+        w.set_detail_sub(sub.into());
+        w.set_detail_is_phone(is_phone);
+    });
+}
+
+/// Push the contact-editor draft fields (and the gateway picker model).
+fn push_contact_editor(app: &AppState, weak: &slint::Weak<MainWindow>) {
+    let Some(d) = app.contact_draft.as_ref() else { return };
+    let title = if d.key_name.is_some() { "Edit contact" } else { "New contact" }.to_string();
+    let name = d.name.clone();
+    let callsign = d.callsign.clone();
+    let issi = d.issi.clone();
+    let number = d.number.clone();
+    let is_phone = d.is_phone;
+    let numeric = d.focus.numeric();
+    let shift = d.shift;
+    let focus = match d.focus {
+        EditField::Name => 0,
+        EditField::Callsign => 1,
+        EditField::Issi => 2,
+        EditField::Number => 3,
+    };
+    // Gateway picker: labels + which one is selected.
+    let mut gw_rows: Vec<ContactRow> = Vec::new();
+    let mut gw_sel: i32 = -1;
+    if let Some(cp) = &app.codeplug {
+        for (i, g) in cp.gateways.iter().enumerate() {
+            if g.id == d.gateway_id {
+                gw_sel = i as i32;
+            }
+            gw_rows.push(ContactRow {
+                index: i as i32,
+                name: g.name.clone().into(),
+                sub: g.kind.to_uppercase().into(),
+                kind: 1,
+            });
+        }
+    }
+    let _ = weak.upgrade_in_event_loop(move |w| {
+        w.set_edit_title(title.into());
+        w.set_edit_name(name.into());
+        w.set_edit_callsign(callsign.into());
+        w.set_edit_issi(issi.into());
+        w.set_edit_number(number.into());
+        w.set_edit_is_phone(is_phone);
+        w.set_edit_focus(focus);
+        w.set_edit_numeric(numeric);
+        w.set_edit_shift(shift);
+        w.set_edit_gateways(ModelRc::new(VecModel::from(gw_rows)));
+        w.set_edit_gateway_sel(gw_sel);
     });
 }
 

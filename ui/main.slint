@@ -14,7 +14,7 @@ import "fonts/Inter-Bold.ttf";
 import "fonts/Inter-ExtraBold.ttf";
 
 export enum DeviceInput { Touch, Keypad }
-enum Screen { Home, Menu, Info, Folders, Dialer, Logs, LogDetail, Groups, Config, Survey, InCall, Contacts }
+export enum Screen { Home, Menu, Info, Folders, Dialer, Logs, LogDetail, Groups, Config, Survey, InCall, Contacts, ContactDetail, ContactEdit }
 
 export struct FolderRow {
     name: string,
@@ -126,6 +126,8 @@ global Icons {
     out property <string> phone-off: "M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91M23 1 1 23";
     out property <string> activity: "M3 12h4l3 8l4-16l3 8h4";
     out property <string> radio: "M6.3 6.3a8 8 0 0 0 0 11.4M17.7 6.3a8 8 0 0 1 0 11.4M9.2 9.2a4 4 0 0 0 0 5.6M14.8 9.2a4 4 0 0 1 0 5.6M12 12v0.01";
+    out property <string> edit: "M4 20h4L17 11L13 7L4 16ZM14 6L18 10";
+    out property <string> trash: "M5 7h14M9 7V5h6v2M6 7l1 13h10l1-13";
 }
 
 // 5 signal bars, heights scaled up, bottom-aligned (web UI .sig).
@@ -380,12 +382,13 @@ component PrimaryButton inherits Rectangle {
 component SecondaryButton inherits Rectangle {
     in property <string> text;
     in property <string> icon;
+    in property <bool> danger: false;
     callback clicked;
     height: 64px;
     border-radius: 14px;
     border-width: 1px;
-    border-color: Palette.line2;
-    background: touch.pressed ? #1b2836 : Palette.surface;
+    border-color: root.danger ? #f0555a80 : Palette.line2;
+    background: touch.pressed ? (root.danger ? #3a1a1c : #1b2836) : Palette.surface;
     touch := TouchArea {
         clicked => {
             root.clicked();
@@ -396,11 +399,11 @@ component SecondaryButton inherits Rectangle {
         spacing: 10px;
         VerticalLayout {
             alignment: center;
-            if root.icon != "": Icon { d: root.icon; tint: Palette.txt; size: 20px; }
+            if root.icon != "": Icon { d: root.icon; tint: root.danger ? Palette.red : Palette.txt; size: 20px; }
         }
         Text {
             text: root.text;
-            color: Palette.txt;
+            color: root.danger ? #ff9a9d : Palette.txt;
             font-size: 17px;
             font-weight: 600;
             vertical-alignment: center;
@@ -1411,28 +1414,589 @@ component GroupsScreen inherits Rectangle {
     }
 }
 
+// One contact row: tap the body to open the detail page, tap the green side
+// button for a fast duplex call.
+component ContactRowView inherits Rectangle {
+    in property <string> title;
+    in property <string> sub;
+    in property <int> kind;
+    callback open;
+    callback call;
+    height: 88px;
+    border-radius: 16px;
+    border-width: 1px;
+    border-color: Palette.line;
+    background: Palette.surface;
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 12px;
+        spacing: 12px;
+        // Body (icon + text) opens the detail page.
+        body := Rectangle {
+            horizontal-stretch: 1;
+            btouch := TouchArea {
+                clicked => {
+                    root.open();
+                }
+            }
+            HorizontalLayout {
+                spacing: 14px;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 50px;
+                        height: 50px;
+                        border-radius: 14px;
+                        background: #33a7dd1f;
+                        Icon {
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            d: root.kind == 1 ? Icons.phone : Icons.users;
+                            tint: Palette.accent;
+                            size: 26px;
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 4px;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: root.title;
+                        color: Palette.txt;
+                        font-size: 21px;
+                        font-weight: 600;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: root.sub;
+                        color: Palette.muted;
+                        font-size: 15px;
+                        overflow: elide;
+                    }
+                }
+            }
+        }
+        // Fast duplex call.
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 62px;
+                height: 62px;
+                border-radius: 18px;
+                border-width: 1px;
+                border-color: #2bb76880;
+                background: ctouch.pressed ? #17402a : #2bb76824;
+                ctouch := TouchArea {
+                    clicked => {
+                        root.call();
+                    }
+                }
+                Icon {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    d: Icons.phone;
+                    tint: #7fe0a6;
+                    size: 26px;
+                }
+            }
+        }
+    }
+}
+
 component ContactsScreen inherits Rectangle {
     in property <[ContactRow]> contacts;
+    callback open-contact(int);
     callback call-contact(int);
+    callback add-contact;
     background: transparent;
-    Flickable {
-        viewport-height: col.preferred-height;
-        col := VerticalLayout {
-            padding: 16px;
-            spacing: 10px;
-            alignment: start;
-            if root.contacts.length == 0: Text {
-                text: "No contacts programmed";
-                color: Palette.muted;
-                font-size: 16px;
-                horizontal-alignment: center;
+    VerticalLayout {
+        padding: 16px;
+        spacing: 10px;
+        Flickable {
+            vertical-stretch: 1;
+            viewport-height: col.preferred-height;
+            col := VerticalLayout {
+                spacing: 10px;
+                alignment: start;
+                if root.contacts.length == 0: Text {
+                    text: "No contacts programmed";
+                    color: Palette.muted;
+                    font-size: 16px;
+                    horizontal-alignment: center;
+                }
+                for c in root.contacts: ContactRowView {
+                    title: c.name;
+                    sub: c.sub;
+                    kind: c.kind;
+                    open => {
+                        root.open-contact(c.index);
+                    }
+                    call => {
+                        root.call-contact(c.index);
+                    }
+                }
             }
-            for c in root.contacts: ListRow {
-                title: c.name;
-                subtitle: c.sub;
-                icon: c.kind == 1 ? Icons.phone : Icons.users;
+        }
+        PrimaryButton {
+            text: "Add contact";
+            icon: Icons.plus;
+            clicked => {
+                root.add-contact();
+            }
+        }
+    }
+}
+
+component TargetSeg inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected;
+    callback clicked;
+    height: 54px;
+    min-width: 110px;
+    horizontal-stretch: 1;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: root.selected ? Palette.accent : Palette.line2;
+    background: root.selected ? #33a7dd29 : Palette.surface;
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+    Text {
+        width: parent.width - 12px;
+        height: 100%;
+        text: root.label;
+        color: root.selected ? #9fd3ef : Palette.muted;
+        font-size: 16px;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+component ContactDetailScreen inherits Rectangle {
+    in property <string> name;
+    in property <string> callsign;
+    in property <string> sub;
+    in property <bool> is-phone;
+    callback call-duplex;
+    callback call-simplex;
+    callback edit;
+    callback delete;
+    background: transparent;
+    VerticalLayout {
+        padding: 18px;
+        spacing: 14px;
+        Rectangle {
+            height: 176px;
+            border-radius: 18px;
+            border-width: 1px;
+            border-color: Palette.line;
+            background: Palette.surface;
+            VerticalLayout {
+                alignment: center;
+                spacing: 6px;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 66px;
+                        height: 66px;
+                        border-radius: 20px;
+                        background: #33a7dd1f;
+                        Icon {
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            d: root.is-phone ? Icons.phone : Icons.users;
+                            tint: Palette.accent;
+                            size: 30px;
+                        }
+                    }
+                }
+                Text {
+                    text: root.name;
+                    color: Palette.txt;
+                    font-size: 26px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    overflow: elide;
+                }
+                if root.callsign != "": Text {
+                    text: root.callsign;
+                    color: #9fd3ef;
+                    font-size: 16px;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: root.sub;
+                    color: Palette.muted;
+                    font-size: 15px;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+        PrimaryButton {
+            text: "Call (duplex)";
+            icon: Icons.phone;
+            clicked => {
+                root.call-duplex();
+            }
+        }
+        if !root.is-phone: SecondaryButton {
+            text: "Simplex (PTT) call";
+            icon: Icons.mic;
+            clicked => {
+                root.call-simplex();
+            }
+        }
+        Rectangle {
+            vertical-stretch: 1;
+        }
+        HorizontalLayout {
+            spacing: 10px;
+            SecondaryButton {
+                text: "Edit";
+                icon: Icons.edit;
+                horizontal-stretch: 1;
                 clicked => {
-                    root.call-contact(c.index);
+                    root.edit();
+                }
+            }
+            SecondaryButton {
+                text: "Delete";
+                icon: Icons.trash;
+                danger: true;
+                horizontal-stretch: 1;
+                clicked => {
+                    root.delete();
+                }
+            }
+        }
+    }
+}
+
+// One key on the on-screen keyboard.
+component KeyCap inherits Rectangle {
+    in property <string> label;
+    in property <string> icon;
+    in property <bool> active;
+    callback tapped;
+    height: 50px;
+    horizontal-stretch: 1;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: root.active ? Palette.accent : Palette.line2;
+    background: kt.pressed ? #24313f : (root.active ? #33a7dd29 : Palette.surface);
+    kt := TouchArea {
+        clicked => {
+            root.tapped();
+        }
+    }
+    if root.icon != "": Icon {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        d: root.icon;
+        tint: Palette.txt;
+        size: 22px;
+    }
+    if root.icon == "": Text {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        text: root.label;
+        color: Palette.txt;
+        font-size: 19px;
+        font-weight: 600;
+    }
+}
+
+// On-screen keyboard: QWERTY for text fields, numeric pad for digit fields.
+// Letters are emitted lowercase; the app applies the shift latch.
+component OnScreenKeyboard inherits Rectangle {
+    in property <bool> numeric;
+    in property <bool> shift;
+    callback key(string);
+    callback backspace;
+    callback shift-toggle;
+    VerticalLayout {
+        spacing: 6px;
+        if !root.numeric: VerticalLayout {
+            spacing: 6px;
+            HorizontalLayout {
+                spacing: 6px;
+                KeyCap { label: "1"; tapped => { root.key("1"); } }
+                KeyCap { label: "2"; tapped => { root.key("2"); } }
+                KeyCap { label: "3"; tapped => { root.key("3"); } }
+                KeyCap { label: "4"; tapped => { root.key("4"); } }
+                KeyCap { label: "5"; tapped => { root.key("5"); } }
+                KeyCap { label: "6"; tapped => { root.key("6"); } }
+                KeyCap { label: "7"; tapped => { root.key("7"); } }
+                KeyCap { label: "8"; tapped => { root.key("8"); } }
+                KeyCap { label: "9"; tapped => { root.key("9"); } }
+                KeyCap { label: "0"; tapped => { root.key("0"); } }
+            }
+            HorizontalLayout {
+                spacing: 6px;
+                KeyCap { label: "q"; tapped => { root.key("q"); } }
+                KeyCap { label: "w"; tapped => { root.key("w"); } }
+                KeyCap { label: "e"; tapped => { root.key("e"); } }
+                KeyCap { label: "r"; tapped => { root.key("r"); } }
+                KeyCap { label: "t"; tapped => { root.key("t"); } }
+                KeyCap { label: "y"; tapped => { root.key("y"); } }
+                KeyCap { label: "u"; tapped => { root.key("u"); } }
+                KeyCap { label: "i"; tapped => { root.key("i"); } }
+                KeyCap { label: "o"; tapped => { root.key("o"); } }
+                KeyCap { label: "p"; tapped => { root.key("p"); } }
+            }
+            HorizontalLayout {
+                spacing: 6px;
+                Rectangle { width: 22px; }
+                KeyCap { label: "a"; tapped => { root.key("a"); } }
+                KeyCap { label: "s"; tapped => { root.key("s"); } }
+                KeyCap { label: "d"; tapped => { root.key("d"); } }
+                KeyCap { label: "f"; tapped => { root.key("f"); } }
+                KeyCap { label: "g"; tapped => { root.key("g"); } }
+                KeyCap { label: "h"; tapped => { root.key("h"); } }
+                KeyCap { label: "j"; tapped => { root.key("j"); } }
+                KeyCap { label: "k"; tapped => { root.key("k"); } }
+                KeyCap { label: "l"; tapped => { root.key("l"); } }
+                Rectangle { width: 22px; }
+            }
+            HorizontalLayout {
+                spacing: 6px;
+                KeyCap { label: root.shift ? "SHIFT" : "shift"; active: root.shift; horizontal-stretch: 2; tapped => { root.shift-toggle(); } }
+                KeyCap { label: "z"; tapped => { root.key("z"); } }
+                KeyCap { label: "x"; tapped => { root.key("x"); } }
+                KeyCap { label: "c"; tapped => { root.key("c"); } }
+                KeyCap { label: "v"; tapped => { root.key("v"); } }
+                KeyCap { label: "b"; tapped => { root.key("b"); } }
+                KeyCap { label: "n"; tapped => { root.key("n"); } }
+                KeyCap { label: "m"; tapped => { root.key("m"); } }
+                KeyCap { icon: Icons.backspace; horizontal-stretch: 2; tapped => { root.backspace(); } }
+            }
+            HorizontalLayout {
+                spacing: 6px;
+                KeyCap { label: "-"; tapped => { root.key("-"); } }
+                KeyCap { label: "space"; horizontal-stretch: 6; tapped => { root.key(" "); } }
+                KeyCap { label: "."; tapped => { root.key("."); } }
+            }
+        }
+        if root.numeric: VerticalLayout {
+            spacing: 6px;
+            HorizontalLayout {
+                spacing: 6px;
+                KeyCap { label: "1"; tapped => { root.key("1"); } }
+                KeyCap { label: "2"; tapped => { root.key("2"); } }
+                KeyCap { label: "3"; tapped => { root.key("3"); } }
+            }
+            HorizontalLayout {
+                spacing: 6px;
+                KeyCap { label: "4"; tapped => { root.key("4"); } }
+                KeyCap { label: "5"; tapped => { root.key("5"); } }
+                KeyCap { label: "6"; tapped => { root.key("6"); } }
+            }
+            HorizontalLayout {
+                spacing: 6px;
+                KeyCap { label: "7"; tapped => { root.key("7"); } }
+                KeyCap { label: "8"; tapped => { root.key("8"); } }
+                KeyCap { label: "9"; tapped => { root.key("9"); } }
+            }
+            HorizontalLayout {
+                spacing: 6px;
+                KeyCap { label: "*"; tapped => { root.key("*"); } }
+                KeyCap { label: "0"; tapped => { root.key("0"); } }
+                KeyCap { label: "#"; tapped => { root.key("#"); } }
+            }
+            HorizontalLayout {
+                spacing: 6px;
+                KeyCap { label: "+"; tapped => { root.key("+"); } }
+                KeyCap { icon: Icons.backspace; horizontal-stretch: 2; tapped => { root.backspace(); } }
+            }
+        }
+    }
+}
+
+// A labelled, tappable form field showing its current value.
+component EditFieldRow inherits Rectangle {
+    in property <string> label;
+    in property <string> text;
+    in property <string> placeholder;
+    in property <bool> focused;
+    callback pick;
+    height: 58px;
+    border-radius: 12px;
+    border-width: root.focused ? 2px : 1px;
+    border-color: root.focused ? Palette.accent : Palette.line2;
+    background: Palette.surface;
+    TouchArea {
+        clicked => {
+            root.pick();
+        }
+    }
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                width: 96px;
+                color: Palette.muted;
+                font-size: 15px;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: root.text == "" ? root.placeholder : root.text;
+                color: root.text == "" ? Palette.faint : Palette.txt;
+                font-size: 20px;
+                font-weight: 600;
+                overflow: elide;
+            }
+        }
+    }
+}
+
+component ContactEditScreen inherits Rectangle {
+    in property <string> title;
+    in property <string> name;
+    in property <string> callsign;
+    in property <string> issi;
+    in property <string> number;
+    in property <bool> is-phone;
+    in property <int> focus-field; // 0 name, 1 callsign, 2 issi, 3 number
+    in property <bool> numeric;
+    in property <bool> shift;
+    in property <[ContactRow]> gateways;
+    in property <int> gateway-sel;
+    callback set-focus(int);
+    callback key(string);
+    callback backspace;
+    callback shift-toggle;
+    callback toggle-form(bool);
+    callback set-gateway(int);
+    callback save;
+    callback cancel;
+    background: transparent;
+    VerticalLayout {
+        padding: 12px;
+        spacing: 8px;
+        EditFieldRow {
+            label: "Name";
+            text: root.name;
+            placeholder: "Required";
+            focused: root.focus-field == 0;
+            pick => {
+                root.set-focus(0);
+            }
+        }
+        EditFieldRow {
+            label: "Callsign";
+            text: root.callsign;
+            placeholder: "Optional";
+            focused: root.focus-field == 1;
+            pick => {
+                root.set-focus(1);
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            TargetSeg {
+                label: "Private (ISSI)";
+                selected: !root.is-phone;
+                clicked => {
+                    root.toggle-form(false);
+                }
+            }
+            TargetSeg {
+                label: "Phone (gateway)";
+                selected: root.is-phone;
+                clicked => {
+                    root.toggle-form(true);
+                }
+            }
+        }
+        if !root.is-phone: EditFieldRow {
+            label: "ISSI";
+            text: root.issi;
+            placeholder: "1..16777215";
+            focused: root.focus-field == 2;
+            pick => {
+                root.set-focus(2);
+            }
+        }
+        if root.is-phone: EditFieldRow {
+            label: "Number";
+            text: root.number;
+            placeholder: "digits to dial";
+            focused: root.focus-field == 3;
+            pick => {
+                root.set-focus(3);
+            }
+        }
+        if root.is-phone: Rectangle {
+            height: 54px;
+            Flickable {
+                width: 100%;
+                height: 100%;
+                viewport-width: gwrow.preferred-width;
+                viewport-height: 54px;
+                gwrow := HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+                    if root.gateways.length == 0: Text {
+                        text: "No gateways programmed";
+                        color: Palette.muted;
+                        font-size: 15px;
+                        vertical-alignment: center;
+                    }
+                    for g in root.gateways: TargetSeg {
+                        label: g.name;
+                        selected: root.gateway-sel == g.index;
+                        clicked => {
+                            root.set-gateway(g.index);
+                        }
+                    }
+                }
+            }
+        }
+        Rectangle {
+            vertical-stretch: 1;
+            min-height: 6px;
+        }
+        OnScreenKeyboard {
+            numeric: root.numeric;
+            shift: root.shift;
+            key(c) => {
+                root.key(c);
+            }
+            backspace => {
+                root.backspace();
+            }
+            shift-toggle => {
+                root.shift-toggle();
+            }
+        }
+        HorizontalLayout {
+            spacing: 10px;
+            SecondaryButton {
+                text: "Cancel";
+                icon: Icons.close;
+                horizontal-stretch: 1;
+                clicked => {
+                    root.cancel();
+                }
+            }
+            PrimaryButton {
+                text: "Save";
+                icon: Icons.check;
+                horizontal-stretch: 1;
+                clicked => {
+                    root.save();
                 }
             }
         }
@@ -1897,34 +2461,6 @@ component DialKey inherits Rectangle {
     }
 }
 
-component TargetSeg inherits Rectangle {
-    in property <string> label;
-    in property <bool> selected;
-    callback clicked;
-    height: 54px;
-    horizontal-stretch: 1;
-    border-radius: 12px;
-    border-width: 1px;
-    border-color: root.selected ? Palette.accent : Palette.line2;
-    background: root.selected ? #33a7dd29 : Palette.surface;
-    TouchArea {
-        clicked => {
-            root.clicked();
-        }
-    }
-    Text {
-        width: parent.width - 12px;
-        height: 100%;
-        text: root.label;
-        color: root.selected ? #9fd3ef : Palette.muted;
-        font-size: 16px;
-        font-weight: 700;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        overflow: elide;
-    }
-}
-
 component DialerScreen inherits Rectangle {
     in property <string> number;
     // Selectable targets: index 0 = Private (ISSI), then one per codeplug gateway.
@@ -2179,7 +2715,7 @@ export component MainWindow inherits Window {
 
     in property <DeviceInput> device-input: DeviceInput.Touch;
     in property <bool> show-event-log: true;
-    property <Screen> screen: Screen.Home;
+    in-out property <Screen> screen: Screen.Home;
 
     // Auto-open the in-call screen while an individual call is live, and leave it
     // when the call ends (mirrors the web UI pushing/popping the call view).
@@ -2222,6 +2758,24 @@ export component MainWindow inherits Window {
     in property <[FolderRow]> folders;
     in property <[ContactRow]> contacts;
     in property <[DialTarget]> dial-targets: [{ label: "Private", max-len: 8 }];
+    // Contact detail page.
+    in property <int> detail-index: -1;
+    in property <string> detail-name;
+    in property <string> detail-callsign;
+    in property <string> detail-sub;
+    in property <bool> detail-is-phone;
+    // Contact editor form.
+    in property <string> edit-title: "New contact";
+    in property <string> edit-name;
+    in property <string> edit-callsign;
+    in property <string> edit-issi;
+    in property <string> edit-number;
+    in property <bool> edit-is-phone;
+    in property <int> edit-focus;
+    in property <bool> edit-numeric;
+    in property <bool> edit-shift;
+    in property <[ContactRow]> edit-gateways;
+    in property <int> edit-gateway-sel: -1;
     in property <bool> restart-required;
     in property <string> clock: "--:--:--";
     in property <string> date: "";
@@ -2267,7 +2821,19 @@ export component MainWindow inherits Window {
     callback ptt;
     callback dial-key(string);
     callback dial-call(int, bool);
-    callback call-contact(int);
+    callback call-contact(int, bool);
+    callback open-contact(int);
+    callback contact-new;
+    callback contact-edit(int);
+    callback contact-delete(int);
+    callback contact-save;
+    callback contact-cancel;
+    callback edit-set-focus(int);
+    callback edit-key(string);
+    callback edit-backspace;
+    callback edit-shift-toggle;
+    callback edit-toggle-form(bool);
+    callback edit-gateway(int);
     callback open-logs;
     callback alert-dismiss;
     callback group-select(int, int);
@@ -2323,6 +2889,12 @@ export component MainWindow inherits Window {
         if (root.screen == Screen.Contacts) {
             return "Contacts";
         }
+        if (root.screen == Screen.ContactDetail) {
+            return root.detail-name == "" ? "Contact" : root.detail-name;
+        }
+        if (root.screen == Screen.ContactEdit) {
+            return root.edit-title;
+        }
         if (root.screen == Screen.Survey) {
             return "Cell Survey";
         }
@@ -2339,6 +2911,9 @@ export component MainWindow inherits Window {
         }
         if (root.screen == Screen.LogDetail) {
             return Screen.Logs;
+        }
+        if (root.screen == Screen.ContactDetail || root.screen == Screen.ContactEdit) {
+            return Screen.Contacts;
         }
         return Screen.Home;
     }
@@ -2518,8 +3093,77 @@ export component MainWindow inherits Window {
         if root.device-input == DeviceInput.Touch && root.screen == Screen.Contacts: ContactsScreen {
             vertical-stretch: 1;
             contacts: root.contacts;
+            open-contact(i) => {
+                root.open-contact(i);
+                root.screen = Screen.ContactDetail;
+            }
             call-contact(i) => {
-                root.call-contact(i);
+                root.call-contact(i, true);
+            }
+            add-contact => {
+                root.contact-new();
+                root.screen = Screen.ContactEdit;
+            }
+        }
+
+        if root.device-input == DeviceInput.Touch && root.screen == Screen.ContactDetail: ContactDetailScreen {
+            vertical-stretch: 1;
+            name: root.detail-name;
+            callsign: root.detail-callsign;
+            sub: root.detail-sub;
+            is-phone: root.detail-is-phone;
+            call-duplex => {
+                root.call-contact(root.detail-index, true);
+            }
+            call-simplex => {
+                root.call-contact(root.detail-index, false);
+            }
+            edit => {
+                root.contact-edit(root.detail-index);
+                root.screen = Screen.ContactEdit;
+            }
+            delete => {
+                root.contact-delete(root.detail-index);
+            }
+        }
+
+        if root.device-input == DeviceInput.Touch && root.screen == Screen.ContactEdit: ContactEditScreen {
+            vertical-stretch: 1;
+            title: root.edit-title;
+            name: root.edit-name;
+            callsign: root.edit-callsign;
+            issi: root.edit-issi;
+            number: root.edit-number;
+            is-phone: root.edit-is-phone;
+            focus-field: root.edit-focus;
+            numeric: root.edit-numeric;
+            shift: root.edit-shift;
+            gateways: root.edit-gateways;
+            gateway-sel: root.edit-gateway-sel;
+            set-focus(f) => {
+                root.edit-set-focus(f);
+            }
+            key(c) => {
+                root.edit-key(c);
+            }
+            backspace => {
+                root.edit-backspace();
+            }
+            shift-toggle => {
+                root.edit-shift-toggle();
+            }
+            toggle-form(p) => {
+                root.edit-toggle-form(p);
+            }
+            set-gateway(g) => {
+                root.edit-gateway(g);
+            }
+            save => {
+                root.contact-save();
+            }
+            cancel => {
+                root.contact-cancel();
+                root.screen = Screen.Contacts;
             }
         }
 

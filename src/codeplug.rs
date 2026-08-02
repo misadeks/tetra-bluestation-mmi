@@ -339,8 +339,7 @@ pub fn normalize_dial(raw: &str) -> Result<String, String> {
 
 impl Contact {
     /// True when this is a phone (external) contact rather than an ISSI one.
-    pub fn is_phone(&self) -> bool {
-        self.number.is_some() || self.gateway.is_some()
+    pub fn is_phone(&self) -> bool {        self.number.is_some() || self.gateway.is_some()
     }
 
     /// Resolve to an on-air call target, applying the gateway prefix. Enforces
@@ -373,6 +372,152 @@ impl Contact {
             digits,
         })
     }
+}
+
+/// Validated input for creating or updating a `[[contact]]`. Exactly one target
+/// form must be present: `issi`, or (`number` + `gateway`).
+#[derive(Debug, Clone)]
+pub struct ContactInput {
+    pub name: String,
+    pub callsign: Option<String>,
+    pub issi: Option<u32>,
+    pub number: Option<String>,
+    pub gateway: Option<String>,
+}
+
+impl ContactInput {
+    /// Validate the contact form (used before writing it into the codeplug).
+    /// Mirrors the stack-side rules so the UI can reject bad input early.
+    pub fn validate(&self, cp: &Codeplug) -> Result<(), String> {
+        if self.name.trim().is_empty() {
+            return Err("Name is required".to_string());
+        }
+        let has_issi = self.issi.is_some();
+        let has_phone = self.number.is_some() || self.gateway.is_some();
+        if has_issi && has_phone {
+            return Err("Choose either an ISSI or a number, not both".to_string());
+        }
+        if !has_issi && !has_phone {
+            return Err("Enter an ISSI or a number".to_string());
+        }
+        if let Some(issi) = self.issi {
+            if issi < 1 || issi > 16_777_215 {
+                return Err("ISSI must be 1..=16777215".to_string());
+            }
+        }
+        if has_phone {
+            let number = self
+                .number
+                .as_deref()
+                .filter(|s| !s.is_empty())
+                .ok_or("Enter a number to dial")?;
+            let gw_id = self.gateway.as_deref().ok_or("Select a gateway")?;
+            let gw = cp
+                .gateway_by_id(gw_id)
+                .ok_or_else(|| format!("Unknown gateway '{gw_id}'"))?;
+            normalize_dial(&format!("{}{}", gw.prefix, number))?;
+        }
+        Ok(())
+    }
+}
+
+/// Serialize a contact's fields into a fresh toml_edit table (order preserved by
+/// the caller). Sets only the fields for the chosen form so stale keys never
+/// linger when a contact switches between ISSI and phone forms.
+fn contact_table(input: &ContactInput, order: i64) -> toml_edit::Table {
+    use toml_edit::value;
+    let mut t = toml_edit::Table::new();
+    t["name"] = value(input.name.clone());
+    if let Some(cs) = input.callsign.as_ref().filter(|s| !s.is_empty()) {
+        t["callsign"] = value(cs.clone());
+    }
+    if let Some(issi) = input.issi {
+        t["issi"] = value(issi as i64);
+    }
+    if let Some(num) = input.number.as_ref().filter(|s| !s.is_empty()) {
+        t["number"] = value(num.clone());
+    }
+    if let Some(gw) = input.gateway.as_ref().filter(|s| !s.is_empty()) {
+        t["gateway"] = value(gw.clone());
+    }
+    t["order"] = value(order);
+    t
+}
+
+fn contacts_array(doc: &mut toml_edit::DocumentMut) -> Result<&mut toml_edit::ArrayOfTables, String> {
+    let item = doc
+        .entry("contact")
+        .or_insert(toml_edit::Item::ArrayOfTables(toml_edit::ArrayOfTables::new()));
+    item.as_array_of_tables_mut()
+        .ok_or_else(|| "codeplug 'contact' is not an array of tables".to_string())
+}
+
+fn table_name(t: &toml_edit::Table) -> Option<&str> {
+    t.get("name").and_then(|v| v.as_str())
+}
+
+/// Add a new contact, or update the existing one named `key_name`, in the full
+/// codeplug TOML. Returns the edited TOML. Other sections (and redacted
+/// `"********"` secrets) are preserved verbatim by toml_edit.
+pub fn upsert_contact(
+    toml_str: &str,
+    input: &ContactInput,
+    key_name: Option<&str>,
+) -> Result<String, String> {
+    let mut doc = toml_str
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| format!("codeplug parse error: {e}"))?;
+
+    // Reject a duplicate name (unless it's the row we're editing).
+    {
+        let arr = contacts_array(&mut doc)?;
+        let clash = arr.iter().any(|t| {
+            table_name(t) == Some(input.name.as_str()) && key_name != Some(input.name.as_str())
+        });
+        if clash {
+            return Err(format!("A contact named '{}' already exists", input.name));
+        }
+    }
+
+    let arr = contacts_array(&mut doc)?;
+    if let Some(key) = key_name {
+        let pos = arr
+            .iter()
+            .position(|t| table_name(t) == Some(key))
+            .ok_or_else(|| format!("Contact '{key}' not found"))?;
+        let order = arr
+            .get(pos)
+            .and_then(|t| t.get("order"))
+            .and_then(|v| v.as_integer())
+            .unwrap_or(pos as i64);
+        let table = contact_table(input, order);
+        if let Some(slot) = arr.get_mut(pos) {
+            *slot = table;
+        }
+    } else {
+        let next_order = arr
+            .iter()
+            .filter_map(|t| t.get("order").and_then(|v| v.as_integer()))
+            .max()
+            .map(|m| m + 1)
+            .unwrap_or(0);
+        arr.push(contact_table(input, next_order));
+    }
+    Ok(doc.to_string())
+}
+
+/// Delete the contact named `name` from the full codeplug TOML.
+pub fn delete_contact(toml_str: &str, name: &str) -> Result<String, String> {
+    let mut doc = toml_str
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| format!("codeplug parse error: {e}"))?;
+    let arr = contacts_array(&mut doc)?;
+    let pos = arr
+        .iter()
+        .position(|t| table_name(t) == Some(name))
+        .ok_or_else(|| format!("Contact '{name}' not found"))?;
+    arr.remove(pos);
+    Ok(doc.to_string())
 }
 
 #[cfg(test)]
@@ -507,6 +652,57 @@ gateway = "gw"
 "#;
         let cp = Codeplug::parse(toml).expect("parses");
         assert!(cp.contacts[0].resolve(&cp).is_err());
+    }
+
+    #[test]
+    fn upsert_adds_and_updates_contacts() {
+        // Add a new ISSI contact to the sample.
+        let input = ContactInput {
+            name: "Bravo".to_string(),
+            callsign: Some("B2".to_string()),
+            issi: Some(2000),
+            number: None,
+            gateway: None,
+        };
+        let toml2 = upsert_contact(SAMPLE, &input, None).expect("adds");
+        let cp2 = Codeplug::parse(&toml2).expect("parses");
+        assert!(cp2.contacts.iter().any(|c| c.name == "Bravo" && c.issi == Some(2000)));
+
+        // Update Alice: switch her to a phone contact (issi key must be dropped).
+        let upd = ContactInput {
+            name: "Alice".to_string(),
+            callsign: None,
+            issi: None,
+            number: Some("555".to_string()),
+            gateway: Some("pabx1".to_string()),
+        };
+        let toml3 = upsert_contact(&toml2, &upd, Some("Alice")).expect("updates");
+        let cp3 = Codeplug::parse(&toml3).expect("parses");
+        let alice = cp3.contacts.iter().find(|c| c.name == "Alice").unwrap();
+        assert_eq!(alice.issi, None);
+        assert_eq!(alice.number.as_deref(), Some("555"));
+        assert_eq!(alice.gateway.as_deref(), Some("pabx1"));
+
+        // Duplicate name is rejected.
+        let dup = ContactInput {
+            name: "Alice".to_string(),
+            callsign: None,
+            issi: Some(7),
+            number: None,
+            gateway: None,
+        };
+        assert!(upsert_contact(&toml3, &dup, None).is_err());
+    }
+
+    #[test]
+    fn delete_removes_contact() {
+        let toml2 = delete_contact(SAMPLE, "Alice").expect("deletes");
+        let cp2 = Codeplug::parse(&toml2).expect("parses");
+        assert!(!cp2.contacts.iter().any(|c| c.name == "Alice"));
+        // Other data (talkgroups, gateways) survives.
+        assert!(!cp2.folders.is_empty());
+        assert_eq!(cp2.gateways.len(), 1);
+        assert!(delete_contact(&toml2, "Nobody").is_err());
     }
 
     #[test]

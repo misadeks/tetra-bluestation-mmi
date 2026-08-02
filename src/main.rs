@@ -179,8 +179,80 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     {
         let tx = events_tx.clone();
-        window.on_call_contact(move |index| {
-            let _ = tx.send(app::AppEvent::UiCallContact(index));
+        window.on_call_contact(move |index, duplex| {
+            let _ = tx.send(app::AppEvent::UiCallContact(index, duplex));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_open_contact(move |index| {
+            let _ = tx.send(app::AppEvent::UiOpenContact(index));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_contact_new(move || {
+            let _ = tx.send(app::AppEvent::UiContactNew);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_contact_edit(move |index| {
+            let _ = tx.send(app::AppEvent::UiContactEdit(index));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_contact_delete(move |index| {
+            let _ = tx.send(app::AppEvent::UiContactDelete(index));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_contact_save(move || {
+            let _ = tx.send(app::AppEvent::UiContactSave);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_contact_cancel(move || {
+            let _ = tx.send(app::AppEvent::UiContactCancel);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_edit_set_focus(move |field| {
+            let _ = tx.send(app::AppEvent::UiEditFocus(field));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_edit_key(move |s| {
+            let _ = tx.send(app::AppEvent::UiEditKey(s.to_string()));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_edit_backspace(move || {
+            let _ = tx.send(app::AppEvent::UiEditBackspace);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_edit_shift_toggle(move || {
+            let _ = tx.send(app::AppEvent::UiEditShift);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_edit_toggle_form(move |is_phone| {
+            let _ = tx.send(app::AppEvent::UiEditToggleForm(is_phone));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_edit_gateway(move |gidx| {
+            let _ = tx.send(app::AppEvent::UiEditGateway(gidx));
         });
     }
     {
