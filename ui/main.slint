@@ -3645,53 +3645,63 @@ component IncomingOverlay inherits Rectangle {
     background: @linear-gradient(180deg, #0f1620 0%, #0a0f16 100%);
     VerticalLayout {
         padding: 26px;
-        spacing: 16px;
-        alignment: center;
-        HorizontalLayout {
-            alignment: center;
-            Rectangle {
-                width: 84px;
-                height: 84px;
-                border-radius: 42px;
-                background: #37c06a29;
+        padding-bottom: 30px;
+        spacing: 0px;
+        // Caller identity, vertically centred in the space above the buttons.
+        Rectangle {
+            vertical-stretch: 1;
+            VerticalLayout {
+                alignment: center;
+                spacing: 18px;
                 HorizontalLayout {
                     alignment: center;
-                    VerticalLayout {
-                        alignment: center;
-                        Icon { d: Icons.phone; tint: Palette.green; size: 38px; }
+                    Rectangle {
+                        width: 108px;
+                        height: 108px;
+                        border-radius: 54px;
+                        background: #37c06a29;
+                        border-width: 2px;
+                        border-color: #37c06a4d;
+                        HorizontalLayout {
+                            alignment: center;
+                            VerticalLayout {
+                                alignment: center;
+                                Icon { d: Icons.phone; tint: Palette.green; size: 48px; }
+                            }
+                        }
                     }
+                }
+                Text {
+                    text: "INCOMING CALL";
+                    color: Palette.muted;
+                    font-size: 14px;
+                    letter-spacing: 2px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: root.peer;
+                    color: #ffffff;
+                    font-size: 42px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+                Text {
+                    text: root.sub;
+                    color: #9fd3ef;
+                    font-size: 24px;
+                    font-weight: 600;
+                    horizontal-alignment: center;
                 }
             }
         }
-        Text {
-            text: "INCOMING CALL";
-            color: Palette.muted;
-            font-size: 13px;
-            letter-spacing: 1.5px;
-            font-weight: 600;
-            horizontal-alignment: center;
-        }
-        Text {
-            text: root.peer;
-            color: #ffffff;
-            font-size: 40px;
-            font-weight: 800;
-            horizontal-alignment: center;
-            wrap: word-wrap;
-        }
-        Text {
-            text: root.sub;
-            color: Palette.muted;
-            font-size: 15px;
-            horizontal-alignment: center;
-        }
-        Rectangle { height: 14px; }
-        // Reject / Answer, big column buttons like the web UI grid.
+        // Reject / Answer docked at the bottom.
         HorizontalLayout {
             spacing: 16px;
             Rectangle {
                 horizontal-stretch: 1;
-                height: 96px;
+                height: 104px;
                 border-radius: 18px;
                 background: rej.pressed
                     ? @linear-gradient(180deg, #cf3f44 0%, #a82a2f 100%)
@@ -3706,12 +3716,12 @@ component IncomingOverlay inherits Rectangle {
                     spacing: 8px;
                     HorizontalLayout {
                         alignment: center;
-                        Icon { d: Icons.phone-off; tint: #ffffff; size: 28px; }
+                        Icon { d: Icons.phone-off; tint: #ffffff; size: 30px; }
                     }
                     Text {
                         text: "Reject";
                         color: #ffffff;
-                        font-size: 16px;
+                        font-size: 17px;
                         font-weight: 700;
                         horizontal-alignment: center;
                     }
@@ -3719,7 +3729,7 @@ component IncomingOverlay inherits Rectangle {
             }
             Rectangle {
                 horizontal-stretch: 1;
-                height: 96px;
+                height: 104px;
                 border-radius: 18px;
                 background: ans.pressed
                     ? @linear-gradient(180deg, #1f9a55 0%, #178045 100%)
@@ -3734,12 +3744,12 @@ component IncomingOverlay inherits Rectangle {
                     spacing: 8px;
                     HorizontalLayout {
                         alignment: center;
-                        Icon { d: Icons.phone; tint: #ffffff; size: 28px; }
+                        Icon { d: Icons.phone; tint: #ffffff; size: 30px; }
                     }
                     Text {
                         text: "Answer";
                         color: #ffffff;
-                        font-size: 16px;
+                        font-size: 17px;
                         font-weight: 700;
                         horizontal-alignment: center;
                     }
@@ -4794,7 +4804,10 @@ export component MainWindow inherits Window {
             clock: root.call-clock;
             can-ptt: root.call-can-ptt;
             ptt-state: root.call-ptt-state;
-            ptt-enabled: root.ptt-enabled;
+            // In-call PTT depends only on being registered, NOT on having a home
+            // TX talkgroup selected (root.ptt-enabled). A private simplex call
+            // must be able to transmit with no talkgroup attached.
+            ptt-enabled: root.registered;
             show-dtmf: root.call-dtmf;
             digits: root.call-digits;
             ptt-down => {

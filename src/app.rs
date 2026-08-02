@@ -4016,15 +4016,14 @@ fn push_calls(app: &AppState, weak: &slint::Weak<MainWindow>) {
     let (call_incoming, inc_peer, inc_sub) = match inc {
         Some(c) => {
             let peer = c.peer_label.clone().unwrap_or_else(|| peer_name(c.peer_ssi, false));
-            let base = c
-                .peer_sub
-                .clone()
-                .unwrap_or_else(|| c.peer_ssi.map(|s| s.to_string()).unwrap_or_default());
-            (
-                true,
-                peer,
-                format!("{}{}", base, if c.simplex { " - PTT" } else { " - duplex" }),
-            )
+            let mode = if c.simplex { "PTT call" } else { "Duplex call" };
+            // Sub-line: the call mode, prefixed with a real context override
+            // (e.g. "via <gateway>") but never the bare SSI already shown above.
+            let sub = match &c.peer_sub {
+                Some(s) => format!("{s}  -  {mode}"),
+                None => mode.to_string(),
+            };
+            (true, peer, sub)
         }
         None => (false, String::new(), String::new()),
     };
