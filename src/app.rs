@@ -165,7 +165,11 @@ pub enum AppEvent {
     UiTreeMoveDown(i32),
     /// Open the ringtone settings screen.
     UiOpenRingtones,
-    /// Select a ringtone by index (persists + previews it).
+    /// Open the settings hub screen.
+    UiOpenSettings,
+    /// Switch which call category the ringtone screen is editing (0/1/2).
+    UiRingCategory(i32),
+    /// Select a ringtone by index for the current category (persists + previews).
     UiRingSelect(i32),
     /// Toggle whether a ringtone plays on incoming calls (persists).
     UiRingToggle,
@@ -261,6 +265,8 @@ struct AppState {
     prefs: crate::prefs::UiPrefs,
     /// Generation guard so a preview auto-stop only stops its own preview.
     ring_preview_gen: u32,
+    /// Which call category the ringtone settings screen is currently editing.
+    ring_category: crate::prefs::RingCategory,
 }
 
 /// Which field of the contact editor the on-screen keyboard is editing.
@@ -425,6 +431,8 @@ struct Call {
     peer_label: Option<String>,
     /// Display override for the sub-line (e.g. the dialled external number).
     peer_sub: Option<String>,
+    /// True when this individual call is an external (gateway) call.
+    is_external: bool,
     /// When we last played a downlink speech frame for this call (someone is
     /// speaking now, even if the SwMI doesn't tell us who).
     rx_at: Option<Instant>,
@@ -614,6 +622,7 @@ pub fn run(
         ringtone: crate::ringtone::RingtonePlayer::new(),
         prefs: crate::prefs::UiPrefs::load(&storage_dir),
         ring_preview_gen: 0,
+        ring_category: crate::prefs::RingCategory::Simplex,
     };
 
     for event in rx.iter() {
@@ -1641,13 +1650,26 @@ pub fn run(
             AppEvent::UiTreeMoveDown(i) => {
                 tree_reorder(&mut app, &weak, i as usize, false);
             }
+            AppEvent::UiOpenSettings => {
+                let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::Settings));
+            }
             AppEvent::UiOpenRingtones => {
+                app.ring_category = crate::prefs::RingCategory::Simplex;
                 push_ringtones(&app, &weak);
                 let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::Ringtones));
             }
+            AppEvent::UiRingCategory(i) => {
+                app.ring_category = match i {
+                    1 => crate::prefs::RingCategory::Duplex,
+                    2 => crate::prefs::RingCategory::Gateway,
+                    _ => crate::prefs::RingCategory::Simplex,
+                };
+                push_ringtones(&app, &weak);
+            }
             AppEvent::UiRingSelect(i) => {
                 if let Some((id, _)) = crate::ringtone::RINGTONES.get(i as usize) {
-                    app.prefs.ringtone = (*id).to_string();
+                    let cat = app.ring_category;
+                    app.prefs.set_ringtone(cat, (*id).to_string());
                     app.prefs.save();
                     push_ringtones(&app, &weak);
                     // Preview the chosen tone (unless a real call is ringing).
@@ -2070,6 +2092,7 @@ fn apply_call_event(
                 // External inbound call: show the caller's external number (and
                 // which gateway it arrived through) instead of the gateway ISSI.
                 if let Some(ext) = ext_calling {
+                    c.is_external = true;
                     c.peer_label = Some(ext);
                     c.peer_sub = Some(match ext_gw_name {
                         Some(name) => format!("via {name}"),
@@ -2778,6 +2801,50 @@ fn peer_name(app: &AppState, ssi: u32, is_group: bool) -> String {
         format!("Group {ssi}")
     } else {
         format!("ISSI {ssi}")
+    }
+}
+
+/// If `ssi` is a phone-book contact, return "Name - Callsign" (or just "Name").
+/// None when it isn't a known contact.
+fn contact_ident(app: &AppState, ssi: u32) -> Option<String> {
+    let cp = app.codeplug.as_ref()?;
+    let c = cp.contacts.iter().find(|c| c.issi == Some(ssi))?;
+    Some(match &c.callsign {
+        Some(cs) if !cs.is_empty() => format!("{} - {}", c.name, cs),
+        _ => c.name.clone(),
+    })
+}
+
+/// Compute the (primary, secondary) display lines for an individual call,
+/// resolving contacts and avoiding a duplicated ISSI on both lines.
+fn individual_lines(
+    app: &AppState,
+    ssi: Option<u32>,
+    peer_label: Option<&str>,
+    peer_sub: Option<&str>,
+    simplex: bool,
+) -> (String, String) {
+    let mode = if simplex { "Private call - PTT" } else { "Private call - duplex" };
+    // An explicit label override (a contact call we placed, or an external
+    // number) wins for the primary line.
+    if let Some(lbl) = peer_label {
+        let sub = match peer_sub {
+            // Use a meaningful sub override, but not a bare repeat of the ISSI.
+            Some(s) if !s.is_empty() && ssi.map(|x| x.to_string()).as_deref() != Some(s) => {
+                s.to_string()
+            }
+            _ => ssi.map(|s| format!("ISSI {s}")).unwrap_or_else(|| mode.to_string()),
+        };
+        return (lbl.to_string(), sub);
+    }
+    match ssi {
+        // Known contact: name on top, ISSI below (not duplicated).
+        Some(s) => match contact_ident(app, s) {
+            Some(ident) => (ident, format!("ISSI {s}")),
+            // Unknown ISSI: show it once as the primary, the mode as the sub.
+            None => (format!("ISSI {s}"), mode.to_string()),
+        },
+        None => ("-".to_string(), String::new()),
     }
 }
 
@@ -4004,36 +4071,58 @@ fn fmt_dur(d: Duration) -> String {
 }
 
 /// Start/stop the ringtone to match the incoming-call state and the user's
-/// ringtone preference. Called on every call-state change.
+/// per-call-type ringtone preference. Called on every call-state change.
 fn sync_ringtone(app: &AppState) {
     let Some(player) = app.ringtone.as_ref() else { return };
-    if app.prefs.ring_enabled && incoming_call(app).is_some() {
-        player.play(&app.prefs.ringtone);
-    } else {
-        player.stop();
+    let ringing = app
+        .prefs
+        .ring_enabled
+        .then(|| incoming_call(app))
+        .flatten()
+        .and_then(|cid| app.calls.get(&cid));
+    match ringing {
+        Some(c) => {
+            let cat = if c.is_external {
+                crate::prefs::RingCategory::Gateway
+            } else if c.simplex {
+                crate::prefs::RingCategory::Simplex
+            } else {
+                crate::prefs::RingCategory::Duplex
+            };
+            player.play(app.prefs.ringtone_for(cat));
+        }
+        None => player.stop(),
     }
 }
 
-/// Push the ringtone settings model (rows + current selection + enabled flag).
+/// Push the ringtone settings model (tone rows + current-category selection +
+/// enabled flag + which call category is being edited).
 fn push_ringtones(app: &AppState, weak: &slint::Weak<MainWindow>) {
-    let sel = app.prefs.ringtone.clone();
+    let cat = app.ring_category;
+    let sel_id = app.prefs.ringtone_for(cat).to_string();
     let rows: Vec<EntityRow> = crate::ringtone::RINGTONES
         .iter()
         .enumerate()
         .map(|(i, (id, label))| EntityRow {
             index: i as i32,
             title: (*label).into(),
-            sub: if *id == sel { "Selected".into() } else { "".into() },
+            sub: if *id == sel_id { "Selected".into() } else { "".into() },
         })
         .collect();
     let selected = crate::ringtone::RINGTONES
         .iter()
-        .position(|(id, _)| *id == sel)
+        .position(|(id, _)| *id == sel_id)
         .unwrap_or(0) as i32;
+    let cat_idx = match cat {
+        crate::prefs::RingCategory::Simplex => 0,
+        crate::prefs::RingCategory::Duplex => 1,
+        crate::prefs::RingCategory::Gateway => 2,
+    };
     let enabled = app.prefs.ring_enabled;
     let _ = weak.upgrade_in_event_loop(move |w| {
         w.set_ringtones(ModelRc::new(VecModel::from(rows)));
         w.set_ringtone_sel(selected);
+        w.set_ring_category(cat_idx);
         w.set_ring_enabled(enabled);
     });
 }
@@ -4084,22 +4173,36 @@ fn push_calls(app: &AppState, weak: &slint::Weak<MainWindow>) {
                 0
             };
             let dir = if c.direction == Some("mt") { "Incoming" } else { "Outgoing" };
+            let (peer, sub) = individual_lines(
+                app,
+                c.peer_ssi,
+                c.peer_label.as_deref(),
+                c.peer_sub.as_deref(),
+                c.simplex,
+            );
             (
                 true,
                 dir.to_string(),
-                c.peer_label.clone().unwrap_or_else(|| peer_name(c.peer_ssi, false)),
-                c.peer_sub.clone().unwrap_or_else(|| c.peer_ssi.map(|s| s.to_string()).unwrap_or_default()),
+                peer,
+                sub,
                 label,
                 clock,
                 can_ptt,
                 ptt_state,
             )
         } else if let Some(d) = app.dialing.as_ref().filter(|d| !d.group) {
+            let (peer, sub) = individual_lines(
+                app,
+                Some(d.peer_ssi),
+                d.peer_label.as_deref(),
+                d.peer_sub.as_deref(),
+                d.simplex,
+            );
             (
                 true,
                 "Outgoing".to_string(),
-                d.peer_label.clone().unwrap_or_else(|| peer_name(Some(d.peer_ssi), false)),
-                d.peer_sub.clone().unwrap_or_else(|| d.peer_ssi.to_string()),
+                peer,
+                sub,
                 "Setting up...".to_string(),
                 String::new(),
                 false,
@@ -4113,7 +4216,13 @@ fn push_calls(app: &AppState, weak: &slint::Weak<MainWindow>) {
     let inc = incoming_call(app).and_then(|cid| app.calls.get(&cid));
     let (call_incoming, inc_peer, inc_sub) = match inc {
         Some(c) => {
-            let peer = c.peer_label.clone().unwrap_or_else(|| peer_name(c.peer_ssi, false));
+            // Primary: preset label > contact (name/callsign) > "ISSI n".
+            let peer = c
+                .peer_label
+                .clone()
+                .or_else(|| c.peer_ssi.and_then(|s| contact_ident(app, s)))
+                .or_else(|| c.peer_ssi.map(|s| format!("ISSI {s}")))
+                .unwrap_or_else(|| "-".to_string());
             let mode = if c.simplex { "PTT call" } else { "Duplex call" };
             // Sub-line: the call mode, prefixed with a real context override
             // (e.g. "via <gateway>") but never the bare SSI already shown above.
@@ -4154,17 +4263,15 @@ fn push_calls(app: &AppState, weak: &slint::Weak<MainWindow>) {
     // Talker line: a programmed name when known, otherwise just "TALKING"; the
     // raw talker id (if any) goes on its own line below (group_talker_id) instead
     // of an inline "TG {id}" label.
-    let talker_name = other_talker
-        .and_then(|o| app.codeplug.as_ref().and_then(|cp| cp.known_name(o)));
+    // Talker identity: prefer a phone-book contact (name + callsign), then a
+    // programmed talkgroup/individual name; the raw ISSI shows on its own
+    // (larger) line below via group_talker_id.
+    let talker_name = other_talker.and_then(|o| {
+        contact_ident(app, o).or_else(|| app.codeplug.as_ref().and_then(|cp| cp.known_name(o)))
+    });
     let group_status = if i_am_talking {
         "TALKING - You".to_string()
-    } else if other_talker.is_some() {
-        match &talker_name {
-            Some(n) => format!("TALKING - {n}"),
-            None => "TALKING".to_string(),
-        }
-    } else if receiving {
-        // Audio is flowing but the SwMI didn't give us a usable talker SSI.
+    } else if other_talker.is_some() || receiving {
         "TALKING".to_string()
     } else {
         let floor = gcall.and_then(|c| c.tx_status.as_deref());
@@ -4176,10 +4283,14 @@ fn push_calls(app: &AppState, weak: &slint::Weak<MainWindow>) {
             _ => "Floor free - push to talk".to_string(),
         }
     };
+    // The talker line (larger): a contact name/callsign when known, otherwise the
+    // raw ISSI. Empty when we hold the floor.
     let group_talker_id = if i_am_talking {
         String::new()
+    } else if let Some(o) = other_talker {
+        talker_name.clone().unwrap_or_else(|| format!("ISSI {o}"))
     } else {
-        other_talker.map(|o| o.to_string()).unwrap_or_default()
+        String::new()
     };
     let group_ptt_state: i32 = if i_am_talking {
         let req = matches!(

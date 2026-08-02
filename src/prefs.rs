@@ -19,14 +19,34 @@ fn default_ringtone() -> String {
     crate::ringtone::default_id().to_string()
 }
 
+/// Which ringtone applies to a given incoming call.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum RingCategory {
+    /// Private simplex (PTT) call.
+    Simplex,
+    /// Private duplex (full-duplex) call.
+    Duplex,
+    /// External call arriving through a gateway.
+    Gateway,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct UiPrefs {
     /// Play a ringtone when an individual call arrives.
     #[serde(default = "default_true")]
     pub ring_enabled: bool,
-    /// Selected ringtone id (see `ringtone::RINGTONES`).
+    /// Ringtone for private simplex (PTT) calls.
     #[serde(default = "default_ringtone")]
-    pub ringtone: String,
+    pub ring_simplex: String,
+    /// Ringtone for private duplex calls.
+    #[serde(default = "default_ringtone")]
+    pub ring_duplex: String,
+    /// Ringtone for external (gateway) calls.
+    #[serde(default = "default_ringtone")]
+    pub ring_gateway: String,
+    /// Legacy single-ringtone field (pre per-type); migrated on load.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ringtone: Option<String>,
     #[serde(skip)]
     path: PathBuf,
 }
@@ -35,7 +55,10 @@ impl Default for UiPrefs {
     fn default() -> UiPrefs {
         UiPrefs {
             ring_enabled: true,
-            ringtone: default_ringtone(),
+            ring_simplex: default_ringtone(),
+            ring_duplex: default_ringtone(),
+            ring_gateway: default_ringtone(),
+            ringtone: None,
             path: PathBuf::new(),
         }
     }
@@ -49,12 +72,40 @@ impl UiPrefs {
             .ok()
             .and_then(|s| serde_json::from_str::<UiPrefs>(&s).ok())
             .unwrap_or_default();
-        // Guard against a stale/unknown ringtone id.
-        if !crate::ringtone::is_valid(&prefs.ringtone) {
-            prefs.ringtone = default_ringtone();
+        // Migrate an older single-ringtone file to the per-type fields.
+        if let Some(old) = prefs.ringtone.take() {
+            if crate::ringtone::is_valid(&old) {
+                prefs.ring_simplex = old.clone();
+                prefs.ring_duplex = old.clone();
+                prefs.ring_gateway = old;
+            }
+        }
+        // Guard against stale/unknown ringtone ids.
+        for r in [&mut prefs.ring_simplex, &mut prefs.ring_duplex, &mut prefs.ring_gateway] {
+            if !crate::ringtone::is_valid(r) {
+                *r = default_ringtone();
+            }
         }
         prefs.path = path;
         prefs
+    }
+
+    /// The selected ringtone id for a call category.
+    pub fn ringtone_for(&self, cat: RingCategory) -> &str {
+        match cat {
+            RingCategory::Simplex => &self.ring_simplex,
+            RingCategory::Duplex => &self.ring_duplex,
+            RingCategory::Gateway => &self.ring_gateway,
+        }
+    }
+
+    /// Set the ringtone id for a call category.
+    pub fn set_ringtone(&mut self, cat: RingCategory, id: String) {
+        match cat {
+            RingCategory::Simplex => self.ring_simplex = id,
+            RingCategory::Duplex => self.ring_duplex = id,
+            RingCategory::Gateway => self.ring_gateway = id,
+        }
     }
 
     /// Persist (atomic temp-file + rename). Errors are logged only.
