@@ -72,6 +72,11 @@ export struct TreeRow {
     index: int,
     title: string,
     sub: string,
+    // folder header: whether the folder is collapsed
+    collapsed: bool,
+    // group: whether it can move up / down within its folder
+    can-up: bool,
+    can-down: bool,
 }
 
 // A selectable dialer target: index 0 is always "Private" (ISSI); the rest are
@@ -152,6 +157,7 @@ global Icons {
     out property <string> back: "M15 18L9 12L15 6";
     out property <string> chevron: "M9 6L15 12L9 18";
     out property <string> chevron-down: "M6 9L12 15L18 9";
+    out property <string> chevron-up: "M6 15L12 9L18 15";
     out property <string> info: "M12 3a9 9 0 1 0 0.001 0M12 11L12 16.5";
     out property <string> folder: "M3 7.5a2 2 0 0 1 2-2h3.6l2 2H19a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z";
     out property <string> check: "M4 12L10 18L20 6";
@@ -3045,25 +3051,30 @@ component TreeFolderHeader inherits Rectangle {
     in property <string> title;
     in property <string> sub;
     in property <bool> editable;
+    in property <bool> collapsed;
     callback tapped;
-    height: 56px;
+    callback edit;
+    height: 60px;
     border-radius: 12px;
     background: touch.pressed ? #1b2836 : #16202b;
     border-width: 1px;
     border-color: Palette.line;
     touch := TouchArea {
-        enabled: root.editable;
         clicked => {
             root.tapped();
         }
     }
     HorizontalLayout {
         padding-left: 12px;
-        padding-right: 12px;
+        padding-right: 6px;
         spacing: 10px;
         VerticalLayout {
             alignment: center;
-            Icon { d: Icons.folder; tint: Palette.accent; size: 22px; }
+            Icon { d: root.collapsed ? Icons.chevron : Icons.chevron-down; tint: Palette.faint; size: 22px; }
+        }
+        VerticalLayout {
+            alignment: center;
+            Icon { d: Icons.folder; tint: Palette.accent; size: 30px; }
         }
         VerticalLayout {
             alignment: center;
@@ -3071,7 +3082,7 @@ component TreeFolderHeader inherits Rectangle {
             Text {
                 text: root.title;
                 color: Palette.txt;
-                font-size: 19px;
+                font-size: 20px;
                 font-weight: 800;
                 overflow: elide;
             }
@@ -3080,9 +3091,20 @@ component TreeFolderHeader inherits Rectangle {
             alignment: center;
             Text { text: root.sub; color: Palette.faint; font-size: 13px; }
         }
-        if root.editable: VerticalLayout {
-            alignment: center;
-            Icon { d: Icons.edit; tint: Palette.faint; size: 18px; }
+        if root.editable: Rectangle {
+            width: 48px;
+            edit-ta := TouchArea {
+                clicked => {
+                    root.edit();
+                }
+            }
+            Icon {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                d: Icons.edit;
+                tint: edit-ta.pressed ? Palette.accent : Palette.faint;
+                size: 24px;
+            }
         }
     }
 }
@@ -3090,8 +3112,12 @@ component TreeFolderHeader inherits Rectangle {
 component TreeGroupRow inherits Rectangle {
     in property <string> title;
     in property <string> sub;
+    in property <bool> can-up;
+    in property <bool> can-down;
     callback tapped;
-    height: 62px;
+    callback move-up;
+    callback move-down;
+    height: 66px;
     border-radius: 12px;
     background: touch.pressed ? #16202b : Palette.surface;
     border-width: 1px;
@@ -3102,12 +3128,12 @@ component TreeGroupRow inherits Rectangle {
         }
     }
     HorizontalLayout {
-        padding-left: 28px;
-        padding-right: 12px;
-        spacing: 10px;
+        padding-left: 26px;
+        padding-right: 6px;
+        spacing: 8px;
         VerticalLayout {
             alignment: center;
-            Icon { d: Icons.users; tint: Palette.muted; size: 18px; }
+            Icon { d: Icons.users; tint: Palette.muted; size: 24px; }
         }
         VerticalLayout {
             alignment: center;
@@ -3122,9 +3148,37 @@ component TreeGroupRow inherits Rectangle {
             }
             Text { text: root.sub; color: Palette.muted; font-size: 13px; }
         }
-        VerticalLayout {
-            alignment: center;
-            Icon { d: Icons.chevron; tint: Palette.faint; size: 18px; }
+        Rectangle {
+            width: 44px;
+            up-ta := TouchArea {
+                enabled: root.can-up;
+                clicked => {
+                    root.move-up();
+                }
+            }
+            Icon {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                d: Icons.chevron-up;
+                tint: root.can-up ? (up-ta.pressed ? Palette.accent : Palette.txt) : #ffffff22;
+                size: 24px;
+            }
+        }
+        Rectangle {
+            width: 44px;
+            down-ta := TouchArea {
+                enabled: root.can-down;
+                clicked => {
+                    root.move-down();
+                }
+            }
+            Icon {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                d: Icons.chevron-down;
+                tint: root.can-down ? (down-ta.pressed ? Palette.accent : Palette.txt) : #ffffff22;
+                size: 24px;
+            }
         }
     }
 }
@@ -3132,7 +3186,7 @@ component TreeGroupRow inherits Rectangle {
 component TreeAddRow inherits Rectangle {
     in property <string> label;
     callback tapped;
-    height: 44px;
+    height: 46px;
     border-radius: 10px;
     background: touch.pressed ? #16202b : transparent;
     border-width: 1px;
@@ -3143,11 +3197,11 @@ component TreeAddRow inherits Rectangle {
         }
     }
     HorizontalLayout {
-        padding-left: 28px;
+        padding-left: 26px;
         spacing: 8px;
         VerticalLayout {
             alignment: center;
-            Icon { d: Icons.plus; tint: Palette.accent; size: 16px; }
+            Icon { d: Icons.plus; tint: Palette.accent; size: 20px; }
         }
         VerticalLayout {
             alignment: center;
@@ -3157,14 +3211,17 @@ component TreeAddRow inherits Rectangle {
     }
 }
 
-// The folders + talkgroups tree: folders as sections with their groups nested,
+// The folders + talkgroups tree: folders as headers with their groups nested,
 // an "Other" bucket, add-group per folder, and an add-folder button.
 component TreeScreen inherits Rectangle {
     in property <[TreeRow]> rows;
     callback folder(int);
+    callback toggle(int);
     callback group(int);
     callback add-group(int);
     callback add-folder;
+    callback move-up(int);
+    callback move-down(int);
     background: transparent;
     VerticalLayout {
         padding: 16px;
@@ -3176,13 +3233,17 @@ component TreeScreen inherits Rectangle {
                 spacing: 8px;
                 alignment: start;
                 for r in root.rows: Rectangle {
-                    height: r.kind == 0 ? 56px : (r.kind == 2 ? 44px : (r.kind == 3 ? 40px : 62px));
+                    height: r.kind == 0 ? 60px : (r.kind == 2 ? 46px : (r.kind == 3 ? 40px : 66px));
                     if r.kind == 0: TreeFolderHeader {
                         width: 100%;
                         title: r.title;
                         sub: r.sub;
                         editable: r.index >= 0;
+                        collapsed: r.collapsed;
                         tapped => {
+                            root.toggle(r.index);
+                        }
+                        edit => {
                             root.folder(r.index);
                         }
                     }
@@ -3190,8 +3251,16 @@ component TreeScreen inherits Rectangle {
                         width: 100%;
                         title: r.title;
                         sub: r.sub;
+                        can-up: r.can-up;
+                        can-down: r.can-down;
                         tapped => {
                             root.group(r.index);
+                        }
+                        move-up => {
+                            root.move-up(r.index);
+                        }
+                        move-down => {
+                            root.move-down(r.index);
                         }
                     }
                     if r.kind == 2: TreeAddRow {
@@ -4142,9 +4211,12 @@ export component MainWindow inherits Window {
     callback form-delete;
     callback open-tree;
     callback tree-folder(int);
+    callback tree-toggle(int);
     callback tree-group(int);
     callback tree-add-group(int);
     callback tree-add-folder;
+    callback tree-move-up(int);
+    callback tree-move-down(int);
     callback open-logs;
     callback alert-dismiss;
     callback group-select(int, int);
@@ -4465,6 +4537,9 @@ export component MainWindow inherits Window {
             folder(i) => {
                 root.tree-folder(i);
             }
+            toggle(i) => {
+                root.tree-toggle(i);
+            }
             group(i) => {
                 root.tree-group(i);
             }
@@ -4473,6 +4548,12 @@ export component MainWindow inherits Window {
             }
             add-folder => {
                 root.tree-add-folder();
+            }
+            move-up(i) => {
+                root.tree-move-up(i);
+            }
+            move-down(i) => {
+                root.tree-move-down(i);
             }
         }
 

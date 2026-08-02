@@ -157,6 +157,12 @@ pub enum AppEvent {
     UiTreeAddGroup(i32),
     /// Tree: add a new folder.
     UiTreeAddFolder,
+    /// Tree: collapse/expand a folder (folder index, -1 = Other).
+    UiTreeToggle(i32),
+    /// Tree: move a group up within its folder (all_talkgroups index).
+    UiTreeMoveUp(i32),
+    /// Tree: move a group down within its folder (all_talkgroups index).
+    UiTreeMoveDown(i32),
 }
 
 struct AppState {
@@ -239,6 +245,8 @@ struct AppState {
     /// Codeplug programming: current section and open edit form draft.
     prog_section: ProgSection,
     prog_draft: Option<ProgDraft>,
+    /// Tree: folder ids (or "__other__") whose groups are collapsed.
+    collapsed_folders: std::collections::HashSet<String>,
 }
 
 /// Which field of the contact editor the on-screen keyboard is editing.
@@ -316,6 +324,7 @@ struct FormFieldDraft {
     on: bool,
     /// Cycle fields: display labels and their underlying values (parallel).
     options: Vec<String>,
+    #[allow(dead_code)] // parallel underlying values for cycle fields
     opt_values: Vec<String>,
     opt_idx: usize,
 }
@@ -333,6 +342,7 @@ impl FormFieldDraft {
     fn toggle(label: &str, on: bool) -> FormFieldDraft {
         FormFieldDraft { label: label.into(), kind: FieldKind::Toggle, value: String::new(), on, options: vec![], opt_values: vec![], opt_idx: 0 }
     }
+    #[allow(dead_code)] // retained for future cycle-style fields
     fn cycle(label: &str, options: Vec<String>, opt_values: Vec<String>, opt_idx: usize) -> FormFieldDraft {
         let value = options.get(opt_idx).cloned().unwrap_or_default();
         FormFieldDraft { label: label.into(), kind: FieldKind::Cycle, value, on: false, options, opt_values, opt_idx }
@@ -357,6 +367,9 @@ struct ProgDraft {
     title: String,
     /// Scanlist only: GSSI for each membership toggle (fields after the first two).
     member_gssis: Vec<u32>,
+    /// Talkgroup only: the folder this group belongs to (id, or None). Set from
+    /// context so the form doesn't need a folder selector.
+    tg_folder: Option<String>,
 }
 
 impl ProgDraft {
@@ -583,6 +596,7 @@ pub fn run(
         msg_scroll_tick: 0,
         prog_section: ProgSection::Networks,
         prog_draft: None,
+        collapsed_folders: std::collections::HashSet::new(),
     };
 
     for event in rx.iter() {
@@ -1575,20 +1589,15 @@ pub fn run(
             AppEvent::UiTreeAddGroup(folder_idx) => {
                 app.prog_section = ProgSection::Talkgroups;
                 if let Some(mut d) = build_draft(&app, None) {
-                    // Preselect the folder this group is being added into.
-                    if folder_idx >= 0 {
-                        let fid = app
-                            .codeplug
+                    // The folder is set by context (which folder we added into).
+                    d.tg_folder = if folder_idx >= 0 {
+                        app.codeplug
                             .as_ref()
                             .and_then(|cp| cp.folder_defs.get(folder_idx as usize))
-                            .map(|f| f.id.clone());
-                        if let (Some(fid), Some(f)) = (fid, d.fields.get_mut(2)) {
-                            if let Some(pos) = f.opt_values.iter().position(|v| *v == fid) {
-                                f.opt_idx = pos;
-                                f.value = f.options.get(pos).cloned().unwrap_or_default();
-                            }
-                        }
-                    }
+                            .map(|f| f.id.clone())
+                    } else {
+                        None
+                    };
                     app.prog_draft = Some(d);
                     push_form(&app, &weak);
                     let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::ProgramEdit));
@@ -1601,6 +1610,19 @@ pub fn run(
                     push_form(&app, &weak);
                     let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::ProgramEdit));
                 }
+            }
+            AppEvent::UiTreeToggle(i) => {
+                let key = tree_folder_key(&app, i);
+                if !app.collapsed_folders.remove(&key) {
+                    app.collapsed_folders.insert(key);
+                }
+                push_tree(&app, &weak);
+            }
+            AppEvent::UiTreeMoveUp(i) => {
+                tree_reorder(&mut app, &weak, i as usize, true);
+            }
+            AppEvent::UiTreeMoveDown(i) => {
+                tree_reorder(&mut app, &weak, i as usize, false);
             }
         }
     }
@@ -2980,20 +3002,14 @@ fn push_contacts(app: &AppState, weak: &slint::Weak<MainWindow>) {
 /// Stage + commit an edited codeplug TOML: SetConfig, ApplyConfig, then GetConfig
 /// to pull back the canonical version. Applies the change locally at once for
 /// instant UI feedback (the stack commits contacts/gateways live, no restart).
-fn write_codeplug(
-    app: &mut AppState,
-    weak: &slint::Weak<MainWindow>,
-    toml: String,
-    title: &str,
-    msg: &str,
-    return_screen: Screen,
-) {
+/// Stage + commit an edited codeplug TOML (SetConfig + ApplyConfig + GetConfig)
+/// with an optimistic local update. No toast, no navigation.
+fn apply_codeplug(app: &mut AppState, weak: &slint::Weak<MainWindow>, toml: String) {
     let h = app.next_handle();
     app.send(protocol::set_config(h, &toml));
     let h2 = app.next_handle();
     app.send(protocol::apply_config(h2));
 
-    // Optimistic local update so the list reflects the edit immediately.
     app.last_config_toml = toml.clone();
     if let Some(cp) = Codeplug::parse(&toml) {
         app.codeplug = Some(cp);
@@ -3003,6 +3019,17 @@ fn write_codeplug(
 
     let h3 = app.next_handle();
     app.send(protocol::get_config(h3));
+}
+
+fn write_codeplug(
+    app: &mut AppState,
+    weak: &slint::Weak<MainWindow>,
+    toml: String,
+    title: &str,
+    msg: &str,
+    return_screen: Screen,
+) {
+    apply_codeplug(app, weak, toml);
     app.notify(weak, title, msg, 0);
     let _ = weak.upgrade_in_event_loop(move |w| w.set_screen(return_screen));
 }
@@ -3050,7 +3077,7 @@ fn new_draft(
     member_gssis: Vec<u32>,
 ) -> ProgDraft {
     let focus = fields.iter().position(|f| f.is_focusable()).unwrap_or(usize::MAX);
-    ProgDraft { section, key, index, fields, focus, shift: false, can_delete, title, member_gssis }
+    ProgDraft { section, key, index, fields, focus, shift: false, can_delete, title, member_gssis, tg_folder: None }
 }
 
 fn build_settings_draft(app: &AppState) -> ProgDraft {
@@ -3071,22 +3098,32 @@ fn build_settings_draft(app: &AppState) -> ProgDraft {
     )
 }
 
-fn folder_cycle(cp: &Codeplug, current: Option<&str>) -> FormFieldDraft {
-    let mut labels = vec!["(none)".to_string()];
-    let mut values = vec![String::new()];
-    for f in &cp.folder_defs {
-        labels.push(f.name.clone());
-        values.push(f.id.clone());
+/// Turn a folder name into a URL-ish slug, unique against `existing` ids.
+fn unique_folder_slug(name: &str, existing: &[String]) -> String {
+    let mut base = String::new();
+    let mut prev_dash = false;
+    for ch in name.trim().to_lowercase().chars() {
+        if ch.is_ascii_alphanumeric() {
+            base.push(ch);
+            prev_dash = false;
+        } else if !prev_dash {
+            base.push('-');
+            prev_dash = true;
+        }
     }
-    let idx = current
-        .and_then(|c| values.iter().position(|v| v == c))
-        .unwrap_or(0);
-    FormFieldDraft::cycle("Folder", labels, values, idx)
-}
-
-fn class_cycle(current: u8) -> FormFieldDraft {
-    let labels: Vec<String> = (0..=7).map(|n| n.to_string()).collect();
-    FormFieldDraft::cycle("Class of usage", labels.clone(), labels, current.min(7) as usize)
+    let base = base.trim_matches('-').to_string();
+    let base = if base.is_empty() { "folder".to_string() } else { base };
+    if !existing.iter().any(|e| e == &base) {
+        return base;
+    }
+    let mut n = 2;
+    loop {
+        let candidate = format!("{base}-{n}");
+        if !existing.iter().any(|e| e == &candidate) {
+            return candidate;
+        }
+        n += 1;
+    }
 }
 
 /// Build the edit draft for entry `idx` (Some) or a new entry (None).
@@ -3146,12 +3183,12 @@ fn build_draft(app: &AppState, idx: Option<usize>) -> Option<ProgDraft> {
             }
         }
         ProgSection::Folders => {
-            let (key, title, id, name) = match idx {
+            let (key, title, name) = match idx {
                 Some(i) => {
                     let f = cp.folder_defs.get(i)?;
-                    (Some(f.id.clone()), "Edit folder".to_string(), f.id.clone(), f.name.clone())
+                    (Some(f.id.clone()), "Edit folder".to_string(), f.name.clone())
                 }
-                None => (None, "New folder".to_string(), String::new(), String::new()),
+                None => (None, "New folder".to_string(), String::new()),
             };
             new_draft(
                 ProgSection::Folders,
@@ -3159,17 +3196,14 @@ fn build_draft(app: &AppState, idx: Option<usize>) -> Option<ProgDraft> {
                 None,
                 idx.is_some(),
                 title,
-                vec![
-                    FormFieldDraft::text("Id", id),
-                    FormFieldDraft::text("Name", name),
-                ],
+                vec![FormFieldDraft::text("Name", name)],
                 vec![],
             )
         }
         ProgSection::Talkgroups => match idx {
             Some(i) => {
                 let t = cp.all_talkgroups.get(i)?;
-                new_draft(
+                let mut d = new_draft(
                     ProgSection::Talkgroups,
                     Some(t.gssi.to_string()),
                     None,
@@ -3178,11 +3212,12 @@ fn build_draft(app: &AppState, idx: Option<usize>) -> Option<ProgDraft> {
                     vec![
                         FormFieldDraft::digits("GSSI", t.gssi.to_string()),
                         FormFieldDraft::text("Name", t.name.clone()),
-                        folder_cycle(cp, t.folder.as_deref()),
-                        class_cycle(t.class_of_usage),
+                        FormFieldDraft::digits("Class of usage (0-7)", t.class_of_usage.to_string()),
                     ],
                     vec![],
-                )
+                );
+                d.tg_folder = t.folder.clone();
+                d
             }
             None => new_draft(
                 ProgSection::Talkgroups,
@@ -3193,8 +3228,7 @@ fn build_draft(app: &AppState, idx: Option<usize>) -> Option<ProgDraft> {
                 vec![
                     FormFieldDraft::digits("GSSI", String::new()),
                     FormFieldDraft::text("Name", String::new()),
-                    folder_cycle(cp, None),
-                    class_cycle(0),
+                    FormFieldDraft::digits("Class of usage (0-7)", "0".to_string()),
                 ],
                 vec![],
             ),
@@ -3306,17 +3340,33 @@ fn prog_save(app: &mut AppState, weak: &slint::Weak<MainWindow>) {
             }
         }
         ProgSection::Folders => {
-            let input = crate::codeplug::FolderInput { id: fval(d, 0), name: fval(d, 1) };
+            let name = fval(d, 0);
+            if name.is_empty() {
+                return Err("Folder name is required".to_string());
+            }
+            let id = match d.key.as_deref() {
+                // Editing: keep the existing id.
+                Some(existing) => existing.to_string(),
+                // Adding: generate a unique slug from the name.
+                None => {
+                    let existing: Vec<String> = app
+                        .codeplug
+                        .as_ref()
+                        .map(|cp| cp.folder_defs.iter().map(|f| f.id.clone()).collect())
+                        .unwrap_or_default();
+                    unique_folder_slug(&name, &existing)
+                }
+            };
+            let input = crate::codeplug::FolderInput { id, name };
             Ok((crate::codeplug::upsert_folder(toml, &input, d.key.as_deref())?, "Saved folder".to_string()))
         }
         ProgSection::Talkgroups => {
             let gssi = fval(d, 0).parse::<u32>().map_err(|_| "GSSI must be a number".to_string())?;
-            let folder = d.fields.get(2).and_then(|f| f.opt_values.get(f.opt_idx)).cloned().filter(|s| !s.is_empty());
-            let class = d.fields.get(3).map(|f| f.opt_idx as u8).unwrap_or(0);
+            let class = fval(d, 2).parse::<u8>().map_err(|_| "Class of usage must be 0-7".to_string())?;
             let input = crate::codeplug::TalkgroupInput {
                 gssi,
                 name: fval(d, 1),
-                folder,
+                folder: d.tg_folder.clone(),
                 class_of_usage: class,
             };
             let key = d.key.as_deref().and_then(|s| s.parse::<u32>().ok());
@@ -3529,77 +3579,109 @@ fn push_form(app: &AppState, weak: &slint::Weak<MainWindow>) {
     });
 }
 
+/// Folder ids present in the codeplug (for Other-bucket detection).
+fn folder_id_set(cp: &Codeplug) -> std::collections::HashSet<&str> {
+    cp.folder_defs.iter().map(|f| f.id.as_str()).collect()
+}
+
+/// Ordered all_talkgroups indices belonging to a folder (Some(id)) or the Other
+/// bucket (None = no folder or an unknown folder id).
+fn folder_members(cp: &Codeplug, folder_key: Option<&str>) -> Vec<usize> {
+    let ids = folder_id_set(cp);
+    cp.all_talkgroups
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| match folder_key {
+            Some(id) => t.folder.as_deref() == Some(id),
+            None => match t.folder.as_deref() {
+                None => true,
+                Some(fid) => !ids.contains(fid),
+            },
+        })
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// The folder key (Some(id) / None for Other) that a group belongs to.
+fn group_folder_key(cp: &Codeplug, i: usize) -> Option<String> {
+    let ids = folder_id_set(cp);
+    match cp.all_talkgroups.get(i).and_then(|t| t.folder.as_deref()) {
+        Some(id) if ids.contains(id) => Some(id.to_string()),
+        _ => None,
+    }
+}
+
+/// Collapsed-state key for a tree folder header index (-1 = Other).
+fn tree_folder_key(app: &AppState, header_index: i32) -> String {
+    if header_index < 0 {
+        return "__other__".to_string();
+    }
+    app.codeplug
+        .as_ref()
+        .and_then(|cp| cp.folder_defs.get(header_index as usize))
+        .map(|f| f.id.clone())
+        .unwrap_or_else(|| format!("__folder_{header_index}"))
+}
+
+/// Append a folder header and (unless collapsed) its groups + add-group row.
+fn push_folder_rows(
+    rows: &mut Vec<TreeRow>,
+    cp: &Codeplug,
+    collapsed_set: &std::collections::HashSet<String>,
+    header_index: i32,
+    key: &str,
+    name: &str,
+    members: &[usize],
+) {
+    let collapsed = collapsed_set.contains(key);
+    rows.push(TreeRow {
+        kind: 0,
+        index: header_index,
+        title: name.into(),
+        sub: format!("{} groups", members.len()).into(),
+        collapsed,
+        can_up: false,
+        can_down: false,
+    });
+    if collapsed {
+        return;
+    }
+    let n = members.len();
+    for (pos, &i) in members.iter().enumerate() {
+        let t = &cp.all_talkgroups[i];
+        rows.push(TreeRow {
+            kind: 1,
+            index: i as i32,
+            title: t.name.clone().into(),
+            sub: format!("GSSI {}", t.gssi).into(),
+            collapsed: false,
+            can_up: pos > 0,
+            can_down: pos + 1 < n,
+        });
+    }
+    rows.push(TreeRow {
+        kind: 2,
+        index: header_index,
+        title: "Add group".into(),
+        sub: "".into(),
+        collapsed: false,
+        can_up: false,
+        can_down: false,
+    });
+}
+
 /// Build the folders + talkgroups tree: each folder as a header with its groups
 /// nested beneath, an "Other" bucket for unfiled groups, and add-group actions.
 fn push_tree(app: &AppState, weak: &slint::Weak<MainWindow>) {
     let mut rows: Vec<TreeRow> = Vec::new();
     if let Some(cp) = &app.codeplug {
-        let folder_ids: std::collections::HashSet<&str> =
-            cp.folder_defs.iter().map(|f| f.id.as_str()).collect();
-        // Each defined folder, with the groups that point at it.
         for (fi, f) in cp.folder_defs.iter().enumerate() {
-            let members: Vec<usize> = cp
-                .all_talkgroups
-                .iter()
-                .enumerate()
-                .filter(|(_, t)| t.folder.as_deref() == Some(f.id.as_str()))
-                .map(|(i, _)| i)
-                .collect();
-            rows.push(TreeRow {
-                kind: 0,
-                index: fi as i32,
-                title: f.name.clone().into(),
-                sub: format!("{} groups", members.len()).into(),
-            });
-            for i in members {
-                let t = &cp.all_talkgroups[i];
-                rows.push(TreeRow {
-                    kind: 1,
-                    index: i as i32,
-                    title: t.name.clone().into(),
-                    sub: format!("GSSI {}", t.gssi).into(),
-                });
-            }
-            rows.push(TreeRow {
-                kind: 2,
-                index: fi as i32,
-                title: "Add group".into(),
-                sub: "".into(),
-            });
+            let members = folder_members(cp, Some(f.id.as_str()));
+            push_folder_rows(&mut rows, cp, &app.collapsed_folders, fi as i32, &f.id, &f.name, &members);
         }
-        // "Other" bucket: groups with no folder or an unknown folder id.
-        let others: Vec<usize> = cp
-            .all_talkgroups
-            .iter()
-            .enumerate()
-            .filter(|(_, t)| match t.folder.as_deref() {
-                None => true,
-                Some(id) => !folder_ids.contains(id),
-            })
-            .map(|(i, _)| i)
-            .collect();
+        let others = folder_members(cp, None);
         if !others.is_empty() || cp.folder_defs.is_empty() {
-            rows.push(TreeRow {
-                kind: 0,
-                index: -1,
-                title: "Other".into(),
-                sub: format!("{} groups", others.len()).into(),
-            });
-            for i in others {
-                let t = &cp.all_talkgroups[i];
-                rows.push(TreeRow {
-                    kind: 1,
-                    index: i as i32,
-                    title: t.name.clone().into(),
-                    sub: format!("GSSI {}", t.gssi).into(),
-                });
-            }
-            rows.push(TreeRow {
-                kind: 2,
-                index: -1,
-                title: "Add group".into(),
-                sub: "".into(),
-            });
+            push_folder_rows(&mut rows, cp, &app.collapsed_folders, -1, "__other__", "Other", &others);
         }
     } else {
         rows.push(TreeRow {
@@ -3607,11 +3689,43 @@ fn push_tree(app: &AppState, weak: &slint::Weak<MainWindow>) {
             index: -1,
             title: "No codeplug loaded yet".into(),
             sub: "".into(),
+            collapsed: false,
+            can_up: false,
+            can_down: false,
         });
     }
     let _ = weak.upgrade_in_event_loop(move |w| {
         w.set_tree_rows(ModelRc::new(VecModel::from(rows)));
     });
+}
+
+/// Move a group up/down within its folder by renumbering the folder's `order`s.
+fn tree_reorder(app: &mut AppState, weak: &slint::Weak<MainWindow>, i: usize, up: bool) {
+    let Some(cp) = app.codeplug.as_ref() else { return };
+    let key = group_folder_key(cp, i);
+    let members = folder_members(cp, key.as_deref());
+    let Some(pos) = members.iter().position(|&m| m == i) else { return };
+    let swap_with = if up {
+        if pos == 0 {
+            return;
+        }
+        pos - 1
+    } else {
+        if pos + 1 >= members.len() {
+            return;
+        }
+        pos + 1
+    };
+    let mut seq: Vec<u32> = members.iter().map(|&m| cp.all_talkgroups[m].gssi).collect();
+    seq.swap(pos, swap_with);
+    let orders: Vec<(u32, i64)> = seq.iter().enumerate().map(|(idx, g)| (*g, idx as i64)).collect();
+    match crate::codeplug::set_talkgroup_orders(&app.last_config_toml, &orders) {
+        Ok(new_toml) => {
+            apply_codeplug(app, weak, new_toml);
+            push_tree(app, weak);
+        }
+        Err(e) => app.notify(weak, "Reorder failed", &e, 0),
+    }
 }
 
 /// Push the open contact's detail-page fields.

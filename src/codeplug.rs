@@ -1123,6 +1123,23 @@ pub fn delete_talkgroup(toml_str: &str, gssi: u32) -> Result<String, String> {
     Ok(finish(doc))
 }
 
+/// Set the `order` field of specific talkgroups (by GSSI). Used to reorder
+/// groups within a folder.
+pub fn set_talkgroup_orders(toml_str: &str, orders: &[(u32, i64)]) -> Result<String, String> {
+    use toml_edit::value;
+    let mut doc = parse_doc(toml_str)?;
+    let arr = array_of(&mut doc, "talkgroup")?;
+    for (gssi, order) in orders {
+        if let Some(t) = arr
+            .iter_mut()
+            .find(|t| table_int(t, "gssi") == Some(*gssi as i64))
+        {
+            t["order"] = value(*order);
+        }
+    }
+    Ok(finish(doc))
+}
+
 // --- Scanlists ([[scanlist]]) -------------------------------------------------
 
 #[derive(Debug, Clone)]
