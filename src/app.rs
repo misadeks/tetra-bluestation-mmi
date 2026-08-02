@@ -3090,6 +3090,7 @@ fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
     let service_status = s.service_status.label().to_string();
     let in_service = s.service_status.in_service();
     let registered = s.registration_state == protocol::RegistrationState::Registered;
+    let registering = s.registration_state == protocol::RegistrationState::Registering;
     let signal_bars = protocol::rssi_to_bars(s.rssi_dbfs);
     let rssi = match s.rssi_dbfs {
         Some(v) => format!("{v:.0} dBFS"),
@@ -3204,6 +3205,7 @@ fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
         w.set_service_status(service_status.into());
         w.set_in_service(in_service);
         w.set_registered(registered);
+        w.set_registering(registering);
         w.set_signal_bars(signal_bars);
         w.set_rssi(rssi.into());
         w.set_issi(issi.into());

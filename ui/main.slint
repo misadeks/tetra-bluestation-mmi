@@ -272,6 +272,7 @@ component Battery inherits Rectangle {
 component StatusBar inherits Rectangle {
     in property <int> bars;
     in property <bool> registered;
+    in property <bool> registering;
     in property <bool> in-service: true;
     in property <string> network;
     in property <bool> scan;
@@ -279,8 +280,18 @@ component StatusBar inherits Rectangle {
     in property <bool> telemetry-on;
     // Green only when attached AND in service; red otherwise.
     property <bool> ok: root.registered && root.in-service;
+    // Blink phase toggled by a timer while the radio is registering.
+    property <bool> blink-on: false;
     height: 70px;
     background: @linear-gradient(180deg, #0e1822 0%, #0b131b 100%);
+
+    blink-timer := Timer {
+        interval: 450ms;
+        running: root.registering;
+        triggered => {
+            root.blink-on = !root.blink-on;
+        }
+    }
 
     HorizontalLayout {
         padding-left: 18px;
@@ -293,7 +304,10 @@ component StatusBar inherits Rectangle {
                 d: Icons.antenna;
                 size: 30px;
                 weight: 2.2;
-                tint: root.ok ? #55d98a : Palette.red;
+                // Registering: blink red on/off. Otherwise green when OK, red when not.
+                tint: root.registering
+                    ? (root.blink-on ? Palette.red : #4a1417)
+                    : (root.ok ? #55d98a : Palette.red);
             }
         }
         VerticalLayout { alignment: center; SignalBars { bars: root.bars; registered: root.ok; } }
@@ -4817,6 +4831,7 @@ export component MainWindow inherits Window {
     in property <string> service-status: "Out of service";
     in property <bool> in-service;
     in property <bool> registered;
+    in property <bool> registering;
     in property <int> signal-bars;
     in property <string> rssi: "--";
     in property <string> issi: "--";
@@ -5124,6 +5139,7 @@ export component MainWindow inherits Window {
         StatusBar {
             bars: root.signal-bars;
             registered: root.registered;
+            registering: root.registering;
             in-service: root.in-service;
             network: root.network;
             scan: root.scan-active;
