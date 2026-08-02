@@ -14,7 +14,7 @@ import "fonts/Inter-Bold.ttf";
 import "fonts/Inter-ExtraBold.ttf";
 
 export enum DeviceInput { Touch, Keypad }
-export enum Screen { Home, Menu, Info, Folders, Dialer, Logs, LogDetail, Groups, Config, Survey, InCall, Contacts, ContactDetail, ContactEdit, Messages, MsgThread, MsgNew, Program, ProgramList, ProgramEdit, Tree }
+export enum Screen { Home, Menu, Info, Folders, Dialer, Logs, LogDetail, Groups, Config, Survey, InCall, Contacts, ContactDetail, ContactEdit, Messages, MsgThread, MsgNew, Program, ProgramList, ProgramEdit, Tree, Ringtones }
 
 export struct FolderRow {
     name: string,
@@ -158,6 +158,7 @@ global Icons {
     out property <string> chevron: "M9 6L15 12L9 18";
     out property <string> chevron-down: "M6 9L12 15L18 9";
     out property <string> chevron-up: "M6 15L12 9L18 15";
+    out property <string> bell: "M6 9a6 6 0 0 1 12 0c0 5 2 6 2 7H4c0-1 2-2 2-7M10 20a2 2 0 0 0 4 0";
     out property <string> info: "M12 3a9 9 0 1 0 0.001 0M12 11L12 16.5";
     out property <string> folder: "M3 7.5a2 2 0 0 1 2-2h3.6l2 2H19a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z";
     out property <string> check: "M4 12L10 18L20 6";
@@ -954,6 +955,7 @@ component MenuScreen inherits Rectangle {
     callback open-messages;
     callback open-config;
     callback open-program;
+    callback open-ringtones;
     callback open-survey;
     callback register;
     callback deregister;
@@ -1016,6 +1018,14 @@ component MenuScreen inherits Rectangle {
             icon: Icons.folder;
             clicked => {
                 root.open-program();
+            }
+        }
+        ListRow {
+            title: "Ringtone";
+            subtitle: "Choose the incoming-call sound";
+            icon: Icons.bell;
+            clicked => {
+                root.open-ringtones();
             }
         }
         ListRow {
@@ -3290,6 +3300,57 @@ component TreeScreen inherits Rectangle {
     }
 }
 
+// Ringtone settings: enable toggle + selectable list (tap previews + selects).
+component RingtoneScreen inherits Rectangle {
+    in property <[EntityRow]> tones;
+    in property <int> selected;
+    in property <bool> enabled;
+    callback toggle;
+    callback select(int);
+    background: transparent;
+    VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+        ToggleRow {
+            label: "Ring on incoming calls";
+            on: root.enabled;
+            toggled => {
+                root.toggle();
+            }
+        }
+        Text {
+            text: "Ringtone";
+            color: Palette.muted;
+            font-size: 14px;
+            letter-spacing: 1px;
+        }
+        Flickable {
+            vertical-stretch: 1;
+            viewport-height: rcol.preferred-height;
+            rcol := VerticalLayout {
+                spacing: 10px;
+                alignment: start;
+                for t[i] in root.tones: ListRow {
+                    title: t.title;
+                    subtitle: t.sub;
+                    icon: Icons.bell;
+                    selected: i == root.selected;
+                    show-chevron: false;
+                    clicked => {
+                        root.select(t.index);
+                    }
+                }
+            }
+        }
+        Text {
+            text: "Tap a ringtone to preview and select it.";
+            color: Palette.faint;
+            font-size: 13px;
+            horizontal-alignment: center;
+        }
+    }
+}
+
 component ConfigScreen inherits Rectangle {
     in property <string> toml;
     callback apply;
@@ -4111,6 +4172,10 @@ export component MainWindow inherits Window {
     in property <bool> form-can-delete;
     in property <bool> form-from-tree;
     in property <[TreeRow]> tree-rows;
+    // Ringtone settings (UI-only preference).
+    in property <[EntityRow]> ringtones;
+    in property <int> ringtone-sel;
+    in property <bool> ring-enabled;
     in property <[DialTarget]> dial-targets: [{ label: "Private", max-len: 8 }];
     // Contact detail page.
     in property <int> detail-index: -1;
@@ -4227,6 +4292,9 @@ export component MainWindow inherits Window {
     callback tree-add-folder;
     callback tree-move-up(int);
     callback tree-move-down(int);
+    callback open-ringtones;
+    callback ring-select(int);
+    callback ring-toggle;
     callback open-logs;
     callback alert-dismiss;
     callback group-select(int, int);
@@ -4285,6 +4353,9 @@ export component MainWindow inherits Window {
         if (root.screen == Screen.Tree) {
             return "Talkgroups";
         }
+        if (root.screen == Screen.Ringtones) {
+            return "Ringtone";
+        }
         if (root.screen == Screen.ProgramList) {
             return root.prog-title;
         }
@@ -4336,6 +4407,9 @@ export component MainWindow inherits Window {
             return Screen.Messages;
         }
         if (root.screen == Screen.Program) {
+            return Screen.Menu;
+        }
+        if (root.screen == Screen.Ringtones) {
             return Screen.Menu;
         }
         if (root.screen == Screen.Tree) {
@@ -4445,6 +4519,9 @@ export component MainWindow inherits Window {
             }
             open-program => {
                 root.screen = Screen.Program;
+            }
+            open-ringtones => {
+                root.open-ringtones();
             }
             open-survey => {
                 root.refresh();
@@ -4564,6 +4641,19 @@ export component MainWindow inherits Window {
             }
             move-down(i) => {
                 root.tree-move-down(i);
+            }
+        }
+
+        if root.device-input == DeviceInput.Touch && root.screen == Screen.Ringtones: RingtoneScreen {
+            vertical-stretch: 1;
+            tones: root.ringtones;
+            selected: root.ringtone-sel;
+            enabled: root.ring-enabled;
+            toggle => {
+                root.ring-toggle();
+            }
+            select(i) => {
+                root.ring-select(i);
             }
         }
 

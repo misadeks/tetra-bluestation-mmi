@@ -163,6 +163,14 @@ pub enum AppEvent {
     UiTreeMoveUp(i32),
     /// Tree: move a group down within its folder (all_talkgroups index).
     UiTreeMoveDown(i32),
+    /// Open the ringtone settings screen.
+    UiOpenRingtones,
+    /// Select a ringtone by index (persists + previews it).
+    UiRingSelect(i32),
+    /// Toggle whether a ringtone plays on incoming calls (persists).
+    UiRingToggle,
+    /// Auto-stop a ringtone preview (guarded by a generation counter).
+    UiRingStopPreview(u32),
 }
 
 struct AppState {
@@ -247,6 +255,12 @@ struct AppState {
     prog_draft: Option<ProgDraft>,
     /// Tree: folder ids (or "__other__") whose groups are collapsed.
     collapsed_folders: std::collections::HashSet<String>,
+    /// Ringtone player (None if no output device). Plays on incoming calls.
+    ringtone: Option<crate::ringtone::RingtonePlayer>,
+    /// Local UI-only preferences (ringtone selection, etc.).
+    prefs: crate::prefs::UiPrefs,
+    /// Generation guard so a preview auto-stop only stops its own preview.
+    ring_preview_gen: u32,
 }
 
 /// Which field of the contact editor the on-screen keyboard is editing.
@@ -597,6 +611,9 @@ pub fn run(
         prog_section: ProgSection::Networks,
         prog_draft: None,
         collapsed_folders: std::collections::HashSet::new(),
+        ringtone: crate::ringtone::RingtonePlayer::new(),
+        prefs: crate::prefs::UiPrefs::load(&storage_dir),
+        ring_preview_gen: 0,
     };
 
     for event in rx.iter() {
@@ -1623,6 +1640,49 @@ pub fn run(
             }
             AppEvent::UiTreeMoveDown(i) => {
                 tree_reorder(&mut app, &weak, i as usize, false);
+            }
+            AppEvent::UiOpenRingtones => {
+                push_ringtones(&app, &weak);
+                let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::Ringtones));
+            }
+            AppEvent::UiRingSelect(i) => {
+                if let Some((id, _)) = crate::ringtone::RINGTONES.get(i as usize) {
+                    app.prefs.ringtone = (*id).to_string();
+                    app.prefs.save();
+                    push_ringtones(&app, &weak);
+                    // Preview the chosen tone (unless a real call is ringing).
+                    if incoming_call(&app).is_none() {
+                        if let Some(player) = app.ringtone.as_ref() {
+                            player.play(id);
+                        }
+                        app.ring_preview_gen = app.ring_preview_gen.wrapping_add(1);
+                        let gen = app.ring_preview_gen;
+                        let tx = app.self_tx.clone();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(Duration::from_millis(3500));
+                            let _ = tx.send(AppEvent::UiRingStopPreview(gen));
+                        });
+                    }
+                }
+            }
+            AppEvent::UiRingToggle => {
+                app.prefs.ring_enabled = !app.prefs.ring_enabled;
+                app.prefs.save();
+                // Stop any preview/ring immediately when disabling.
+                if !app.prefs.ring_enabled {
+                    if let Some(player) = app.ringtone.as_ref() {
+                        player.stop();
+                    }
+                }
+                push_ringtones(&app, &weak);
+            }
+            AppEvent::UiRingStopPreview(gen) => {
+                // Only stop if this is the latest preview and no call is ringing.
+                if gen == app.ring_preview_gen && incoming_call(&app).is_none() {
+                    if let Some(player) = app.ringtone.as_ref() {
+                        player.stop();
+                    }
+                }
             }
         }
     }
@@ -3943,8 +4003,46 @@ fn fmt_dur(d: Duration) -> String {
     format!("{:02}:{:02}", s / 60, s % 60)
 }
 
+/// Start/stop the ringtone to match the incoming-call state and the user's
+/// ringtone preference. Called on every call-state change.
+fn sync_ringtone(app: &AppState) {
+    let Some(player) = app.ringtone.as_ref() else { return };
+    if app.prefs.ring_enabled && incoming_call(app).is_some() {
+        player.play(&app.prefs.ringtone);
+    } else {
+        player.stop();
+    }
+}
+
+/// Push the ringtone settings model (rows + current selection + enabled flag).
+fn push_ringtones(app: &AppState, weak: &slint::Weak<MainWindow>) {
+    let sel = app.prefs.ringtone.clone();
+    let rows: Vec<EntityRow> = crate::ringtone::RINGTONES
+        .iter()
+        .enumerate()
+        .map(|(i, (id, label))| EntityRow {
+            index: i as i32,
+            title: (*label).into(),
+            sub: if *id == sel { "Selected".into() } else { "".into() },
+        })
+        .collect();
+    let selected = crate::ringtone::RINGTONES
+        .iter()
+        .position(|(id, _)| *id == sel)
+        .unwrap_or(0) as i32;
+    let enabled = app.prefs.ring_enabled;
+    let _ = weak.upgrade_in_event_loop(move |w| {
+        w.set_ringtones(ModelRc::new(VecModel::from(rows)));
+        w.set_ringtone_sel(selected);
+        w.set_ring_enabled(enabled);
+    });
+}
+
 /// Push the call/PTT UI state derived from the call map.
 fn push_calls(app: &AppState, weak: &slint::Weak<MainWindow>) {
+    // Ring (or stop ringing) to match the current incoming-call state.
+    sync_ringtone(app);
+
     let peer_name = |ssi: Option<u32>, group: bool| -> String {
         match ssi {
             Some(s) => {

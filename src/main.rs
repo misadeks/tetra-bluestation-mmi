@@ -15,7 +15,9 @@ mod audio;
 mod codeplug;
 mod config;
 mod net;
+mod prefs;
 mod protocol;
+mod ringtone;
 mod store;
 
 use std::thread;
@@ -470,6 +472,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let tx = events_tx.clone();
         window.on_tree_move_down(move |i| {
             let _ = tx.send(app::AppEvent::UiTreeMoveDown(i));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_open_ringtones(move || {
+            let _ = tx.send(app::AppEvent::UiOpenRingtones);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_ring_select(move |i| {
+            let _ = tx.send(app::AppEvent::UiRingSelect(i));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_ring_toggle(move || {
+            let _ = tx.send(app::AppEvent::UiRingToggle);
         });
     }
     {
