@@ -4424,29 +4424,26 @@ component DialerScreen inherits Rectangle {
             }
         }
 
-        // When a number is being typed: the big number readout. When empty: the
-        // Recent calls button sits at the top and "Enter a number" is centred in
-        // the remaining free space.
+        // Top area shows the typed number (or the prompt when empty); the Recent
+        // calls card stays pinned just above the keypad either way.
         Rectangle {
             vertical-stretch: 1;
-            if root.number != "": VerticalLayout {
-                alignment: center;
-                Text {
-                    text: root.number;
-                    color: #ffffff;
-                    font-size: 44px;
-                    font-weight: 800;
-                    letter-spacing: 2px;
-                    horizontal-alignment: center;
-                    overflow: elide;
-                }
-            }
-            if root.number == "": VerticalLayout {
+            VerticalLayout {
                 spacing: 0px;
-                // "Enter a number" centred in the free space above the card.
                 Rectangle {
                     vertical-stretch: 1;
-                    Text {
+                    if root.number != "": Text {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        text: root.number;
+                        color: #ffffff;
+                        font-size: 44px;
+                        font-weight: 800;
+                        letter-spacing: 2px;
+                        horizontal-alignment: center;
+                        overflow: elide;
+                    }
+                    if root.number == "": Text {
                         x: (parent.width - self.width) / 2;
                         y: (parent.height - self.height) / 2;
                         text: "Enter a number";
