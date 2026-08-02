@@ -884,9 +884,11 @@ pub fn run(
                 if target == 0 {
                     // Private (individual ISSI) call. Valid ISSI range is 1..0xFFFFFF
                     // (0xFFFFFF is the broadcast address, not individually callable).
-                    // A "+" makes the parse fail and falls through to the same notice.
+                    // A "+" is only meaningful for gateway calls; reject it here too,
+                    // but with the same generic notice.
+                    let has_plus = app.dial_number.contains('+');
                     let parsed = app.dial_number.parse::<u32>().ok();
-                    let valid = parsed.map(|n| n >= 1 && n < 0xFF_FFFF).unwrap_or(false);
+                    let valid = !has_plus && parsed.map(|n| n >= 1 && n < 0xFF_FFFF).unwrap_or(false);
                     if !valid {
                         app.notify(
                             &weak,
