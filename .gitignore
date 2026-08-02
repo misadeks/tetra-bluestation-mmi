@@ -17,6 +17,9 @@ Thumbs.db
 # Runtime logs
 *.log
 
+# Local message store (SDS history persisted at runtime)
+/data/
+
 # Local screenshots
 *.png
 

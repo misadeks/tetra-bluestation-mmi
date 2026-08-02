@@ -325,6 +325,79 @@ pub fn ms_uplink_speech(call_identifier: u32, data: Vec<u8>, frame_bits: u32) ->
     }})
 }
 
+// --- Short Data Service (SDS-TL text messaging, cl. 29) ----------------------
+
+/// Protocol identifier for "Text Messaging with SDS-TL" (0x82).
+pub const SDS_TEXT_PROTOCOL_ID: u32 = 130;
+
+/// Encode a text message SDU: a coding-scheme byte (1 = ISO 8859-1 Latin-1,
+/// one byte per character, no timestamp) followed by the Latin-1 bytes. Any
+/// character outside Latin-1 is replaced with '?'.
+pub fn encode_text_sdu(text: &str) -> Vec<u8> {
+    let mut out = Vec::with_capacity(text.len() + 1);
+    out.push(1u8); // coding scheme: Latin-1, 8-bit
+    for ch in text.chars() {
+        out.push(if (ch as u32) <= 0xFF { ch as u8 } else { b'?' });
+    }
+    out
+}
+
+/// Decode a received text SDU (first byte = coding scheme). We render the
+/// remaining bytes as Latin-1 (each byte maps directly to U+0000..U+00FF),
+/// which is also a reasonable fallback for other 8-bit schemes.
+pub fn decode_text_sdu(user_data: &[u8]) -> String {
+    match user_data.split_first() {
+        Some((_scheme, rest)) => rest.iter().map(|&b| b as char).collect(),
+        None => String::new(),
+    }
+}
+
+/// Send a text message via SDS-TL (SDS-TRANSFER). `delivery_report` is one of
+/// "None" | "Received" | "Consumed" | "ReceivedAndConsumed". `message_reference`
+/// is the UI-owned 0..255 id echoed back in any report.
+pub fn tnsds_send_message(
+    handle: u32,
+    called_party_ssi: u32,
+    is_group: bool,
+    message_reference: u8,
+    delivery_report: &str,
+    user_data: Vec<u8>,
+) -> Value {
+    let bits = (user_data.len() as u32) * 8;
+    json!({ "TnsdsSendMessage": { "handle": handle, "request": {
+        "called_party_ssi": called_party_ssi,
+        "called_party_is_group": is_group,
+        "protocol_id": SDS_TEXT_PROTOCOL_ID,
+        "delivery_report_request": delivery_report,
+        "message_reference": message_reference,
+        "user_data": user_data,
+        "user_data_bits": bits,
+    }}})
+}
+
+/// Send a delivery/read report for a message we received. `delivery_status` is
+/// e.g. 0x02 (consumed/read). The stack auto-sends the 0x00 (received) report.
+pub fn tnsds_send_report(
+    handle: u32,
+    called_party_ssi: u32,
+    message_reference: u8,
+    delivery_status: u8,
+) -> Value {
+    json!({ "TnsdsSendReport": { "handle": handle, "request": {
+        "called_party_ssi": called_party_ssi,
+        "message_reference": message_reference,
+        "delivery_status": delivery_status,
+    }}})
+}
+
+/// Cancel local tracking of an outstanding outgoing message by reference.
+#[allow(dead_code)] // exposed for a future "cancel send" UI action
+pub fn tnsds_cancel(handle: u32, message_reference: u8) -> Value {
+    json!({ "TnsdsCancel": { "handle": handle, "request": {
+        "message_reference": message_reference,
+    }}})
+}
+
 // --- Inbound parsing helpers -------------------------------------------------
 
 /// Return (variant_name, payload) for an externally-tagged message object.
@@ -528,6 +601,29 @@ mod tests {
         assert_eq!(dtmf_digit_name('#'), Some("DigitHash"));
         assert_eq!(dtmf_digit_name('D'), Some("DigitD"));
         assert_eq!(dtmf_digit_name('x'), None);
+    }
+
+    #[test]
+    fn sds_text_message_and_codec() {
+        // "Hi" -> coding-scheme 1 + Latin-1 bytes.
+        let sdu = encode_text_sdu("Hi");
+        assert_eq!(sdu, vec![1, 72, 105]);
+        assert_eq!(decode_text_sdu(&sdu), "Hi");
+        assert_eq!(decode_text_sdu(&[1, 89, 111]), "Yo");
+
+        let v = tnsds_send_message(12, 2200699, false, 42, "ReceivedAndConsumed", sdu);
+        let req = &v["TnsdsSendMessage"]["request"];
+        assert_eq!(req["called_party_ssi"], json!(2200699));
+        assert_eq!(req["called_party_is_group"], json!(false));
+        assert_eq!(req["protocol_id"], json!(130));
+        assert_eq!(req["delivery_report_request"], json!("ReceivedAndConsumed"));
+        assert_eq!(req["message_reference"], json!(42));
+        assert_eq!(req["user_data"], json!([1, 72, 105]));
+        assert_eq!(req["user_data_bits"], json!(24));
+
+        let r = tnsds_send_report(13, 555, 7, 2);
+        assert_eq!(r["TnsdsSendReport"]["request"]["delivery_status"], json!(2));
+        assert_eq!(r["TnsdsSendReport"]["request"]["message_reference"], json!(7));
     }
 
     #[test]

@@ -14,12 +14,30 @@ import "fonts/Inter-Bold.ttf";
 import "fonts/Inter-ExtraBold.ttf";
 
 export enum DeviceInput { Touch, Keypad }
-export enum Screen { Home, Menu, Info, Folders, Dialer, Logs, LogDetail, Groups, Config, Survey, InCall, Contacts, ContactDetail, ContactEdit }
+export enum Screen { Home, Menu, Info, Folders, Dialer, Logs, LogDetail, Groups, Config, Survey, InCall, Contacts, ContactDetail, ContactEdit, Messages, MsgThread, MsgNew }
 
 export struct FolderRow {
     name: string,
     count: int,
     selected: bool,
+}
+
+// A conversation summary in the messages list.
+export struct ConvRow {
+    peer: int,
+    name: string,
+    snippet: string,
+    unread: int,
+    is-group: bool,
+    ts: string,
+}
+
+// A single message bubble within a thread.
+export struct MsgRow {
+    outgoing: bool,
+    text: string,
+    state: int, // 0 sending, 1 delivered, 2 read, 3 failed, 4 inbound
+    ts: string,
 }
 
 export struct ContactRow {
@@ -129,6 +147,8 @@ global Icons {
     out property <string> edit: "M4 20h4L17 11L13 7L4 16ZM14 6L18 10";
     out property <string> trash: "M5 7h14M9 7V5h6v2M6 7l1 13h10l1-13";
     out property <string> search: "M11 4a7 7 0 1 0 0.01 0M16.5 16.5L21 21";
+    out property <string> message: "M4 5h16a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H9l-4 4v-4H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z";
+    out property <string> send: "M4 12L20 4L13 20L11 13L4 12Z";
 }
 
 // 5 signal bars, heights scaled up, bottom-aligned (web UI .sig).
@@ -856,11 +876,13 @@ component HomeScreen inherits Rectangle {
 component MenuScreen inherits Rectangle {
     in property <bool> registered;
     in property <int> unread;
+    in property <int> unread-messages;
     in property <bool> show-event-log: true;
     callback open-info;
     callback open-logs;
     callback open-groups;
     callback open-contacts;
+    callback open-messages;
     callback open-config;
     callback open-survey;
     callback register;
@@ -870,6 +892,14 @@ component MenuScreen inherits Rectangle {
         padding: 18px;
         spacing: 12px;
         alignment: start;
+        ListRow {
+            title: "Messages";
+            subtitle: root.unread-messages > 0 ? root.unread-messages + " unread messages" : "Send and read text messages";
+            icon: Icons.message;
+            clicked => {
+                root.open-messages();
+            }
+        }
         ListRow {
             title: "Talkgroups";
             subtitle: "Select, scan, attach and detach groups";
@@ -1564,6 +1594,7 @@ component ContactDetailScreen inherits Rectangle {
     in property <bool> is-phone;
     callback call-duplex;
     callback call-simplex;
+    callback message;
     callback edit;
     callback delete;
     background: transparent;
@@ -1629,6 +1660,13 @@ component ContactDetailScreen inherits Rectangle {
             icon: Icons.mic;
             clicked => {
                 root.call-simplex();
+            }
+        }
+        if !root.is-phone: SecondaryButton {
+            text: "Message";
+            icon: Icons.message;
+            clicked => {
+                root.message();
             }
         }
         Rectangle {
@@ -2088,6 +2126,307 @@ component ContactEditScreen inherits Rectangle {
                 horizontal-stretch: 1;
                 clicked => {
                     root.save();
+                }
+            }
+        }
+    }
+}
+
+// One conversation row in the messages list.
+component ConvRowView inherits Rectangle {
+    in property <string> name;
+    in property <string> snippet;
+    in property <int> unread;
+    in property <string> ts;
+    callback open;
+    height: 88px;
+    border-radius: 16px;
+    border-width: 1px;
+    border-color: Palette.line;
+    background: touch.pressed ? #16202b : Palette.surface;
+    touch := TouchArea {
+        clicked => {
+            root.open();
+        }
+    }
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 14px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 50px;
+                height: 50px;
+                border-radius: 14px;
+                background: #33a7dd1f;
+                Icon {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    d: Icons.message;
+                    tint: Palette.accent;
+                    size: 26px;
+                }
+                if root.unread > 0: Rectangle {
+                    x: parent.width - self.width + 6px;
+                    y: -6px;
+                    width: 22px;
+                    height: 22px;
+                    border-radius: 11px;
+                    background: Palette.red;
+                    Text {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        text: root.unread;
+                        color: #ffffff;
+                        font-size: 13px;
+                        font-weight: 800;
+                    }
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 4px;
+            horizontal-stretch: 1;
+            Text {
+                text: root.name;
+                color: Palette.txt;
+                font-size: 21px;
+                font-weight: root.unread > 0 ? 800 : 600;
+                overflow: elide;
+            }
+            Text {
+                text: root.snippet;
+                color: Palette.muted;
+                font-size: 15px;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.ts;
+                color: Palette.faint;
+                font-size: 13px;
+            }
+        }
+    }
+}
+
+component MessagesScreen inherits Rectangle {
+    in property <[ConvRow]> conversations;
+    callback open-thread(int);
+    callback new-message;
+    background: transparent;
+    VerticalLayout {
+        padding: 16px;
+        spacing: 10px;
+        Flickable {
+            vertical-stretch: 1;
+            viewport-height: col.preferred-height;
+            col := VerticalLayout {
+                spacing: 10px;
+                alignment: start;
+                if root.conversations.length == 0: Text {
+                    text: "No messages yet";
+                    color: Palette.muted;
+                    font-size: 16px;
+                    horizontal-alignment: center;
+                }
+                for c in root.conversations: ConvRowView {
+                    name: c.name;
+                    snippet: c.snippet;
+                    unread: c.unread;
+                    ts: c.ts;
+                    open => {
+                        root.open-thread(c.peer);
+                    }
+                }
+            }
+        }
+        PrimaryButton {
+            text: "New message";
+            icon: Icons.plus;
+            clicked => {
+                root.new-message();
+            }
+        }
+    }
+}
+
+// A single message bubble (right-aligned + ticks when outgoing).
+component MsgBubble inherits Rectangle {
+    in property <bool> outgoing;
+    in property <string> text;
+    in property <int> state; // 0 sending,1 delivered,2 read,3 failed,4 inbound
+    in property <string> ts;
+    HorizontalLayout {
+        padding: 2px;
+        if root.outgoing: Rectangle { horizontal-stretch: 1; }
+        Rectangle {
+            max-width: 520px;
+            border-radius: 14px;
+            background: root.outgoing ? #1f6f9e : #1b2732;
+            VerticalLayout {
+                padding: 10px;
+                spacing: 3px;
+                Text {
+                    text: root.text;
+                    color: #eef6fb;
+                    font-size: 18px;
+                    wrap: word-wrap;
+                }
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 6px;
+                    Text {
+                        text: root.ts;
+                        color: #9fb4c4;
+                        font-size: 12px;
+                    }
+                    if root.outgoing: Text {
+                        text: root.state == 3 ? "failed"
+                            : root.state == 2 ? "read"
+                            : root.state == 1 ? "delivered"
+                            : "sending";
+                        color: root.state == 3 ? #ff9a9d : (root.state == 2 ? #7fe0a6 : #9fb4c4);
+                        font-size: 12px;
+                        font-weight: 700;
+                    }
+                }
+            }
+        }
+        if !root.outgoing: Rectangle { horizontal-stretch: 1; }
+    }
+}
+
+component MsgThreadScreen inherits Rectangle {
+    in property <[MsgRow]> messages;
+    in property <string> draft;
+    in property <bool> shift;
+    callback key(string);
+    callback backspace;
+    callback shift-toggle;
+    callback send;
+    background: transparent;
+    VerticalLayout {
+        padding: 12px;
+        spacing: 10px;
+        Flickable {
+            vertical-stretch: 1;
+            viewport-height: col.preferred-height;
+            col := VerticalLayout {
+                spacing: 6px;
+                alignment: start;
+                if root.messages.length == 0: Text {
+                    text: "No messages in this conversation";
+                    color: Palette.muted;
+                    font-size: 15px;
+                    horizontal-alignment: center;
+                }
+                for m in root.messages: MsgBubble {
+                    outgoing: m.outgoing;
+                    text: m.text;
+                    state: m.state;
+                    ts: m.ts;
+                }
+            }
+        }
+        // Draft preview.
+        Rectangle {
+            height: 52px;
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: Palette.line2;
+            background: Palette.surface;
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: root.draft == "" ? "Type a message" : root.draft;
+                        color: root.draft == "" ? Palette.faint : Palette.txt;
+                        font-size: 18px;
+                        overflow: elide;
+                    }
+                }
+            }
+        }
+        OnScreenKeyboard {
+            numeric: false;
+            shift: root.shift;
+            key(c) => {
+                root.key(c);
+            }
+            backspace => {
+                root.backspace();
+            }
+            shift-toggle => {
+                root.shift-toggle();
+            }
+        }
+        PrimaryButton {
+            text: "Send";
+            icon: Icons.send;
+            enabled: root.draft != "";
+            clicked => {
+                root.send();
+            }
+        }
+    }
+}
+
+component MsgNewScreen inherits Rectangle {
+    in property <string> issi;
+    callback key(string);
+    callback backspace;
+    callback start;
+    callback cancel;
+    background: transparent;
+    VerticalLayout {
+        padding: 14px;
+        spacing: 14px;
+        EditFieldRow {
+            label: "To (ISSI)";
+            text: root.issi;
+            placeholder: "Recipient number";
+            focused: true;
+        }
+        Rectangle {
+            vertical-stretch: 1;
+            min-height: 6px;
+        }
+        OnScreenKeyboard {
+            numeric: true;
+            digits-only: true;
+            key(c) => {
+                root.key(c);
+            }
+            backspace => {
+                root.backspace();
+            }
+        }
+        Rectangle { height: 8px; }
+        HorizontalLayout {
+            spacing: 10px;
+            SecondaryButton {
+                text: "Cancel";
+                icon: Icons.close;
+                horizontal-stretch: 1;
+                clicked => {
+                    root.cancel();
+                }
+            }
+            PrimaryButton {
+                text: "Start";
+                icon: Icons.check;
+                enabled: root.issi != "";
+                horizontal-stretch: 1;
+                clicked => {
+                    root.start();
                 }
             }
         }
@@ -2885,6 +3224,13 @@ export component MainWindow inherits Window {
     in property <[FolderRow]> folders;
     in property <[ContactRow]> contacts;
     in property <string> contact-query;
+    in property <[ConvRow]> conversations;
+    in property <[MsgRow]> msg-thread;
+    in property <string> msg-thread-title;
+    in property <string> msg-draft;
+    in property <bool> msg-shift;
+    in property <string> msg-new-issi;
+    in property <int> msg-unread;
     in property <[DialTarget]> dial-targets: [{ label: "Private", max-len: 8 }];
     // Contact detail page.
     in property <int> detail-index: -1;
@@ -2957,6 +3303,17 @@ export component MainWindow inherits Window {
     callback contact-search-backspace;
     callback contact-search-clear;
     callback contact-new;
+    callback open-messages;
+    callback open-thread(int);
+    callback message-contact(int);
+    callback msg-new;
+    callback msg-new-key(string);
+    callback msg-new-backspace;
+    callback msg-new-start;
+    callback msg-key(string);
+    callback msg-backspace;
+    callback msg-shift-toggle;
+    callback msg-send;
     callback contact-edit(int);
     callback contact-delete(int);
     callback contact-save;
@@ -3021,6 +3378,15 @@ export component MainWindow inherits Window {
         if (root.screen == Screen.Contacts) {
             return "Contacts";
         }
+        if (root.screen == Screen.Messages) {
+            return "Messages";
+        }
+        if (root.screen == Screen.MsgThread) {
+            return root.msg-thread-title == "" ? "Conversation" : root.msg-thread-title;
+        }
+        if (root.screen == Screen.MsgNew) {
+            return "New message";
+        }
         if (root.screen == Screen.ContactDetail) {
             return root.detail-name == "" ? "Contact" : root.detail-name;
         }
@@ -3046,6 +3412,12 @@ export component MainWindow inherits Window {
         }
         if (root.screen == Screen.ContactDetail || root.screen == Screen.ContactEdit) {
             return Screen.Contacts;
+        }
+        if (root.screen == Screen.Messages) {
+            return Screen.Menu;
+        }
+        if (root.screen == Screen.MsgThread || root.screen == Screen.MsgNew) {
+            return Screen.Messages;
         }
         return Screen.Home;
     }
@@ -3119,9 +3491,14 @@ export component MainWindow inherits Window {
             vertical-stretch: 1;
             registered: root.registered;
             unread: root.unread;
+            unread-messages: root.msg-unread;
             show-event-log: root.show-event-log;
             open-info => {
                 root.screen = Screen.Info;
+            }
+            open-messages => {
+                root.open-messages();
+                root.screen = Screen.Messages;
             }
             open-groups => {
                 root.screen = Screen.Groups;
@@ -3249,6 +3626,55 @@ export component MainWindow inherits Window {
             }
         }
 
+        if root.device-input == DeviceInput.Touch && root.screen == Screen.Messages: MessagesScreen {
+            vertical-stretch: 1;
+            conversations: root.conversations;
+            open-thread(p) => {
+                root.open-thread(p);
+                root.screen = Screen.MsgThread;
+            }
+            new-message => {
+                root.msg-new();
+                root.screen = Screen.MsgNew;
+            }
+        }
+
+        if root.device-input == DeviceInput.Touch && root.screen == Screen.MsgThread: MsgThreadScreen {
+            vertical-stretch: 1;
+            messages: root.msg-thread;
+            draft: root.msg-draft;
+            shift: root.msg-shift;
+            key(c) => {
+                root.msg-key(c);
+            }
+            backspace => {
+                root.msg-backspace();
+            }
+            shift-toggle => {
+                root.msg-shift-toggle();
+            }
+            send => {
+                root.msg-send();
+            }
+        }
+
+        if root.device-input == DeviceInput.Touch && root.screen == Screen.MsgNew: MsgNewScreen {
+            vertical-stretch: 1;
+            issi: root.msg-new-issi;
+            key(c) => {
+                root.msg-new-key(c);
+            }
+            backspace => {
+                root.msg-new-backspace();
+            }
+            start => {
+                root.msg-new-start();
+            }
+            cancel => {
+                root.screen = Screen.Messages;
+            }
+        }
+
         if root.device-input == DeviceInput.Touch && root.screen == Screen.ContactDetail: ContactDetailScreen {
             vertical-stretch: 1;
             name: root.detail-name;
@@ -3260,6 +3686,10 @@ export component MainWindow inherits Window {
             }
             call-simplex => {
                 root.call-contact(root.detail-index, false);
+            }
+            message => {
+                root.message-contact(root.detail-index);
+                root.screen = Screen.MsgThread;
             }
             edit => {
                 root.contact-edit(root.detail-index);

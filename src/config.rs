@@ -24,6 +24,9 @@ pub struct Config {
     pub audio: AudioConfig,
     #[serde(default)]
     pub ui: UiConfig,
+    /// Local persistence (SDS messages, etc.).
+    #[serde(default)]
+    pub storage: StorageConfig,
     /// Device model catalog. Selected by name via `[ui].model`. Config-defined
     /// profiles override built-ins of the same name (see `builtin_devices`).
     #[serde(default)]
@@ -79,6 +82,26 @@ impl Default for LogConfig {
 
 fn default_ws_path() -> String {
     "ws.log".to_string()
+}
+
+/// Where locally-persisted UI state is kept (SDS message history, etc.).
+#[derive(Debug, Clone, Deserialize)]
+pub struct StorageConfig {
+    /// Directory for persisted state files. Created on first write.
+    #[serde(default = "default_storage_dir")]
+    pub dir: String,
+}
+
+impl Default for StorageConfig {
+    fn default() -> Self {
+        StorageConfig {
+            dir: default_storage_dir(),
+        }
+    }
+}
+
+fn default_storage_dir() -> String {
+    "data".to_string()
 }
 
 #[allow(dead_code)] // fields consumed by the audio path in M5
@@ -352,6 +375,7 @@ impl Default for Config {
             log: LogConfig::default(),
             audio: AudioConfig::default(),
             ui: UiConfig::default(),
+            storage: StorageConfig::default(),
             device: Vec::new(),
         }
     }

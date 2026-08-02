@@ -14,7 +14,7 @@ use slint::{ModelRc, VecModel};
 
 use crate::codeplug::Codeplug;
 use crate::protocol::{self, MsRuntimeState, ServiceStatus};
-use crate::{ContactRow, DialTarget, FolderRow, GroupRow, LogRow, MainWindow, ScanRow, Screen, SurveyRow};
+use crate::{ContactRow, ConvRow, DialTarget, FolderRow, GroupRow, LogRow, MainWindow, MsgRow, ScanRow, Screen, SurveyRow};
 
 /// Events fed into the app loop from net threads, timers, and the UI.
 pub enum AppEvent {
@@ -97,6 +97,28 @@ pub enum AppEvent {
     UiCampCell(u64, bool),
     UiApplyConfig,
     UiRefresh,
+    /// Open the messages/conversations list screen.
+    UiOpenMessages,
+    /// Open the thread for a peer ssi (from a ConvRow.peer value).
+    UiOpenThread(i32),
+    /// Open a thread for a contact by index (ISSI contacts only).
+    UiMessageContact(i32),
+    /// Append a character to the open thread's draft.
+    UiMsgKey(String),
+    /// Remove the last character of the open thread's draft.
+    UiMsgBackspace,
+    /// Toggle the compose keyboard shift latch.
+    UiMsgShift,
+    /// Send the current draft in the open thread.
+    UiMsgSend,
+    /// Prepare a blank "new conversation" ISSI entry.
+    UiMsgNew,
+    /// Append a digit to the new-conversation ISSI.
+    UiMsgNewKey(String),
+    /// Remove the last digit of the new-conversation ISSI.
+    UiMsgNewBackspace,
+    /// Open a thread for the entered new-conversation ISSI.
+    UiMsgNewStart,
 }
 
 struct AppState {
@@ -163,6 +185,16 @@ struct AppState {
     dtmf_echo: String,
     /// Current contacts search query (case-insensitive substring filter).
     contact_query: String,
+    /// Persistent SDS message store (survives UI restart).
+    messages: crate::store::MessageStore,
+    /// Peer (ssi, is_group) whose message thread is currently open.
+    msg_thread_peer: Option<(u32, bool)>,
+    /// Draft text being composed in the open thread.
+    msg_draft: String,
+    /// Shift state of the message compose keyboard.
+    msg_shift: bool,
+    /// ISSI entered on the "new conversation" screen.
+    msg_new_issi: String,
 }
 
 /// Which field of the contact editor the on-screen keyboard is editing.
@@ -374,6 +406,7 @@ pub fn run(
     weak: slint::Weak<MainWindow>,
     reg_type: String,
     audio_cfg: crate::config::AudioConfig,
+    storage_dir: String,
 ) {
     // Voice engine (None when disabled, codec missing, or no audio device).
     let audio = crate::audio::AudioEngine::new(&audio_cfg, self_tx.clone());
@@ -418,6 +451,11 @@ pub fn run(
         contact_draft: None,
         dtmf_echo: String::new(),
         contact_query: String::new(),
+        messages: crate::store::MessageStore::load(&storage_dir),
+        msg_thread_peer: None,
+        msg_draft: String::new(),
+        msg_shift: false,
+        msg_new_issi: String::new(),
     };
 
     for event in rx.iter() {
@@ -1199,6 +1237,71 @@ pub fn run(
                     app.send(protocol::get_config(h));
                 }
             }
+            AppEvent::UiOpenMessages => {
+                app.msg_thread_peer = None;
+                push_conversations(&app, &weak);
+            }
+            AppEvent::UiOpenThread(peer) => {
+                open_thread(&mut app, &weak, peer as u32, false);
+            }
+            AppEvent::UiMessageContact(idx) => {
+                let ssi = app
+                    .codeplug
+                    .as_ref()
+                    .and_then(|cp| cp.contacts.get(idx as usize))
+                    .and_then(|c| c.issi);
+                if let Some(ssi) = ssi {
+                    open_thread(&mut app, &weak, ssi, false);
+                } else {
+                    app.notify(&weak, "Cannot message", "This contact has no ISSI.", 0);
+                }
+            }
+            AppEvent::UiMsgKey(s) => {
+                for ch in s.chars() {
+                    let ch = if app.msg_shift { ch.to_ascii_uppercase() } else { ch };
+                    app.msg_draft.push(ch);
+                    app.msg_shift = false;
+                }
+                push_thread(&app, &weak);
+            }
+            AppEvent::UiMsgBackspace => {
+                app.msg_draft.pop();
+                push_thread(&app, &weak);
+            }
+            AppEvent::UiMsgShift => {
+                app.msg_shift = !app.msg_shift;
+                push_thread(&app, &weak);
+            }
+            AppEvent::UiMsgSend => {
+                send_message(&mut app, &weak);
+            }
+            AppEvent::UiMsgNew => {
+                app.msg_new_issi.clear();
+                let _ = weak.upgrade_in_event_loop(|w| w.set_msg_new_issi("".into()));
+            }
+            AppEvent::UiMsgNewKey(s) => {
+                for ch in s.chars() {
+                    if ch.is_ascii_digit() && app.msg_new_issi.len() < 8 {
+                        app.msg_new_issi.push(ch);
+                    }
+                }
+                let out = app.msg_new_issi.clone();
+                let _ = weak.upgrade_in_event_loop(move |w| w.set_msg_new_issi(out.into()));
+            }
+            AppEvent::UiMsgNewBackspace => {
+                app.msg_new_issi.pop();
+                let out = app.msg_new_issi.clone();
+                let _ = weak.upgrade_in_event_loop(move |w| w.set_msg_new_issi(out.into()));
+            }
+            AppEvent::UiMsgNewStart => {
+                match app.msg_new_issi.parse::<u32>() {
+                    Ok(ssi) if ssi > 0 => {
+                        open_thread(&mut app, &weak, ssi, false);
+                        let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::MsgThread));
+                    }
+                    _ => app.notify(&weak, "Invalid ISSI", "Enter a valid ISSI number.", 0),
+                }
+            }
         }
     }
 }
@@ -1419,6 +1522,21 @@ fn handle_telemetry(
             let scanned = payload.get("scanned").and_then(Value::as_i64).unwrap_or(0) as i32;
             app.scan_summary = (found, scanned);
             push_survey(app, weak);
+        }
+        "TnsdsMessageIndication" => {
+            handle_sds_message_in(app, payload, weak);
+        }
+        "TnsdsReportIndication" => {
+            handle_sds_report_in(app, payload, weak);
+        }
+        "TnsdsStatusIndication" => {
+            let from = payload.get("calling_party_ssi").and_then(Value::as_u64).unwrap_or(0);
+            let num = payload.get("status_number").and_then(Value::as_u64).unwrap_or(0);
+            app.notify(weak, "Status received", &format!("From {from}: status {num}"), 0);
+        }
+        "TnsdsUnitdataIndication" => {
+            let from = payload.get("calling_party_ssi").and_then(Value::as_u64).unwrap_or(0);
+            tracing::info!(from, "SDS unitdata received (opaque, not shown)");
         }
         _ => {}
     }
@@ -2201,6 +2319,8 @@ fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
     push_groups(app, weak);
     push_contacts(app, weak);
     push_dial_targets(app, weak);
+    push_conversations(app, weak);
+    push_thread(app, weak);
 }
 
 /// Build the dialer target selector: "Private" (ISSI) plus one entry per
@@ -2228,8 +2348,275 @@ fn push_dial_targets(app: &AppState, weak: &slint::Weak<MainWindow>) {
     });
 }
 
-/// Build the Contacts model (phone book) from the codeplug, in `order`. Each row
-/// shows the target (ISSI, or number via a named gateway) and its kind badge.
+// --- SDS messaging (interface-5) --------------------------------------------
+
+/// Human-readable name for a peer SSI: a contact/talkgroup name if known,
+/// otherwise "ISSI n" (individual) or "Group n".
+fn peer_name(app: &AppState, ssi: u32, is_group: bool) -> String {
+    if let Some(cp) = &app.codeplug {
+        if is_group {
+            return cp.name_of(ssi);
+        }
+        if let Some(c) = cp.contacts.iter().find(|c| c.issi == Some(ssi)) {
+            return match &c.callsign {
+                Some(cs) if !cs.is_empty() => format!("{} - {}", c.name, cs),
+                _ => c.name.clone(),
+            };
+        }
+    }
+    if is_group {
+        format!("Group {ssi}")
+    } else {
+        format!("ISSI {ssi}")
+    }
+}
+
+/// Format a unix-millis timestamp as a short local time string.
+fn fmt_ts(ms: u64) -> String {
+    chrono::DateTime::from_timestamp_millis(ms as i64)
+        .map(|t| t.with_timezone(&chrono::Local).format("%H:%M").to_string())
+        .unwrap_or_default()
+}
+
+/// Total count of unread inbound messages, for the menu badge.
+fn unread_messages(app: &AppState) -> i32 {
+    app.messages
+        .messages
+        .iter()
+        .filter(|m| !m.outgoing && !m.read)
+        .count() as i32
+}
+
+/// Mark every inbound message from `(ssi, is_group)` as read, sending a consumed
+/// report for any that requested one. Returns true if anything changed.
+fn mark_peer_read(app: &mut AppState, ssi: u32, is_group: bool) -> bool {
+    let mut reports: Vec<u8> = Vec::new();
+    let mut changed = false;
+    for m in app.messages.messages.iter_mut() {
+        if m.outgoing || m.peer_ssi != ssi || m.is_group != is_group {
+            continue;
+        }
+        if !m.read {
+            m.read = true;
+            changed = true;
+        }
+        if m.wants_consumed {
+            reports.push(m.reference);
+            m.wants_consumed = false;
+        }
+    }
+    // Consumed reports are only meaningful for individual messages.
+    if !is_group {
+        for reference in reports {
+            let h = app.next_handle();
+            app.send(protocol::tnsds_send_report(h, ssi, reference, 0x02));
+        }
+    }
+    changed
+}
+
+/// Open (or switch to) the message thread for a peer, marking it read.
+fn open_thread(app: &mut AppState, weak: &slint::Weak<MainWindow>, ssi: u32, is_group: bool) {
+    app.msg_thread_peer = Some((ssi, is_group));
+    app.msg_draft.clear();
+    app.msg_shift = false;
+    if mark_peer_read(app, ssi, is_group) {
+        app.messages.save();
+    }
+    push_thread(app, weak);
+    push_conversations(app, weak);
+}
+
+/// Compose + send the current draft in the open thread; store it locally.
+fn send_message(app: &mut AppState, weak: &slint::Weak<MainWindow>) {
+    let Some((ssi, is_group)) = app.msg_thread_peer else {
+        return;
+    };
+    let text = app.msg_draft.trim().to_string();
+    if text.is_empty() {
+        return;
+    }
+    if !app.require_online(weak) {
+        return;
+    }
+    // Groups get no per-recipient delivery reports; individuals get both ticks.
+    let report = if is_group { "None" } else { "ReceivedAndConsumed" };
+    let reference = app.messages.next_reference();
+    let sdu = protocol::encode_text_sdu(&text);
+    let h = app.next_handle();
+    app.send(protocol::tnsds_send_message(h, ssi, is_group, reference, report, sdu));
+
+    let id = app.messages.next_local_id();
+    app.messages.messages.push(crate::store::StoredMessage {
+        id,
+        peer_ssi: ssi,
+        is_group,
+        outgoing: true,
+        text,
+        reference,
+        state: crate::store::state::SENDING,
+        fail_code: 0,
+        at_ms: crate::store::now_ms(),
+        read: true,
+        wants_consumed: false,
+    });
+    app.messages.save();
+    app.msg_draft.clear();
+    app.msg_shift = false;
+    push_thread(app, weak);
+    push_conversations(app, weak);
+}
+
+/// Store an inbound text message and surface it.
+fn handle_sds_message_in(app: &mut AppState, payload: &Value, weak: &slint::Weak<MainWindow>) {
+    let ssi = payload.get("calling_party_ssi").and_then(Value::as_u64).unwrap_or(0) as u32;
+    let is_group = payload
+        .get("called_party_is_group")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let reference = payload.get("message_reference").and_then(Value::as_u64).unwrap_or(0) as u8;
+    let drr = payload
+        .get("delivery_report_request")
+        .and_then(Value::as_str)
+        .unwrap_or("None");
+    let bytes: Vec<u8> = payload
+        .get("user_data")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(|v| v.as_u64().map(|n| n as u8)).collect())
+        .unwrap_or_default();
+    let text = protocol::decode_text_sdu(&bytes);
+    let wants_consumed =
+        !is_group && matches!(drr, "Consumed" | "ReceivedAndConsumed");
+
+    let open = app.msg_thread_peer == Some((ssi, is_group));
+    let id = app.messages.next_local_id();
+    app.messages.messages.push(crate::store::StoredMessage {
+        id,
+        peer_ssi: ssi,
+        is_group,
+        outgoing: false,
+        text: text.clone(),
+        reference,
+        state: crate::store::state::INBOUND,
+        fail_code: 0,
+        at_ms: crate::store::now_ms(),
+        read: open,
+        wants_consumed,
+    });
+
+    if open {
+        // Thread is on-screen: mark read and send any consumed report now.
+        mark_peer_read(app, ssi, is_group);
+        app.messages.save();
+        push_thread(app, weak);
+    } else {
+        app.messages.save();
+        let who = peer_name(app, ssi, is_group);
+        let preview: String = text.chars().take(40).collect();
+        app.notify(weak, &format!("Message from {who}"), &preview, 0);
+    }
+    push_conversations(app, weak);
+}
+
+/// Match an inbound delivery/read report to the outgoing message it refers to.
+fn handle_sds_report_in(app: &mut AppState, payload: &Value, weak: &slint::Weak<MainWindow>) {
+    let ssi = payload.get("calling_party_ssi").and_then(Value::as_u64).unwrap_or(0) as u32;
+    let reference = payload.get("message_reference").and_then(Value::as_u64).unwrap_or(0) as u8;
+    let ds = payload.get("delivery_status").and_then(Value::as_u64).unwrap_or(0) as u8;
+    let new_state = if ds >= 0x40 {
+        crate::store::state::FAILED
+    } else if ds == 0x02 {
+        crate::store::state::READ
+    } else {
+        crate::store::state::DELIVERED
+    };
+    let mut hit = false;
+    for m in app.messages.messages.iter_mut() {
+        if m.outgoing && m.peer_ssi == ssi && m.reference == reference {
+            if new_state == crate::store::state::FAILED {
+                m.state = crate::store::state::FAILED;
+                m.fail_code = ds;
+            } else if m.state != crate::store::state::FAILED && new_state > m.state {
+                m.state = new_state;
+            }
+            hit = true;
+        }
+    }
+    if hit {
+        app.messages.save();
+        push_thread(app, weak);
+        push_conversations(app, weak);
+    }
+}
+
+/// Build the conversation list: one row per peer, newest activity first, with
+/// the last message snippet and unread count.
+fn push_conversations(app: &AppState, weak: &slint::Weak<MainWindow>) {
+    // Group by (peer_ssi, is_group), tracking last timestamp + snippet + unread.
+    let mut order: Vec<(u32, bool)> = Vec::new();
+    let mut last_ts: HashMap<(u32, bool), u64> = HashMap::new();
+    let mut snippet: HashMap<(u32, bool), String> = HashMap::new();
+    let mut unread: HashMap<(u32, bool), i32> = HashMap::new();
+    for m in &app.messages.messages {
+        let key = (m.peer_ssi, m.is_group);
+        if !order.contains(&key) {
+            order.push(key);
+        }
+        let cur = last_ts.entry(key).or_insert(0);
+        if m.at_ms >= *cur {
+            *cur = m.at_ms;
+            snippet.insert(key, m.text.chars().take(48).collect());
+        }
+        if !m.outgoing && !m.read {
+            *unread.entry(key).or_insert(0) += 1;
+        }
+    }
+    order.sort_by(|a, b| last_ts[b].cmp(&last_ts[a]));
+    let rows: Vec<ConvRow> = order
+        .iter()
+        .map(|&(ssi, is_group)| ConvRow {
+            peer: ssi as i32,
+            name: peer_name(app, ssi, is_group).into(),
+            snippet: snippet.get(&(ssi, is_group)).cloned().unwrap_or_default().into(),
+            unread: *unread.get(&(ssi, is_group)).unwrap_or(&0),
+            is_group,
+            ts: fmt_ts(*last_ts.get(&(ssi, is_group)).unwrap_or(&0)).into(),
+        })
+        .collect();
+    let badge = unread_messages(app);
+    let _ = weak.upgrade_in_event_loop(move |w| {
+        w.set_conversations(ModelRc::new(VecModel::from(rows)));
+        w.set_msg_unread(badge);
+    });
+}
+
+/// Build the open thread's message bubbles + title + draft state.
+fn push_thread(app: &AppState, weak: &slint::Weak<MainWindow>) {
+    let mut rows: Vec<MsgRow> = Vec::new();
+    let mut title = String::new();
+    if let Some((ssi, is_group)) = app.msg_thread_peer {
+        title = peer_name(app, ssi, is_group);
+        for m in &app.messages.messages {
+            if m.peer_ssi == ssi && m.is_group == is_group {
+                rows.push(MsgRow {
+                    outgoing: m.outgoing,
+                    text: m.text.clone().into(),
+                    state: m.state as i32,
+                    ts: fmt_ts(m.at_ms).into(),
+                });
+            }
+        }
+    }
+    let draft = app.msg_draft.clone();
+    let shift = app.msg_shift;
+    let _ = weak.upgrade_in_event_loop(move |w| {
+        w.set_msg_thread(ModelRc::new(VecModel::from(rows)));
+        w.set_msg_thread_title(title.into());
+        w.set_msg_draft(draft.into());
+        w.set_msg_shift(shift);
+    });
+}
+
 fn push_contacts(app: &AppState, weak: &slint::Weak<MainWindow>) {
     let query = app.contact_query.trim().to_lowercase();
     let mut rows: Vec<ContactRow> = Vec::new();

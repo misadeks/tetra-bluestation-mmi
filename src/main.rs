@@ -16,6 +16,7 @@ mod codeplug;
 mod config;
 mod net;
 mod protocol;
+mod store;
 
 use std::thread;
 use std::time::Duration;
@@ -275,6 +276,72 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     {
         let tx = events_tx.clone();
+        window.on_open_messages(move || {
+            let _ = tx.send(app::AppEvent::UiOpenMessages);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_open_thread(move |peer| {
+            let _ = tx.send(app::AppEvent::UiOpenThread(peer));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_message_contact(move |index| {
+            let _ = tx.send(app::AppEvent::UiMessageContact(index));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_msg_key(move |s| {
+            let _ = tx.send(app::AppEvent::UiMsgKey(s.to_string()));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_msg_backspace(move || {
+            let _ = tx.send(app::AppEvent::UiMsgBackspace);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_msg_shift_toggle(move || {
+            let _ = tx.send(app::AppEvent::UiMsgShift);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_msg_send(move || {
+            let _ = tx.send(app::AppEvent::UiMsgSend);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_msg_new(move || {
+            let _ = tx.send(app::AppEvent::UiMsgNew);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_msg_new_key(move |s| {
+            let _ = tx.send(app::AppEvent::UiMsgNewKey(s.to_string()));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_msg_new_backspace(move || {
+            let _ = tx.send(app::AppEvent::UiMsgNewBackspace);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_msg_new_start(move || {
+            let _ = tx.send(app::AppEvent::UiMsgNewStart);
+        });
+    }
+    {
+        let tx = events_tx.clone();
         window.on_open_logs(move || {
             let _ = tx.send(app::AppEvent::UiOpenLogs);
         });
@@ -405,9 +472,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let weak = window.as_weak();
         let reg_type = cfg.registration.registration_type.clone();
         let audio_cfg = cfg.audio.clone();
+        let storage_dir = cfg.storage.dir.clone();
         let rx = events_rx;
         let self_tx = events_tx.clone();
-        thread::spawn(move || app::run(rx, self_tx, weak, reg_type, audio_cfg));
+        thread::spawn(move || app::run(rx, self_tx, weak, reg_type, audio_cfg, storage_dir));
     }
 
     tracing::info!("starting Slint event loop");
