@@ -2472,10 +2472,27 @@ component MsgThreadScreen inherits Rectangle {
     property <int> pending-id;
     property <string> pending-text;
     background: transparent;
+    // Deferred one-shot: scroll to the newest message after layout settles, so
+    // viewport-height reflects the updated message list.
+    scroll-timer := Timer {
+        interval: 1ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            flick.viewport-y = Math.min(0px, flick.height - flick.viewport-height);
+        }
+    }
+    // Re-pin to the bottom whenever the thread is opened or a message is added.
+    init => {
+        scroll-timer.running = true;
+    }
+    changed messages => {
+        scroll-timer.running = true;
+    }
     VerticalLayout {
         padding: 12px;
         spacing: 10px;
-        Flickable {
+        flick := Flickable {
             vertical-stretch: 1;
             viewport-height: col.preferred-height;
             col := VerticalLayout {
