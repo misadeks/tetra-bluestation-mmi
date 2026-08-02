@@ -14,7 +14,7 @@ import "fonts/Inter-Bold.ttf";
 import "fonts/Inter-ExtraBold.ttf";
 
 export enum DeviceInput { Touch, Keypad }
-export enum Screen { Home, Menu, Info, Folders, Dialer, Logs, LogDetail, Groups, Config, Survey, InCall, Contacts, ContactDetail, ContactEdit, Messages, MsgThread, MsgNew, Program, ProgramList, ProgramEdit, Tree, Ringtones, Settings, Network, Recents, RecentDetail }
+export enum Screen { Home, Menu, Info, Folders, Dialer, Logs, LogDetail, Groups, Config, Survey, InCall, Contacts, ContactDetail, ContactEdit, Messages, MsgThread, MsgNew, Program, ProgramList, ProgramEdit, Tree, Ringtones, Settings, Network, Recents, RecentDetail, Scanlists }
 
 export struct FolderRow {
     name: string,
@@ -1048,6 +1048,7 @@ component MenuScreen inherits Rectangle {
     callback open-settings;
     callback open-survey;
     callback open-network;
+    callback open-scanlists;
     background: transparent;
     VerticalLayout {
         padding: 18px;
@@ -1072,10 +1073,18 @@ component MenuScreen inherits Rectangle {
         }
         ListRow {
             title: "Talkgroups";
-            subtitle: "Select, scan, attach and detach groups";
+            subtitle: "Select, attach and search groups";
             icon: Icons.users;
             clicked => {
                 root.open-groups();
+            }
+        }
+        ListRow {
+            title: "Scan lists";
+            subtitle: "Turn scan lists on and off";
+            icon: Icons.activity;
+            clicked => {
+                root.open-scanlists();
             }
         }
         ListRow {
@@ -3414,6 +3423,35 @@ component TreeScreen inherits Rectangle {
 // Home folder picker: folders as collapsible headers with their talkgroups
 // nested (like the programming tree). Tapping a group selects it as the TX
 // group; the +/- button attaches/detaches it from scan.
+// Dedicated Scan lists screen: toggle each programmed scan list on/off.
+component ScanlistsScreen inherits Rectangle {
+    in property <[ScanRow]> scanlists;
+    callback toggle-scan(string, bool);
+    background: transparent;
+    Flickable {
+        viewport-height: scol.preferred-height;
+        scol := VerticalLayout {
+            padding: 16px;
+            spacing: 10px;
+            alignment: start;
+            if root.scanlists.length == 0: Text {
+                text: "No scan lists programmed";
+                color: Palette.muted;
+                font-size: 16px;
+                horizontal-alignment: center;
+            }
+            for s in root.scanlists: ScanRowView {
+                name: s.name;
+                sub: s.sub;
+                active: s.active;
+                toggled(v) => {
+                    root.toggle-scan(s.name, v);
+                }
+            }
+        }
+    }
+}
+
 component PickerScreen inherits Rectangle {
     in property <[PickRow]> rows;
     in property <string> query;
@@ -5246,6 +5284,9 @@ export component MainWindow inherits Window {
         if (root.screen == Screen.Folders) {
             return "Talkgroups";
         }
+        if (root.screen == Screen.Scanlists) {
+            return "Scan lists";
+        }
         if (root.screen == Screen.Dialer) {
             return "Dialer";
         }
@@ -5402,6 +5443,9 @@ export component MainWindow inherits Window {
             open-groups => {
                 root.screen = Screen.Folders;
             }
+            open-scanlists => {
+                root.screen = Screen.Scanlists;
+            }
             open-contacts => {
                 root.contact-search-clear();
                 root.screen = Screen.Contacts;
@@ -5475,6 +5519,14 @@ export component MainWindow inherits Window {
             }
             search-clear => {
                 root.picker-search-clear();
+            }
+        }
+
+        if root.device-input == DeviceInput.Touch && root.screen == Screen.Scanlists: ScanlistsScreen {
+            vertical-stretch: 1;
+            scanlists: root.scanlists;
+            toggle-scan(n, a) => {
+                root.scanlist-toggle(n, a);
             }
         }
 
