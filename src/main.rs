@@ -426,6 +426,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     {
         let tx = events_tx.clone();
+        window.on_open_tree(move || {
+            let _ = tx.send(app::AppEvent::UiOpenTree);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_tree_folder(move |i| {
+            let _ = tx.send(app::AppEvent::UiTreeFolder(i));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_tree_group(move |i| {
+            let _ = tx.send(app::AppEvent::UiTreeGroup(i));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_tree_add_group(move |i| {
+            let _ = tx.send(app::AppEvent::UiTreeAddGroup(i));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_tree_add_folder(move || {
+            let _ = tx.send(app::AppEvent::UiTreeAddFolder);
+        });
+    }
+    {
+        let tx = events_tx.clone();
         window.on_open_logs(move || {
             let _ = tx.send(app::AppEvent::UiOpenLogs);
         });

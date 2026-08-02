@@ -14,7 +14,7 @@ import "fonts/Inter-Bold.ttf";
 import "fonts/Inter-ExtraBold.ttf";
 
 export enum DeviceInput { Touch, Keypad }
-export enum Screen { Home, Menu, Info, Folders, Dialer, Logs, LogDetail, Groups, Config, Survey, InCall, Contacts, ContactDetail, ContactEdit, Messages, MsgThread, MsgNew, Program, ProgramList, ProgramEdit }
+export enum Screen { Home, Menu, Info, Folders, Dialer, Logs, LogDetail, Groups, Config, Survey, InCall, Contacts, ContactDetail, ContactEdit, Messages, MsgThread, MsgNew, Program, ProgramList, ProgramEdit, Tree }
 
 export struct FolderRow {
     name: string,
@@ -62,6 +62,16 @@ export struct FormField {
     kind: int,
     value: string,
     on: bool,
+}
+
+// A row in the folders + talkgroups tree.
+export struct TreeRow {
+    // 0 folder header, 1 group, 2 add-group action, 3 empty hint
+    kind: int,
+    // group: all_talkgroups index; folder header / add-group: folder index (-1 = Other)
+    index: int,
+    title: string,
+    sub: string,
 }
 
 // A selectable dialer target: index 0 is always "Private" (ISSI); the rest are
@@ -1215,8 +1225,8 @@ component AlertOverlay inherits Rectangle {
     }
 }
 
-// Modal confirm dialog for destructive actions (e.g. deleting a message or
-// thread). `confirm` runs the action; tapping the scrim or Cancel dismisses.
+// Modal confirm dialog for destructive actions, styled like AlertOverlay.
+// `confirm` runs the action; tapping the scrim or Cancel dismisses.
 component ConfirmOverlay inherits Rectangle {
     in property <string> title;
     in property <string> message;
@@ -1225,7 +1235,7 @@ component ConfirmOverlay inherits Rectangle {
     callback cancel;
     width: 100%;
     height: 100%;
-    background: #03070cc7;
+    background: #03070ce0;
 
     TouchArea {
         clicked => {
@@ -1234,46 +1244,51 @@ component ConfirmOverlay inherits Rectangle {
     }
 
     Rectangle {
-        width: Math.min(parent.width - 44px, 400px);
+        width: Math.min(parent.width - 32px, 480px);
         height: card.preferred-height;
-        background: #131c26;
-        border-radius: 20px;
-        border-width: 1px;
-        border-color: Palette.line2;
+        background: #16212e;
+        border-radius: 24px;
+        border-width: 2px;
+        border-color: Palette.red;
+        drop-shadow-blur: 40px;
+        drop-shadow-color: #000000b0;
         // Swallow taps on the card so they don't dismiss via the scrim.
         TouchArea { }
         card := VerticalLayout {
-            padding: 26px;
-            spacing: 16px;
+            padding: 34px;
+            spacing: 22px;
             alignment: start;
             HorizontalLayout {
                 alignment: center;
                 Rectangle {
-                    width: 68px;
-                    height: 68px;
-                    border-radius: 34px;
+                    width: 92px;
+                    height: 92px;
+                    border-radius: 46px;
                     background: #f0555a29;
+                    border-width: 2px;
+                    border-color: Palette.red;
                     Icon {
                         x: (parent.width - self.width) / 2;
                         y: (parent.height - self.height) / 2;
                         d: Icons.trash;
                         tint: Palette.red;
-                        size: 32px;
+                        size: 44px;
                     }
                 }
             }
             Text {
                 text: root.title;
                 color: #ffffff;
-                font-size: 22px;
-                font-weight: 700;
+                font-size: 28px;
+                font-weight: 800;
                 horizontal-alignment: center;
                 wrap: word-wrap;
             }
             if root.message != "": Text {
                 text: root.message;
-                color: Palette.muted;
-                font-size: 16px;
+                color: #d7e2ec;
+                font-size: 22px;
+                font-weight: 500;
                 horizontal-alignment: center;
                 wrap: word-wrap;
             }
@@ -1287,10 +1302,9 @@ component ConfirmOverlay inherits Rectangle {
                         root.cancel();
                     }
                 }
-                SecondaryButton {
+                DangerButton {
                     text: root.confirm-label;
                     icon: Icons.trash;
-                    danger: true;
                     horizontal-stretch: 1;
                     clicked => {
                         root.confirm();
@@ -1751,6 +1765,7 @@ component ContactDetailScreen inherits Rectangle {
     callback message;
     callback edit;
     callback delete;
+    property <bool> del-confirm: false;
     background: transparent;
     VerticalLayout {
         padding: 18px;
@@ -1842,9 +1857,21 @@ component ContactDetailScreen inherits Rectangle {
                 danger: true;
                 horizontal-stretch: 1;
                 clicked => {
-                    root.delete();
+                    root.del-confirm = true;
                 }
             }
+        }
+    }
+    if root.del-confirm: ConfirmOverlay {
+        title: "Delete contact";
+        message: "Delete " + root.name + "? This cannot be undone.";
+        confirm-label: "Delete";
+        confirm => {
+            root.del-confirm = false;
+            root.delete();
+        }
+        cancel => {
+            root.del-confirm = false;
         }
     }
 }
@@ -2811,6 +2838,7 @@ component CycleRow inherits Rectangle {
 // The codeplug programming hub: pick a section to edit.
 component ProgHubScreen inherits Rectangle {
     callback open-section(int);
+    callback open-tree;
     background: transparent;
     Flickable {
         viewport-height: hcol.preferred-height;
@@ -2825,16 +2853,10 @@ component ProgHubScreen inherits Rectangle {
                 clicked => { root.open-section(0); }
             }
             ListRow {
-                title: "Folders";
-                subtitle: "Talkgroup folders";
+                title: "Talkgroups & folders";
+                subtitle: "Browse the tree, add and move groups";
                 icon: Icons.folder;
-                clicked => { root.open-section(1); }
-            }
-            ListRow {
-                title: "Talkgroups";
-                subtitle: "Groups by GSSI";
-                icon: Icons.users;
-                clicked => { root.open-section(2); }
+                clicked => { root.open-tree(); }
             }
             ListRow {
                 title: "Scan lists";
@@ -2906,6 +2928,8 @@ component FormEditScreen inherits Rectangle {
     in property <int> focus-field; // index of the focused text/number field, -1 = none
     in property <bool> shift;
     in property <bool> can-delete;
+    in property <string> title;
+    property <bool> del-confirm: false;
     callback pick(int);
     callback key(string);
     callback backspace;
@@ -2980,7 +3004,7 @@ component FormEditScreen inherits Rectangle {
                 icon: Icons.trash;
                 horizontal-stretch: 1;
                 clicked => {
-                    root.delete();
+                    root.del-confirm = true;
                 }
             }
             SecondaryButton {
@@ -2998,6 +3022,200 @@ component FormEditScreen inherits Rectangle {
                 clicked => {
                     root.save();
                 }
+            }
+        }
+    }
+    if root.del-confirm: ConfirmOverlay {
+        title: "Delete";
+        message: "Delete " + root.title + "? This cannot be undone.";
+        confirm-label: "Delete";
+        confirm => {
+            root.del-confirm = false;
+            root.delete();
+        }
+        cancel => {
+            root.del-confirm = false;
+        }
+    }
+}
+
+// ---- Folders + talkgroups tree ----
+
+component TreeFolderHeader inherits Rectangle {
+    in property <string> title;
+    in property <string> sub;
+    in property <bool> editable;
+    callback tapped;
+    height: 56px;
+    border-radius: 12px;
+    background: touch.pressed ? #1b2836 : #16202b;
+    border-width: 1px;
+    border-color: Palette.line;
+    touch := TouchArea {
+        enabled: root.editable;
+        clicked => {
+            root.tapped();
+        }
+    }
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            Icon { d: Icons.folder; tint: Palette.accent; size: 22px; }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: root.title;
+                color: Palette.txt;
+                font-size: 19px;
+                font-weight: 800;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text { text: root.sub; color: Palette.faint; font-size: 13px; }
+        }
+        if root.editable: VerticalLayout {
+            alignment: center;
+            Icon { d: Icons.edit; tint: Palette.faint; size: 18px; }
+        }
+    }
+}
+
+component TreeGroupRow inherits Rectangle {
+    in property <string> title;
+    in property <string> sub;
+    callback tapped;
+    height: 62px;
+    border-radius: 12px;
+    background: touch.pressed ? #16202b : Palette.surface;
+    border-width: 1px;
+    border-color: Palette.line;
+    touch := TouchArea {
+        clicked => {
+            root.tapped();
+        }
+    }
+    HorizontalLayout {
+        padding-left: 28px;
+        padding-right: 12px;
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            Icon { d: Icons.users; tint: Palette.muted; size: 18px; }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            spacing: 2px;
+            Text {
+                text: root.title;
+                color: Palette.txt;
+                font-size: 18px;
+                font-weight: 600;
+                overflow: elide;
+            }
+            Text { text: root.sub; color: Palette.muted; font-size: 13px; }
+        }
+        VerticalLayout {
+            alignment: center;
+            Icon { d: Icons.chevron; tint: Palette.faint; size: 18px; }
+        }
+    }
+}
+
+component TreeAddRow inherits Rectangle {
+    in property <string> label;
+    callback tapped;
+    height: 44px;
+    border-radius: 10px;
+    background: touch.pressed ? #16202b : transparent;
+    border-width: 1px;
+    border-color: #ffffff14;
+    touch := TouchArea {
+        clicked => {
+            root.tapped();
+        }
+    }
+    HorizontalLayout {
+        padding-left: 28px;
+        spacing: 8px;
+        VerticalLayout {
+            alignment: center;
+            Icon { d: Icons.plus; tint: Palette.accent; size: 16px; }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text { text: root.label; color: #9fd3ef; font-size: 15px; font-weight: 600; }
+        }
+    }
+}
+
+// The folders + talkgroups tree: folders as sections with their groups nested,
+// an "Other" bucket, add-group per folder, and an add-folder button.
+component TreeScreen inherits Rectangle {
+    in property <[TreeRow]> rows;
+    callback folder(int);
+    callback group(int);
+    callback add-group(int);
+    callback add-folder;
+    background: transparent;
+    VerticalLayout {
+        padding: 16px;
+        spacing: 10px;
+        Flickable {
+            vertical-stretch: 1;
+            viewport-height: tcol.preferred-height;
+            tcol := VerticalLayout {
+                spacing: 8px;
+                alignment: start;
+                for r in root.rows: Rectangle {
+                    height: r.kind == 0 ? 56px : (r.kind == 2 ? 44px : (r.kind == 3 ? 40px : 62px));
+                    if r.kind == 0: TreeFolderHeader {
+                        width: 100%;
+                        title: r.title;
+                        sub: r.sub;
+                        editable: r.index >= 0;
+                        tapped => {
+                            root.folder(r.index);
+                        }
+                    }
+                    if r.kind == 1: TreeGroupRow {
+                        width: 100%;
+                        title: r.title;
+                        sub: r.sub;
+                        tapped => {
+                            root.group(r.index);
+                        }
+                    }
+                    if r.kind == 2: TreeAddRow {
+                        width: 100%;
+                        label: r.title;
+                        tapped => {
+                            root.add-group(r.index);
+                        }
+                    }
+                    if r.kind == 3: Text {
+                        text: r.title;
+                        color: Palette.muted;
+                        font-size: 15px;
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                    }
+                }
+            }
+        }
+        PrimaryButton {
+            text: "Add folder";
+            icon: Icons.plus;
+            clicked => {
+                root.add-folder();
             }
         }
     }
@@ -3812,6 +4030,8 @@ export component MainWindow inherits Window {
     in property <int> form-focus: -1;
     in property <bool> form-shift;
     in property <bool> form-can-delete;
+    in property <bool> form-from-tree;
+    in property <[TreeRow]> tree-rows;
     in property <[DialTarget]> dial-targets: [{ label: "Private", max-len: 8 }];
     // Contact detail page.
     in property <int> detail-index: -1;
@@ -3920,6 +4140,11 @@ export component MainWindow inherits Window {
     callback form-save;
     callback form-cancel;
     callback form-delete;
+    callback open-tree;
+    callback tree-folder(int);
+    callback tree-group(int);
+    callback tree-add-group(int);
+    callback tree-add-folder;
     callback open-logs;
     callback alert-dismiss;
     callback group-select(int, int);
@@ -3975,6 +4200,9 @@ export component MainWindow inherits Window {
         if (root.screen == Screen.Program) {
             return "Programming";
         }
+        if (root.screen == Screen.Tree) {
+            return "Talkgroups";
+        }
         if (root.screen == Screen.ProgramList) {
             return root.prog-title;
         }
@@ -4028,11 +4256,14 @@ export component MainWindow inherits Window {
         if (root.screen == Screen.Program) {
             return Screen.Menu;
         }
+        if (root.screen == Screen.Tree) {
+            return Screen.Program;
+        }
         if (root.screen == Screen.ProgramList) {
             return Screen.Program;
         }
         if (root.screen == Screen.ProgramEdit) {
-            return Screen.ProgramList;
+            return root.form-from-tree ? Screen.Tree : Screen.ProgramList;
         }
         return Screen.Home;
     }
@@ -4223,6 +4454,26 @@ export component MainWindow inherits Window {
             open-section(s) => {
                 root.prog-section(s);
             }
+            open-tree => {
+                root.open-tree();
+            }
+        }
+
+        if root.device-input == DeviceInput.Touch && root.screen == Screen.Tree: TreeScreen {
+            vertical-stretch: 1;
+            rows: root.tree-rows;
+            folder(i) => {
+                root.tree-folder(i);
+            }
+            group(i) => {
+                root.tree-group(i);
+            }
+            add-group(i) => {
+                root.tree-add-group(i);
+            }
+            add-folder => {
+                root.tree-add-folder();
+            }
         }
 
         if root.device-input == DeviceInput.Touch && root.screen == Screen.ProgramList: EntityListScreen {
@@ -4244,6 +4495,7 @@ export component MainWindow inherits Window {
             focus-field: root.form-focus;
             shift: root.form-shift;
             can-delete: root.form-can-delete;
+            title: root.form-title;
             pick(i) => {
                 root.form-pick(i);
             }

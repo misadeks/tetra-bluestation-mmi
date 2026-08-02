@@ -14,7 +14,7 @@ use slint::{ModelRc, VecModel};
 
 use crate::codeplug::Codeplug;
 use crate::protocol::{self, MsRuntimeState, ServiceStatus};
-use crate::{ContactRow, ConvRow, DialTarget, EntityRow, FolderRow, FormField, GroupRow, LogRow, MainWindow, MsgRow, ScanRow, Screen, SurveyRow};
+use crate::{ContactRow, ConvRow, DialTarget, EntityRow, FolderRow, FormField, GroupRow, LogRow, MainWindow, MsgRow, ScanRow, Screen, SurveyRow, TreeRow};
 
 /// Events fed into the app loop from net threads, timers, and the UI.
 pub enum AppEvent {
@@ -147,6 +147,16 @@ pub enum AppEvent {
     UiFormCancel,
     /// Programming: delete the edited entry.
     UiFormDelete,
+    /// Programming: open the folders + talkgroups tree.
+    UiOpenTree,
+    /// Tree: edit a folder by its folder_defs index.
+    UiTreeFolder(i32),
+    /// Tree: edit a talkgroup by its all_talkgroups index.
+    UiTreeGroup(i32),
+    /// Tree: add a group into a folder (folder_defs index, -1 = Other).
+    UiTreeAddGroup(i32),
+    /// Tree: add a new folder.
+    UiTreeAddFolder,
 }
 
 struct AppState {
@@ -1534,16 +1544,63 @@ pub fn run(
                 prog_save(&mut app, &weak);
             }
             AppEvent::UiFormCancel => {
+                let back = prog_return_screen(app.prog_section);
                 app.prog_draft = None;
-                let back = if matches!(app.prog_section, ProgSection::Settings) {
-                    Screen::Program
-                } else {
-                    Screen::ProgramList
-                };
+                refresh_prog(&app, &weak, back);
                 let _ = weak.upgrade_in_event_loop(move |w| w.set_screen(back));
             }
             AppEvent::UiFormDelete => {
                 prog_delete(&mut app, &weak);
+            }
+            AppEvent::UiOpenTree => {
+                push_tree(&app, &weak);
+                let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::Tree));
+            }
+            AppEvent::UiTreeFolder(i) => {
+                app.prog_section = ProgSection::Folders;
+                if let Some(d) = build_draft(&app, Some(i as usize)) {
+                    app.prog_draft = Some(d);
+                    push_form(&app, &weak);
+                    let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::ProgramEdit));
+                }
+            }
+            AppEvent::UiTreeGroup(i) => {
+                app.prog_section = ProgSection::Talkgroups;
+                if let Some(d) = build_draft(&app, Some(i as usize)) {
+                    app.prog_draft = Some(d);
+                    push_form(&app, &weak);
+                    let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::ProgramEdit));
+                }
+            }
+            AppEvent::UiTreeAddGroup(folder_idx) => {
+                app.prog_section = ProgSection::Talkgroups;
+                if let Some(mut d) = build_draft(&app, None) {
+                    // Preselect the folder this group is being added into.
+                    if folder_idx >= 0 {
+                        let fid = app
+                            .codeplug
+                            .as_ref()
+                            .and_then(|cp| cp.folder_defs.get(folder_idx as usize))
+                            .map(|f| f.id.clone());
+                        if let (Some(fid), Some(f)) = (fid, d.fields.get_mut(2)) {
+                            if let Some(pos) = f.opt_values.iter().position(|v| *v == fid) {
+                                f.opt_idx = pos;
+                                f.value = f.options.get(pos).cloned().unwrap_or_default();
+                            }
+                        }
+                    }
+                    app.prog_draft = Some(d);
+                    push_form(&app, &weak);
+                    let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::ProgramEdit));
+                }
+            }
+            AppEvent::UiTreeAddFolder => {
+                app.prog_section = ProgSection::Folders;
+                if let Some(d) = build_draft(&app, None) {
+                    app.prog_draft = Some(d);
+                    push_form(&app, &weak);
+                    let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::ProgramEdit));
+                }
             }
         }
     }
@@ -3296,22 +3353,37 @@ fn prog_save(app: &mut AppState, weak: &slint::Weak<MainWindow>) {
 
     match result {
         Ok((new_toml, msg)) => {
-            let back = if matches!(section, ProgSection::Settings) {
-                Screen::Program
-            } else {
-                Screen::ProgramList
-            };
+            let back = prog_return_screen(section);
             app.prog_draft = None;
             write_codeplug(app, weak, new_toml, "Programming", &msg, back);
-            push_prog_list(app, weak);
+            refresh_prog(app, weak, back);
         }
         Err(e) => app.notify(weak, "Invalid entry", &e, 0),
+    }
+}
+
+/// Where to return after a save/delete/cancel in a given section.
+fn prog_return_screen(section: ProgSection) -> Screen {
+    match section {
+        ProgSection::Settings => Screen::Program,
+        ProgSection::Folders | ProgSection::Talkgroups => Screen::Tree,
+        _ => Screen::ProgramList,
+    }
+}
+
+/// Refresh whichever section view we are returning to.
+fn refresh_prog(app: &AppState, weak: &slint::Weak<MainWindow>, back: Screen) {
+    match back {
+        Screen::Tree => push_tree(app, weak),
+        Screen::ProgramList => push_prog_list(app, weak),
+        _ => {}
     }
 }
 
 /// Delete the entry currently open in the programming form.
 fn prog_delete(app: &mut AppState, weak: &slint::Weak<MainWindow>) {
     let Some(d) = app.prog_draft.as_ref() else { return };
+    let section = d.section;
     let toml = &app.last_config_toml;
     let result: Result<(String, String), String> = match d.section {
         ProgSection::Networks => match d.index {
@@ -3338,9 +3410,10 @@ fn prog_delete(app: &mut AppState, weak: &slint::Weak<MainWindow>) {
     };
     match result {
         Ok((new_toml, msg)) => {
+            let back = prog_return_screen(section);
             app.prog_draft = None;
-            write_codeplug(app, weak, new_toml, "Programming", &msg, Screen::ProgramList);
-            push_prog_list(app, weak);
+            write_codeplug(app, weak, new_toml, "Programming", &msg, back);
+            refresh_prog(app, weak, back);
         }
         Err(e) => app.notify(weak, "Delete failed", &e, 0),
     }
@@ -3445,12 +3518,99 @@ fn push_form(app: &AppState, weak: &slint::Weak<MainWindow>) {
     let focus = if d.focus == usize::MAX { -1 } else { d.focus as i32 };
     let shift = d.shift;
     let can_delete = d.can_delete;
+    let from_tree = matches!(d.section, ProgSection::Folders | ProgSection::Talkgroups);
     let _ = weak.upgrade_in_event_loop(move |w| {
         w.set_form_title(title.into());
         w.set_form_fields(ModelRc::new(VecModel::from(fields)));
         w.set_form_focus(focus);
         w.set_form_shift(shift);
         w.set_form_can_delete(can_delete);
+        w.set_form_from_tree(from_tree);
+    });
+}
+
+/// Build the folders + talkgroups tree: each folder as a header with its groups
+/// nested beneath, an "Other" bucket for unfiled groups, and add-group actions.
+fn push_tree(app: &AppState, weak: &slint::Weak<MainWindow>) {
+    let mut rows: Vec<TreeRow> = Vec::new();
+    if let Some(cp) = &app.codeplug {
+        let folder_ids: std::collections::HashSet<&str> =
+            cp.folder_defs.iter().map(|f| f.id.as_str()).collect();
+        // Each defined folder, with the groups that point at it.
+        for (fi, f) in cp.folder_defs.iter().enumerate() {
+            let members: Vec<usize> = cp
+                .all_talkgroups
+                .iter()
+                .enumerate()
+                .filter(|(_, t)| t.folder.as_deref() == Some(f.id.as_str()))
+                .map(|(i, _)| i)
+                .collect();
+            rows.push(TreeRow {
+                kind: 0,
+                index: fi as i32,
+                title: f.name.clone().into(),
+                sub: format!("{} groups", members.len()).into(),
+            });
+            for i in members {
+                let t = &cp.all_talkgroups[i];
+                rows.push(TreeRow {
+                    kind: 1,
+                    index: i as i32,
+                    title: t.name.clone().into(),
+                    sub: format!("GSSI {}", t.gssi).into(),
+                });
+            }
+            rows.push(TreeRow {
+                kind: 2,
+                index: fi as i32,
+                title: "Add group".into(),
+                sub: "".into(),
+            });
+        }
+        // "Other" bucket: groups with no folder or an unknown folder id.
+        let others: Vec<usize> = cp
+            .all_talkgroups
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| match t.folder.as_deref() {
+                None => true,
+                Some(id) => !folder_ids.contains(id),
+            })
+            .map(|(i, _)| i)
+            .collect();
+        if !others.is_empty() || cp.folder_defs.is_empty() {
+            rows.push(TreeRow {
+                kind: 0,
+                index: -1,
+                title: "Other".into(),
+                sub: format!("{} groups", others.len()).into(),
+            });
+            for i in others {
+                let t = &cp.all_talkgroups[i];
+                rows.push(TreeRow {
+                    kind: 1,
+                    index: i as i32,
+                    title: t.name.clone().into(),
+                    sub: format!("GSSI {}", t.gssi).into(),
+                });
+            }
+            rows.push(TreeRow {
+                kind: 2,
+                index: -1,
+                title: "Add group".into(),
+                sub: "".into(),
+            });
+        }
+    } else {
+        rows.push(TreeRow {
+            kind: 3,
+            index: -1,
+            title: "No codeplug loaded yet".into(),
+            sub: "".into(),
+        });
+    }
+    let _ = weak.upgrade_in_event_loop(move |w| {
+        w.set_tree_rows(ModelRc::new(VecModel::from(rows)));
     });
 }
 
