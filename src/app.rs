@@ -2562,7 +2562,7 @@ fn recent_title(app: &AppState, e: &crate::calllog::CallLogEntry) -> String {
         if let Some(g) = e.gateway_name.as_ref().filter(|s| !s.is_empty()) {
             return g.clone();
         }
-        return format!("Gateway {}", e.peer_ssi);
+        return gateway_label(app, e);
     }
     if let Some(l) = &e.peer_label {
         if !l.is_empty() {
@@ -2575,13 +2575,26 @@ fn recent_title(app: &AppState, e: &crate::calllog::CallLogEntry) -> String {
     format!("ISSI {}", e.peer_ssi)
 }
 
+/// Gateway display name for an external call: the snapshot stored on the entry,
+/// else resolved live from the codeplug by ISSI, else the generic word.
+fn gateway_label(app: &AppState, e: &crate::calllog::CallLogEntry) -> String {
+    if let Some(g) = e.gateway_name.as_ref().filter(|s| !s.is_empty()) {
+        return g.clone();
+    }
+    if let Some(cp) = app.codeplug.as_ref() {
+        if let Some(g) = cp.gateways.iter().find(|g| g.gateway_issi == e.peer_ssi) {
+            if !g.name.is_empty() {
+                return g.name.clone();
+            }
+        }
+    }
+    "Gateway".to_string()
+}
+
 /// Compact sub-line for a recents row.
-fn recent_sub(e: &crate::calllog::CallLogEntry) -> String {
+fn recent_sub(app: &AppState, e: &crate::calllog::CallLogEntry) -> String {
     let mode = if e.is_external {
-        e.gateway_name
-            .clone()
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| "Gateway".to_string())
+        gateway_label(app, e)
     } else if e.simplex {
         "PTT".to_string()
     } else {
@@ -2598,13 +2611,10 @@ fn recent_sub(e: &crate::calllog::CallLogEntry) -> String {
 }
 
 /// Longer sub-line for the recents detail page.
-fn recent_detail_sub(e: &crate::calllog::CallLogEntry) -> String {
+fn recent_detail_sub(app: &AppState, e: &crate::calllog::CallLogEntry) -> String {
     let dir = if e.outgoing { "Outgoing" } else { "Incoming" };
     let mode = if e.is_external {
-        e.gateway_name
-            .clone()
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| "gateway".to_string())
+        gateway_label(app, e)
     } else if e.simplex {
         "PTT".to_string()
     } else {
@@ -2666,7 +2676,7 @@ fn push_recents(app: &AppState, weak: &slint::Weak<MainWindow>) {
         rows.push(RecentRow {
             id: e.id as i32,
             title: recent_title(app, e).into(),
-            sub: recent_sub(e).into(),
+            sub: recent_sub(app, e).into(),
             time: rel_time(e.at_ms).into(),
             kind: e.outcome as i32,
             outgoing: e.outgoing,
@@ -2690,7 +2700,7 @@ fn push_recents(app: &AppState, weak: &slint::Weak<MainWindow>) {
             let known = !e.is_external && contact_ident(app, e.peer_ssi).is_some();
             (
                 recent_title(app, e),
-                recent_detail_sub(e),
+                recent_detail_sub(app, e),
                 rel_time_full(e.at_ms),
                 e.outcome as i32,
                 e.outgoing,
