@@ -115,6 +115,20 @@ export struct GroupRow {
     is-tx: bool,
 }
 
+// A row in the home folder picker tree (folders with their groups nested).
+export struct PickRow {
+    kind: int,       // 0 folder header, 1 group
+    findex: int,     // folder header: folder index (for collapse toggle)
+    gssi: int,       // group: gssi
+    cou: int,        // group: class of usage
+    title: string,
+    sub: string,
+    collapsed: bool, // folder header: collapsed
+    tag: int,        // group: 0 none, 1 scan, 2 tx
+    attached: bool,  // group: attached (scanning)
+    is-tx: bool,     // group: active TX group
+}
+
 export struct ScanRow {
     name: string,
     sub: string,
@@ -1518,26 +1532,6 @@ component NetworkScreen inherits Rectangle {
                 } else {
                     root.register();
                 }
-            }
-        }
-    }
-}
-
-component FoldersScreen inherits Rectangle {
-    in property <[FolderRow]> folders;
-    callback select-folder(int);
-    background: transparent;
-    VerticalLayout {
-        padding: 18px;
-        spacing: 12px;
-        alignment: start;
-        for f[idx] in root.folders: ListRow {
-            title: f.name;
-            subtitle: f.count + (f.count == 1 ? " talkgroup" : " talkgroups");
-            icon: Icons.folder;
-            selected: f.selected;
-            clicked => {
-                root.select-folder(idx);
             }
         }
     }
@@ -3446,6 +3440,62 @@ component TreeScreen inherits Rectangle {
     }
 }
 
+// Home folder picker: folders as collapsible headers with their talkgroups
+// nested (like the programming tree). Tapping a group selects it as the TX
+// group; the +/- button attaches/detaches it from scan.
+component PickerScreen inherits Rectangle {
+    in property <[PickRow]> rows;
+    callback toggle-folder(int);
+    callback select(int, int);
+    callback attach(int, int);
+    callback detach(int);
+    background: transparent;
+    Flickable {
+        viewport-height: pcol.preferred-height;
+        pcol := VerticalLayout {
+            padding: 16px;
+            spacing: 10px;
+            alignment: start;
+            if root.rows.length == 0: Text {
+                text: "No talkgroups programmed";
+                color: Palette.muted;
+                font-size: 16px;
+                horizontal-alignment: center;
+            }
+            for r in root.rows: Rectangle {
+                height: r.kind == 0 ? 76px : 84px;
+                if r.kind == 0: TreeFolderHeader {
+                    width: 100%;
+                    title: r.title;
+                    sub: r.sub;
+                    editable: false;
+                    collapsed: r.collapsed;
+                    tapped => {
+                        root.toggle-folder(r.findex);
+                    }
+                }
+                if r.kind == 1: GroupRowView {
+                    width: 100%;
+                    name: r.title;
+                    sub: r.sub;
+                    tag: r.tag;
+                    attached: r.attached;
+                    is-tx: r.is-tx;
+                    select => {
+                        root.select(r.gssi, r.cou);
+                    }
+                    add => {
+                        root.attach(r.gssi, r.cou);
+                    }
+                    detach => {
+                        root.detach(r.gssi);
+                    }
+                }
+            }
+        }
+    }
+}
+
 // Ringtone settings: enable toggle + a call-category selector + a selectable
 // tone list (tap previews + selects the tone for the chosen category).
 component RingtoneScreen inherits Rectangle {
@@ -4940,6 +4990,7 @@ export component MainWindow inherits Window {
     in property <string> home-display: "";
     in property <int> sel-folder;
     in property <[FolderRow]> folders;
+    in property <[PickRow]> picker-rows;
     in property <[ContactRow]> contacts;
     in property <string> contact-query;
     in property <[ConvRow]> conversations;
@@ -5043,6 +5094,7 @@ export component MainWindow inherits Window {
     callback select-talkgroup;
     callback cancel-select;
     callback select-folder(int);
+    callback picker-toggle-folder(int);
     callback ptt;
     callback dial-key(string);
     callback dial-call(int, bool);
@@ -5354,12 +5406,21 @@ export component MainWindow inherits Window {
             body: root.detail-body;
         }
 
-        if root.device-input == DeviceInput.Touch && root.screen == Screen.Folders: FoldersScreen {
+        if root.device-input == DeviceInput.Touch && root.screen == Screen.Folders: PickerScreen {
             vertical-stretch: 1;
-            folders: root.folders;
-            select-folder(i) => {
-                root.select-folder(i);
+            rows: root.picker-rows;
+            toggle-folder(i) => {
+                root.picker-toggle-folder(i);
+            }
+            select(g, c) => {
+                root.group-select(g, c);
                 root.screen = Screen.Home;
+            }
+            attach(g, c) => {
+                root.group-attach(g, c);
+            }
+            detach(g) => {
+                root.group-detach(g);
             }
         }
 

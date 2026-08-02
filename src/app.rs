@@ -14,7 +14,7 @@ use slint::{ModelRc, VecModel};
 
 use crate::codeplug::Codeplug;
 use crate::protocol::{self, MsRuntimeState, ServiceStatus};
-use crate::{ContactRow, ConvRow, DialTarget, EntityRow, FolderRow, FormField, GroupRow, LogRow, MainWindow, MsgRow, RecentRow, ScanRow, Screen, SurveyRow, TreeRow};
+use crate::{ContactRow, ConvRow, DialTarget, EntityRow, FolderRow, FormField, GroupRow, LogRow, MainWindow, MsgRow, PickRow, RecentRow, ScanRow, Screen, SurveyRow, TreeRow};
 
 /// Events fed into the app loop from net threads, timers, and the UI.
 pub enum AppEvent {
@@ -90,6 +90,7 @@ pub enum AppEvent {
     UiGroupSelect(i32, i32),
     UiGroupAttach(i32, i32),
     UiGroupDetach(i32),
+    UiTogglePickerFolder(i32),
     UiScanlistToggle(String, bool),
     UiSurveyToggleMode,
     UiSurveyScan,
@@ -277,6 +278,9 @@ struct AppState {
     prog_draft: Option<ProgDraft>,
     /// Tree: folder ids (or "__other__") whose groups are collapsed.
     collapsed_folders: std::collections::HashSet<String>,
+    /// Home folder-picker collapse state, keyed by folder index (independent of
+    /// the programming tree's collapse set).
+    picker_collapsed: std::collections::HashSet<usize>,
     /// Ringtone player (None if no output device). Plays on incoming calls.
     ringtone: Option<crate::ringtone::RingtonePlayer>,
     /// Local UI-only preferences (ringtone selection, etc.).
@@ -656,6 +660,7 @@ pub fn run(
         prog_section: ProgSection::Networks,
         prog_draft: None,
         collapsed_folders: std::collections::HashSet::new(),
+        picker_collapsed: std::collections::HashSet::new(),
         ringtone: crate::ringtone::RingtonePlayer::new(),
         prefs: crate::prefs::UiPrefs::load(&storage_dir),
         ring_preview_gen: 0,
@@ -1386,6 +1391,13 @@ pub fn run(
                     let h = app.next_handle();
                     app.send(protocol::get_state(h));
                 }
+            }
+            AppEvent::UiTogglePickerFolder(i) => {
+                let idx = i as usize;
+                if !app.picker_collapsed.remove(&idx) {
+                    app.picker_collapsed.insert(idx);
+                }
+                push_picker(&app, &weak);
             }
             AppEvent::UiScanlistToggle(name, active) => {
                 if app.require_registered(&weak) {
@@ -3290,6 +3302,7 @@ fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
     });
 
     push_groups(app, weak);
+    push_picker(app, weak);
     push_contacts(app, weak);
     push_dial_targets(app, weak);
     push_conversations(app, weak);
@@ -4563,6 +4576,65 @@ fn push_groups(app: &AppState, weak: &slint::Weak<MainWindow>) {
     let _ = weak.upgrade_in_event_loop(move |w| {
         w.set_groups(ModelRc::new(VecModel::from(groups)));
         w.set_scanlists(ModelRc::new(VecModel::from(scanlists)));
+    });
+}
+
+/// Build the home folder-picker tree: each codeplug folder as a collapsible
+/// header with its talkgroups nested, carrying attach/TX state for selection.
+fn push_picker(app: &AppState, weak: &slint::Weak<MainWindow>) {
+    let tx = effective_tx(app);
+    let attached = &app.state.attached_groups;
+    let mut rows: Vec<PickRow> = Vec::new();
+    if let Some(cp) = &app.codeplug {
+        for (fidx, folder) in cp.folders.iter().enumerate() {
+            let collapsed = app.picker_collapsed.contains(&fidx);
+            rows.push(PickRow {
+                kind: 0,
+                findex: fidx as i32,
+                gssi: 0,
+                cou: 0,
+                title: folder.name.clone().into(),
+                sub: format!(
+                    "{} {}",
+                    folder.talkgroups.len(),
+                    if folder.talkgroups.len() == 1 { "group" } else { "groups" }
+                )
+                .into(),
+                collapsed,
+                tag: 0,
+                attached: false,
+                is_tx: false,
+            });
+            if collapsed {
+                continue;
+            }
+            for t in &folder.talkgroups {
+                let is_attached = attached.contains(&t.gssi);
+                let is_tx = is_attached && Some(t.gssi) == tx;
+                let tag = if is_tx {
+                    2
+                } else if is_attached {
+                    1
+                } else {
+                    0
+                };
+                rows.push(PickRow {
+                    kind: 1,
+                    findex: fidx as i32,
+                    gssi: t.gssi as i32,
+                    cou: t.class_of_usage as i32,
+                    title: t.name.clone().into(),
+                    sub: format!("GSSI {}", t.gssi).into(),
+                    collapsed: false,
+                    tag,
+                    attached: is_attached,
+                    is_tx,
+                });
+            }
+        }
+    }
+    let _ = weak.upgrade_in_event_loop(move |w| {
+        w.set_picker_rows(ModelRc::new(VecModel::from(rows)));
     });
 }
 

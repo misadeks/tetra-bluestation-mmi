@@ -171,6 +171,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     {
         let tx = events_tx.clone();
+        window.on_picker_toggle_folder(move |i| {
+            let _ = tx.send(app::AppEvent::UiTogglePickerFolder(i));
+        });
+    }
+    {
+        let tx = events_tx.clone();
         window.on_dial_key(move |k| {
             let _ = tx.send(app::AppEvent::UiDialKey(k.to_string()));
         });
