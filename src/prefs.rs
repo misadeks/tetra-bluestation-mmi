@@ -44,10 +44,6 @@ pub struct UiPrefs {
     /// Ringtone for external (gateway) calls.
     #[serde(default = "default_ringtone")]
     pub ring_gateway: String,
-    /// Last decoded home-mode-display text from the network (operator banner on
-    /// the home screen). Network-sourced but persisted so it survives a restart.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub home_display_text: Option<String>,
     /// Legacy single-ringtone field (pre per-type); migrated on load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     ringtone: Option<String>,
@@ -62,7 +58,6 @@ impl Default for UiPrefs {
             ring_simplex: default_ringtone(),
             ring_duplex: default_ringtone(),
             ring_gateway: default_ringtone(),
-            home_display_text: None,
             ringtone: None,
             path: PathBuf::new(),
         }

@@ -291,6 +291,9 @@ struct AppState {
     recents_missed_only: bool,
     /// The call-log entry id open on the recents detail screen.
     recent_detail: Option<u64>,
+    /// Latest home-mode-display text from the network (in-memory only, not
+    /// persisted); shown as a banner on the home screen.
+    home_display_text: Option<String>,
 }
 
 /// Which field of the contact editor the on-screen keyboard is editing.
@@ -660,6 +663,7 @@ pub fn run(
         call_log: crate::calllog::CallLog::load(&storage_dir),
         recents_missed_only: false,
         recent_detail: None,
+        home_display_text: None,
     };
 
     for event in rx.iter() {
@@ -3109,7 +3113,7 @@ fn reconcile_home_view(app: &mut AppState) {
 /// Snapshot the state into plain values and push them onto the Slint event loop.
 /// Push the persisted home-mode-display banner text to the home screen.
 fn push_home_display(app: &AppState, weak: &slint::Weak<MainWindow>) {
-    let text = app.prefs.home_display_text.clone().unwrap_or_default();
+    let text = app.home_display_text.clone().unwrap_or_default();
     let _ = weak.upgrade_in_event_loop(move |w| w.set_home_display(text.into()));
 }
 
@@ -3228,7 +3232,19 @@ fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
     }
     .to_string();
     let restart_required = s.restart_required;
-    let home_display_text = app.prefs.home_display_text.clone().unwrap_or_default();
+    let home_display_text = {
+        let hd_enabled = app
+            .codeplug
+            .as_ref()
+            .and_then(|cp| cp.settings.home_display.as_ref())
+            .map(|h| h.enabled)
+            .unwrap_or(false);
+        if hd_enabled {
+            app.home_display_text.clone().unwrap_or_default()
+        } else {
+            String::new()
+        }
+    };
 
     let _ = weak.upgrade_in_event_loop(move |w| {
         w.set_control_connected(control_connected);
@@ -3488,8 +3504,7 @@ fn handle_sds_message_in(app: &mut AppState, payload: &Value, weak: &slint::Weak
                 .unwrap_or_default();
             let text = protocol::decode_text_sdu(&bytes).trim().to_string();
             tracing::info!(%text, pid = protocol_id, "home-mode display update");
-            app.prefs.home_display_text = if text.is_empty() { None } else { Some(text) };
-            app.prefs.save();
+            app.home_display_text = if text.is_empty() { None } else { Some(text) };
             push_home_display(app, weak);
             return;
         }
