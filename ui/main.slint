@@ -14,7 +14,7 @@ import "fonts/Inter-Bold.ttf";
 import "fonts/Inter-ExtraBold.ttf";
 
 export enum DeviceInput { Touch, Keypad }
-export enum Screen { Home, Menu, Info, Folders, Dialer, Logs, LogDetail, Groups, Config, Survey, InCall, Contacts, ContactDetail, ContactEdit, Messages, MsgThread, MsgNew }
+export enum Screen { Home, Menu, Info, Folders, Dialer, Logs, LogDetail, Groups, Config, Survey, InCall, Contacts, ContactDetail, ContactEdit, Messages, MsgThread, MsgNew, Program, ProgramList, ProgramEdit }
 
 export struct FolderRow {
     name: string,
@@ -45,7 +45,23 @@ export struct ContactRow {
     index: int,
     name: string,
     sub: string,
-    kind: int, // 0 individual (ISSI), 1 external phone (PABX/PSTN)
+    kind: int, // 0 individual (ISSI), 1 external phone (via gateway)
+}
+
+// A row in a codeplug-section list (networks, folders, talkgroups, ...).
+export struct EntityRow {
+    index: int,
+    title: string,
+    sub: string,
+}
+
+// One field of the generic codeplug edit form.
+export struct FormField {
+    label: string,
+    // 0 text, 1 digits, 2 dial (digits + * # +), 3 toggle, 4 cycle (tap to change)
+    kind: int,
+    value: string,
+    on: bool,
 }
 
 // A selectable dialer target: index 0 is always "Private" (ISSI); the rest are
@@ -885,6 +901,7 @@ component MenuScreen inherits Rectangle {
     callback open-contacts;
     callback open-messages;
     callback open-config;
+    callback open-program;
     callback open-survey;
     callback register;
     callback deregister;
@@ -939,6 +956,14 @@ component MenuScreen inherits Rectangle {
             icon: Icons.gear;
             clicked => {
                 root.open-config();
+            }
+        }
+        ListRow {
+            title: "Programming";
+            subtitle: "Edit the codeplug: networks, groups, contacts";
+            icon: Icons.folder;
+            clicked => {
+                root.open-program();
             }
         }
         ListRow {
@@ -2649,6 +2674,306 @@ component MsgNewScreen inherits Rectangle {
     }
 }
 
+// ---- Codeplug programming: hub + generic list + generic edit form ----
+
+// A labelled on/off toggle row.
+component ToggleRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> on;
+    callback toggled;
+    height: 58px;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: Palette.line2;
+    background: Palette.surface;
+    TouchArea {
+        clicked => {
+            root.toggled();
+        }
+    }
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: root.label;
+                color: Palette.txt;
+                font-size: 18px;
+                font-weight: 600;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 58px;
+                height: 30px;
+                border-radius: 15px;
+                background: root.on ? Palette.green : #33414f;
+                Rectangle {
+                    width: 24px;
+                    height: 24px;
+                    border-radius: 12px;
+                    background: #ffffff;
+                    x: root.on ? parent.width - self.width - 3px : 3px;
+                    y: 3px;
+                }
+            }
+        }
+    }
+}
+
+// A tap-to-cycle row (e.g. folder, class of usage).
+component CycleRow inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    callback tapped;
+    height: 58px;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: Palette.line2;
+    background: touch.pressed ? #16202b : Palette.surface;
+    touch := TouchArea {
+        clicked => {
+            root.tapped();
+        }
+    }
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                width: 116px;
+                color: Palette.muted;
+                font-size: 15px;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: root.value;
+                color: Palette.txt;
+                font-size: 20px;
+                font-weight: 600;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Icon { d: Icons.chevron-down; tint: Palette.faint; size: 20px; }
+        }
+    }
+}
+
+// The codeplug programming hub: pick a section to edit.
+component ProgHubScreen inherits Rectangle {
+    callback open-section(int);
+    background: transparent;
+    Flickable {
+        viewport-height: hcol.preferred-height;
+        hcol := VerticalLayout {
+            padding: 16px;
+            spacing: 10px;
+            alignment: start;
+            ListRow {
+                title: "Networks";
+                subtitle: "Home network and allowed networks";
+                icon: Icons.radio;
+                clicked => { root.open-section(0); }
+            }
+            ListRow {
+                title: "Folders";
+                subtitle: "Talkgroup folders";
+                icon: Icons.folder;
+                clicked => { root.open-section(1); }
+            }
+            ListRow {
+                title: "Talkgroups";
+                subtitle: "Groups by GSSI";
+                icon: Icons.users;
+                clicked => { root.open-section(2); }
+            }
+            ListRow {
+                title: "Scan lists";
+                subtitle: "Groups scanned together";
+                icon: Icons.radio;
+                clicked => { root.open-section(3); }
+            }
+            ListRow {
+                title: "Gateways";
+                subtitle: "External-call access points";
+                icon: Icons.phone;
+                clicked => { root.open-section(4); }
+            }
+            ListRow {
+                title: "Contacts";
+                subtitle: "Phone book";
+                icon: Icons.phone;
+                clicked => { root.open-section(5); }
+            }
+            ListRow {
+                title: "Home mode display";
+                subtitle: "SDS text feature toggle";
+                icon: Icons.gear;
+                clicked => { root.open-section(6); }
+            }
+        }
+    }
+}
+
+// Generic list of a codeplug section's entries (Rust supplies the rows).
+component EntityListScreen inherits Rectangle {
+    in property <[EntityRow]> rows;
+    in property <string> empty-text;
+    in property <string> add-label;
+    callback open(int);
+    callback add;
+    background: transparent;
+    VerticalLayout {
+        padding: 16px;
+        spacing: 10px;
+        Flickable {
+            vertical-stretch: 1;
+            viewport-height: lcol.preferred-height;
+            lcol := VerticalLayout {
+                spacing: 10px;
+                alignment: start;
+                if root.rows.length == 0: Text {
+                    text: root.empty-text;
+                    color: Palette.muted;
+                    font-size: 16px;
+                    horizontal-alignment: center;
+                }
+                for r in root.rows: ListRow {
+                    title: r.title;
+                    subtitle: r.sub;
+                    clicked => {
+                        root.open(r.index);
+                    }
+                }
+            }
+        }
+        if root.add-label != "": PrimaryButton {
+            text: root.add-label;
+            icon: Icons.plus;
+            clicked => {
+                root.add();
+            }
+        }
+    }
+}
+
+// Generic edit form driven by a [FormField] model.
+component FormEditScreen inherits Rectangle {
+    in property <[FormField]> fields;
+    in property <int> focus-field; // index of the focused text/number field, -1 = none
+    in property <bool> shift;
+    in property <bool> can-delete;
+    callback pick(int);
+    callback key(string);
+    callback backspace;
+    callback shift-toggle;
+    callback toggle(int);
+    callback cycle(int);
+    callback save;
+    callback cancel;
+    callback delete;
+    property <int> focus-kind: (root.focus-field >= 0 && root.focus-field < root.fields.length)
+        ? root.fields[root.focus-field].kind : 0;
+    background: transparent;
+    VerticalLayout {
+        padding: 14px;
+        spacing: 12px;
+        Flickable {
+            vertical-stretch: 1;
+            viewport-height: fcol.preferred-height;
+            fcol := VerticalLayout {
+                spacing: 10px;
+                alignment: start;
+                for f[i] in root.fields: Rectangle {
+                    height: 58px;
+                    if f.kind == 3: ToggleRow {
+                        width: 100%;
+                        label: f.label;
+                        on: f.on;
+                        toggled => {
+                            root.toggle(i);
+                        }
+                    }
+                    if f.kind == 4: CycleRow {
+                        width: 100%;
+                        label: f.label;
+                        value: f.value;
+                        tapped => {
+                            root.cycle(i);
+                        }
+                    }
+                    if f.kind == 0 || f.kind == 1 || f.kind == 2: EditFieldRow {
+                        width: 100%;
+                        label: f.label;
+                        text: f.value;
+                        placeholder: "";
+                        focused: root.focus-field == i;
+                        pick => {
+                            root.pick(i);
+                        }
+                    }
+                }
+            }
+        }
+        OnScreenKeyboard {
+            numeric: root.focus-kind == 1 || root.focus-kind == 2;
+            digits-only: root.focus-kind == 1;
+            shift: root.shift;
+            key(c) => {
+                root.key(c);
+            }
+            backspace => {
+                root.backspace();
+            }
+            shift-toggle => {
+                root.shift-toggle();
+            }
+        }
+        Rectangle { height: 6px; }
+        HorizontalLayout {
+            spacing: 10px;
+            if root.can-delete: SecondaryButton {
+                text: "Delete";
+                icon: Icons.trash;
+                danger: true;
+                horizontal-stretch: 1;
+                clicked => {
+                    root.delete();
+                }
+            }
+            SecondaryButton {
+                text: "Cancel";
+                icon: Icons.close;
+                horizontal-stretch: 1;
+                clicked => {
+                    root.cancel();
+                }
+            }
+            PrimaryButton {
+                text: "Save";
+                icon: Icons.check;
+                horizontal-stretch: 1;
+                clicked => {
+                    root.save();
+                }
+            }
+        }
+    }
+}
+
 component ConfigScreen inherits Rectangle {
     in property <string> toml;
     callback apply;
@@ -3448,6 +3773,16 @@ export component MainWindow inherits Window {
     in property <string> msg-new-issi;
     in property <int> msg-unread;
     in property <int> msg-scroll-tick;
+    // Codeplug programming: generic list + generic edit form (Rust-driven).
+    in property <string> prog-title: "Programming";
+    in property <[EntityRow]> prog-rows;
+    in property <string> prog-empty: "Nothing programmed";
+    in property <string> prog-add-label: "Add";
+    in property <string> form-title: "Edit";
+    in property <[FormField]> form-fields;
+    in property <int> form-focus: -1;
+    in property <bool> form-shift;
+    in property <bool> form-can-delete;
     in property <[DialTarget]> dial-targets: [{ label: "Private", max-len: 8 }];
     // Contact detail page.
     in property <int> detail-index: -1;
@@ -3542,6 +3877,20 @@ export component MainWindow inherits Window {
     callback edit-backspace;
     callback edit-shift-toggle;
     callback edit-target(int);
+    // Codeplug programming callbacks.
+    callback open-program;
+    callback prog-section(int);
+    callback prog-open(int);
+    callback prog-add;
+    callback form-pick(int);
+    callback form-key(string);
+    callback form-backspace;
+    callback form-shift-toggle;
+    callback form-toggle(int);
+    callback form-cycle(int);
+    callback form-save;
+    callback form-cancel;
+    callback form-delete;
     callback open-logs;
     callback alert-dismiss;
     callback group-select(int, int);
@@ -3594,6 +3943,15 @@ export component MainWindow inherits Window {
         if (root.screen == Screen.Config) {
             return "Config";
         }
+        if (root.screen == Screen.Program) {
+            return "Programming";
+        }
+        if (root.screen == Screen.ProgramList) {
+            return root.prog-title;
+        }
+        if (root.screen == Screen.ProgramEdit) {
+            return root.form-title;
+        }
         if (root.screen == Screen.Contacts) {
             return "Contacts";
         }
@@ -3637,6 +3995,15 @@ export component MainWindow inherits Window {
         }
         if (root.screen == Screen.MsgThread || root.screen == Screen.MsgNew) {
             return Screen.Messages;
+        }
+        if (root.screen == Screen.Program) {
+            return Screen.Menu;
+        }
+        if (root.screen == Screen.ProgramList) {
+            return Screen.Program;
+        }
+        if (root.screen == Screen.ProgramEdit) {
+            return Screen.ProgramList;
         }
         return Screen.Home;
     }
@@ -3734,6 +4101,9 @@ export component MainWindow inherits Window {
                 root.refresh();
                 root.screen = Screen.Config;
             }
+            open-program => {
+                root.screen = Screen.Program;
+            }
             open-survey => {
                 root.refresh();
                 root.screen = Screen.Survey;
@@ -3816,6 +4186,61 @@ export component MainWindow inherits Window {
             }
             refresh => {
                 root.refresh();
+            }
+        }
+
+        if root.device-input == DeviceInput.Touch && root.screen == Screen.Program: ProgHubScreen {
+            vertical-stretch: 1;
+            open-section(s) => {
+                root.prog-section(s);
+            }
+        }
+
+        if root.device-input == DeviceInput.Touch && root.screen == Screen.ProgramList: EntityListScreen {
+            vertical-stretch: 1;
+            rows: root.prog-rows;
+            empty-text: root.prog-empty;
+            add-label: root.prog-add-label;
+            open(i) => {
+                root.prog-open(i);
+            }
+            add => {
+                root.prog-add();
+            }
+        }
+
+        if root.device-input == DeviceInput.Touch && root.screen == Screen.ProgramEdit: FormEditScreen {
+            vertical-stretch: 1;
+            fields: root.form-fields;
+            focus-field: root.form-focus;
+            shift: root.form-shift;
+            can-delete: root.form-can-delete;
+            pick(i) => {
+                root.form-pick(i);
+            }
+            key(c) => {
+                root.form-key(c);
+            }
+            backspace => {
+                root.form-backspace();
+            }
+            shift-toggle => {
+                root.form-shift-toggle();
+            }
+            toggle(i) => {
+                root.form-toggle(i);
+            }
+            cycle(i) => {
+                root.form-cycle(i);
+            }
+            save => {
+                root.form-save();
+            }
+            cancel => {
+                root.form-cancel();
+            }
+            delete => {
+                root.form-delete();
             }
         }
 

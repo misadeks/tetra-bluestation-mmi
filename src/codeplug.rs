@@ -28,6 +28,7 @@ pub struct TalkgroupMeta {
     pub name: String,
     pub folder: Option<String>,
     pub class_of_usage: u8,
+    #[allow(dead_code)] // sort key retained from the codeplug
     pub order: i64,
 }
 
@@ -37,6 +38,7 @@ pub struct TalkgroupMeta {
 pub struct FolderMeta {
     pub id: String,
     pub name: String,
+    #[allow(dead_code)] // sort key retained from the codeplug
     pub order: i64,
 }
 
@@ -53,6 +55,7 @@ pub struct Scanlist {
     pub name: String,
     pub talkgroups: Vec<u32>,
     pub active: bool,
+    #[allow(dead_code)] // sort key retained from the codeplug
     pub order: i64,
 }
 

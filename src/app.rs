@@ -14,7 +14,7 @@ use slint::{ModelRc, VecModel};
 
 use crate::codeplug::Codeplug;
 use crate::protocol::{self, MsRuntimeState, ServiceStatus};
-use crate::{ContactRow, ConvRow, DialTarget, FolderRow, GroupRow, LogRow, MainWindow, MsgRow, ScanRow, Screen, SurveyRow};
+use crate::{ContactRow, ConvRow, DialTarget, EntityRow, FolderRow, FormField, GroupRow, LogRow, MainWindow, MsgRow, ScanRow, Screen, SurveyRow};
 
 /// Events fed into the app loop from net threads, timers, and the UI.
 pub enum AppEvent {
@@ -123,6 +123,30 @@ pub enum AppEvent {
     UiMsgDelete(i32),
     /// Delete a whole conversation (peer ssi, is_group).
     UiMsgDeleteThread(i32, bool),
+    /// Programming: open a codeplug section from the hub (0..6).
+    UiProgSection(i32),
+    /// Programming: open a row in the current section's list.
+    UiProgOpen(i32),
+    /// Programming: add a new entry to the current section.
+    UiProgAdd,
+    /// Programming: focus a form field.
+    UiFormPick(i32),
+    /// Programming: type into the focused field.
+    UiFormKey(String),
+    /// Programming: backspace the focused field.
+    UiFormBackspace,
+    /// Programming: toggle the QWERTY shift latch.
+    UiFormShift,
+    /// Programming: flip a toggle field.
+    UiFormToggle(i32),
+    /// Programming: advance a cycle field.
+    UiFormCycle(i32),
+    /// Programming: save the current form.
+    UiFormSave,
+    /// Programming: discard the current form.
+    UiFormCancel,
+    /// Programming: delete the edited entry.
+    UiFormDelete,
 }
 
 struct AppState {
@@ -202,6 +226,9 @@ struct AppState {
     /// Bumped when the open thread should scroll to the newest message
     /// (on open + on send only, not on every update).
     msg_scroll_tick: u32,
+    /// Codeplug programming: current section and open edit form draft.
+    prog_section: ProgSection,
+    prog_draft: Option<ProgDraft>,
 }
 
 /// Which field of the contact editor the on-screen keyboard is editing.
@@ -245,6 +272,86 @@ impl ContactDraft {
             EditField::Issi => &mut self.issi,
             EditField::Number => &mut self.number,
         }
+    }
+}
+
+// --- Codeplug programming (generic list + form) ------------------------------
+
+/// Which codeplug section the programming UI is editing.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ProgSection {
+    Networks,
+    Folders,
+    Talkgroups,
+    Scanlists,
+    Gateways,
+    Settings,
+}
+
+/// Kind of a form field, matching the Slint `FormField.kind` int.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FieldKind {
+    Text = 0,
+    Digits = 1,
+    Dial = 2,
+    Toggle = 3,
+    Cycle = 4,
+}
+
+/// One editable field in the generic programming form.
+struct FormFieldDraft {
+    label: String,
+    kind: FieldKind,
+    value: String,
+    on: bool,
+    /// Cycle fields: display labels and their underlying values (parallel).
+    options: Vec<String>,
+    opt_values: Vec<String>,
+    opt_idx: usize,
+}
+
+impl FormFieldDraft {
+    fn text(label: &str, value: String) -> FormFieldDraft {
+        FormFieldDraft { label: label.into(), kind: FieldKind::Text, value, on: false, options: vec![], opt_values: vec![], opt_idx: 0 }
+    }
+    fn digits(label: &str, value: String) -> FormFieldDraft {
+        FormFieldDraft { label: label.into(), kind: FieldKind::Digits, value, on: false, options: vec![], opt_values: vec![], opt_idx: 0 }
+    }
+    fn dial(label: &str, value: String) -> FormFieldDraft {
+        FormFieldDraft { label: label.into(), kind: FieldKind::Dial, value, on: false, options: vec![], opt_values: vec![], opt_idx: 0 }
+    }
+    fn toggle(label: &str, on: bool) -> FormFieldDraft {
+        FormFieldDraft { label: label.into(), kind: FieldKind::Toggle, value: String::new(), on, options: vec![], opt_values: vec![], opt_idx: 0 }
+    }
+    fn cycle(label: &str, options: Vec<String>, opt_values: Vec<String>, opt_idx: usize) -> FormFieldDraft {
+        let value = options.get(opt_idx).cloned().unwrap_or_default();
+        FormFieldDraft { label: label.into(), kind: FieldKind::Cycle, value, on: false, options, opt_values, opt_idx }
+    }
+    fn is_focusable(&self) -> bool {
+        matches!(self.kind, FieldKind::Text | FieldKind::Digits | FieldKind::Dial)
+    }
+}
+
+/// Backing draft for the generic programming edit form.
+struct ProgDraft {
+    section: ProgSection,
+    /// Identity of the edited row (id / name / gssi text); None when adding.
+    key: Option<String>,
+    /// Array index for section rows keyed only by position (networks).
+    index: Option<usize>,
+    fields: Vec<FormFieldDraft>,
+    /// Index of the focused text/number field, or usize::MAX if none.
+    focus: usize,
+    shift: bool,
+    can_delete: bool,
+    title: String,
+    /// Scanlist only: GSSI for each membership toggle (fields after the first two).
+    member_gssis: Vec<u32>,
+}
+
+impl ProgDraft {
+    fn focused(&mut self) -> Option<&mut FormFieldDraft> {
+        self.fields.get_mut(self.focus)
     }
 }
 
@@ -464,6 +571,8 @@ pub fn run(
         msg_shift: false,
         msg_new_issi: String::new(),
         msg_scroll_tick: 0,
+        prog_section: ProgSection::Networks,
+        prog_draft: None,
     };
 
     for event in rx.iter() {
@@ -838,7 +947,7 @@ pub fn run(
                 match crate::codeplug::delete_contact(&app.last_config_toml, &name) {
                     Ok(toml) => {
                         app.sel_contact = None;
-                        write_codeplug(&mut app, &weak, toml, &format!("Deleted {name}"));
+                        write_codeplug(&mut app, &weak, toml, "Contacts", &format!("Deleted {name}"), Screen::Contacts);
                     }
                     Err(e) => app.notify(&weak, "Delete failed", &e, 0),
                 }
@@ -934,7 +1043,7 @@ pub fn run(
                     Ok(toml) => {
                         let saved = input.name.clone();
                         app.contact_draft = None;
-                        write_codeplug(&mut app, &weak, toml, &format!("Saved {saved}"));
+                        write_codeplug(&mut app, &weak, toml, "Contacts", &format!("Saved {saved}"), Screen::Contacts);
                     }
                     Err(e) => app.notify(&weak, "Save failed", &e, 0),
                 }
@@ -1336,6 +1445,105 @@ pub fn run(
                     push_thread(&app, &weak);
                     push_conversations(&app, &weak);
                 }
+            }
+            AppEvent::UiProgSection(s) => {
+                prog_open_section(&mut app, &weak, s);
+            }
+            AppEvent::UiProgOpen(i) => {
+                prog_open_entry(&mut app, &weak, i as usize);
+            }
+            AppEvent::UiProgAdd => {
+                prog_add_entry(&mut app, &weak);
+            }
+            AppEvent::UiFormPick(i) => {
+                if let Some(d) = app.prog_draft.as_mut() {
+                    if d.fields.get(i as usize).map(|f| f.is_focusable()).unwrap_or(false) {
+                        d.focus = i as usize;
+                        push_form(&app, &weak);
+                    }
+                }
+            }
+            AppEvent::UiFormKey(s) => {
+                if let Some(d) = app.prog_draft.as_mut() {
+                    let shift = d.shift;
+                    if let Some(f) = d.focused() {
+                        match f.kind {
+                            FieldKind::Digits => {
+                                for ch in s.chars() {
+                                    if ch.is_ascii_digit() {
+                                        f.value.push(ch);
+                                    }
+                                }
+                            }
+                            FieldKind::Dial => {
+                                for ch in s.chars() {
+                                    if ch.is_ascii_digit() || ch == '*' || ch == '#' || ch == '+' {
+                                        f.value.push(ch);
+                                    }
+                                }
+                            }
+                            FieldKind::Text => {
+                                for ch in s.chars() {
+                                    let ch = if shift { ch.to_ascii_uppercase() } else { ch };
+                                    f.value.push(ch);
+                                }
+                                d.shift = false;
+                            }
+                            _ => {}
+                        }
+                    }
+                    push_form(&app, &weak);
+                }
+            }
+            AppEvent::UiFormBackspace => {
+                if let Some(d) = app.prog_draft.as_mut() {
+                    if let Some(f) = d.focused() {
+                        f.value.pop();
+                    }
+                    push_form(&app, &weak);
+                }
+            }
+            AppEvent::UiFormShift => {
+                if let Some(d) = app.prog_draft.as_mut() {
+                    d.shift = !d.shift;
+                    push_form(&app, &weak);
+                }
+            }
+            AppEvent::UiFormToggle(i) => {
+                if let Some(d) = app.prog_draft.as_mut() {
+                    if let Some(f) = d.fields.get_mut(i as usize) {
+                        if f.kind == FieldKind::Toggle {
+                            f.on = !f.on;
+                        }
+                    }
+                    push_form(&app, &weak);
+                }
+            }
+            AppEvent::UiFormCycle(i) => {
+                if let Some(d) = app.prog_draft.as_mut() {
+                    if let Some(f) = d.fields.get_mut(i as usize) {
+                        if f.kind == FieldKind::Cycle && !f.options.is_empty() {
+                            f.opt_idx = (f.opt_idx + 1) % f.options.len();
+                            f.value = f.options[f.opt_idx].clone();
+                        }
+                    }
+                    push_form(&app, &weak);
+                }
+            }
+            AppEvent::UiFormSave => {
+                prog_save(&mut app, &weak);
+            }
+            AppEvent::UiFormCancel => {
+                app.prog_draft = None;
+                let back = if matches!(app.prog_section, ProgSection::Settings) {
+                    Screen::Program
+                } else {
+                    Screen::ProgramList
+                };
+                let _ = weak.upgrade_in_event_loop(move |w| w.set_screen(back));
+            }
+            AppEvent::UiFormDelete => {
+                prog_delete(&mut app, &weak);
             }
         }
     }
@@ -2715,7 +2923,14 @@ fn push_contacts(app: &AppState, weak: &slint::Weak<MainWindow>) {
 /// Stage + commit an edited codeplug TOML: SetConfig, ApplyConfig, then GetConfig
 /// to pull back the canonical version. Applies the change locally at once for
 /// instant UI feedback (the stack commits contacts/gateways live, no restart).
-fn write_codeplug(app: &mut AppState, weak: &slint::Weak<MainWindow>, toml: String, msg: &str) {
+fn write_codeplug(
+    app: &mut AppState,
+    weak: &slint::Weak<MainWindow>,
+    toml: String,
+    title: &str,
+    msg: &str,
+    return_screen: Screen,
+) {
     let h = app.next_handle();
     app.send(protocol::set_config(h, &toml));
     let h2 = app.next_handle();
@@ -2731,9 +2946,518 @@ fn write_codeplug(app: &mut AppState, weak: &slint::Weak<MainWindow>, toml: Stri
 
     let h3 = app.next_handle();
     app.send(protocol::get_config(h3));
-    app.notify(weak, "Contacts", msg, 0);
-    // Return to the contacts list after a successful edit.
-    let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::Contacts));
+    app.notify(weak, title, msg, 0);
+    let _ = weak.upgrade_in_event_loop(move |w| w.set_screen(return_screen));
+}
+
+// --- Codeplug programming: section lists, edit form, save/delete -------------
+
+fn section_from_code(s: i32) -> Option<ProgSection> {
+    match s {
+        0 => Some(ProgSection::Networks),
+        1 => Some(ProgSection::Folders),
+        2 => Some(ProgSection::Talkgroups),
+        3 => Some(ProgSection::Scanlists),
+        4 => Some(ProgSection::Gateways),
+        6 => Some(ProgSection::Settings),
+        _ => None,
+    }
+}
+
+/// Open a codeplug section from the hub: contacts reuse the existing screen,
+/// settings jump straight to the form, others show the generic list.
+fn prog_open_section(app: &mut AppState, weak: &slint::Weak<MainWindow>, s: i32) {
+    if s == 5 {
+        app.contact_query.clear();
+        push_contacts(app, weak);
+        let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::Contacts));
+        return;
+    }
+    let Some(section) = section_from_code(s) else { return };
+    app.prog_section = section;
+    if section == ProgSection::Settings {
+        app.prog_draft = Some(build_settings_draft(app));
+        push_form(app, weak);
+        let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::ProgramEdit));
+        return;
+    }
+    push_prog_list(app, weak);
+    let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::ProgramList));
+}
+
+fn has_home(cp: &Codeplug) -> bool {
+    cp.networks.first().map(|n| n.home).unwrap_or(false)
+}
+
+fn new_draft(
+    section: ProgSection,
+    key: Option<String>,
+    index: Option<usize>,
+    can_delete: bool,
+    title: String,
+    fields: Vec<FormFieldDraft>,
+    member_gssis: Vec<u32>,
+) -> ProgDraft {
+    let focus = fields.iter().position(|f| f.is_focusable()).unwrap_or(usize::MAX);
+    ProgDraft { section, key, index, fields, focus, shift: false, can_delete, title, member_gssis }
+}
+
+fn build_settings_draft(app: &AppState) -> ProgDraft {
+    let hd = app.codeplug.as_ref().and_then(|cp| cp.settings.home_display.clone());
+    let enabled = hd.as_ref().map(|h| h.enabled).unwrap_or(false);
+    let pid = hd.as_ref().map(|h| h.pid).unwrap_or(130);
+    new_draft(
+        ProgSection::Settings,
+        None,
+        None,
+        false,
+        "Home mode display".to_string(),
+        vec![
+            FormFieldDraft::toggle("Enabled", enabled),
+            FormFieldDraft::digits("PID", pid.to_string()),
+        ],
+        vec![],
+    )
+}
+
+fn folder_cycle(cp: &Codeplug, current: Option<&str>) -> FormFieldDraft {
+    let mut labels = vec!["(none)".to_string()];
+    let mut values = vec![String::new()];
+    for f in &cp.folder_defs {
+        labels.push(f.name.clone());
+        values.push(f.id.clone());
+    }
+    let idx = current
+        .and_then(|c| values.iter().position(|v| v == c))
+        .unwrap_or(0);
+    FormFieldDraft::cycle("Folder", labels, values, idx)
+}
+
+fn class_cycle(current: u8) -> FormFieldDraft {
+    let labels: Vec<String> = (0..=7).map(|n| n.to_string()).collect();
+    FormFieldDraft::cycle("Class of usage", labels.clone(), labels, current.min(7) as usize)
+}
+
+/// Build the edit draft for entry `idx` (Some) or a new entry (None).
+fn build_draft(app: &AppState, idx: Option<usize>) -> Option<ProgDraft> {
+    let cp = app.codeplug.as_ref()?;
+    let d = match app.prog_section {
+        ProgSection::Networks => {
+            let home_present = has_home(cp);
+            match idx {
+                Some(i) => {
+                    let n = cp.networks.get(i)?;
+                    if n.home {
+                        new_draft(
+                            ProgSection::Networks,
+                            Some("__home__".into()),
+                            None,
+                            false,
+                            "Home network".to_string(),
+                            vec![
+                                FormFieldDraft::digits("MCC", n.mcc.to_string()),
+                                FormFieldDraft::digits("MNC", n.mnc.to_string()),
+                            ],
+                            vec![],
+                        )
+                    } else {
+                        let net_idx = i - home_present as usize;
+                        new_draft(
+                            ProgSection::Networks,
+                            None,
+                            Some(net_idx),
+                            true,
+                            "Edit network".to_string(),
+                            vec![
+                                FormFieldDraft::digits("MCC", n.mcc.to_string()),
+                                FormFieldDraft::digits("MNC", n.mnc.to_string()),
+                                FormFieldDraft::text("Name", n.name.clone().unwrap_or_default()),
+                                FormFieldDraft::digits("Priority", n.priority.to_string()),
+                            ],
+                            vec![],
+                        )
+                    }
+                }
+                None => new_draft(
+                    ProgSection::Networks,
+                    None,
+                    None,
+                    false,
+                    "New network".to_string(),
+                    vec![
+                        FormFieldDraft::digits("MCC", String::new()),
+                        FormFieldDraft::digits("MNC", String::new()),
+                        FormFieldDraft::text("Name", String::new()),
+                        FormFieldDraft::digits("Priority", "0".to_string()),
+                    ],
+                    vec![],
+                ),
+            }
+        }
+        ProgSection::Folders => {
+            let (key, title, id, name) = match idx {
+                Some(i) => {
+                    let f = cp.folder_defs.get(i)?;
+                    (Some(f.id.clone()), "Edit folder".to_string(), f.id.clone(), f.name.clone())
+                }
+                None => (None, "New folder".to_string(), String::new(), String::new()),
+            };
+            new_draft(
+                ProgSection::Folders,
+                key,
+                None,
+                idx.is_some(),
+                title,
+                vec![
+                    FormFieldDraft::text("Id", id),
+                    FormFieldDraft::text("Name", name),
+                ],
+                vec![],
+            )
+        }
+        ProgSection::Talkgroups => match idx {
+            Some(i) => {
+                let t = cp.all_talkgroups.get(i)?;
+                new_draft(
+                    ProgSection::Talkgroups,
+                    Some(t.gssi.to_string()),
+                    None,
+                    true,
+                    "Edit talkgroup".to_string(),
+                    vec![
+                        FormFieldDraft::digits("GSSI", t.gssi.to_string()),
+                        FormFieldDraft::text("Name", t.name.clone()),
+                        folder_cycle(cp, t.folder.as_deref()),
+                        class_cycle(t.class_of_usage),
+                    ],
+                    vec![],
+                )
+            }
+            None => new_draft(
+                ProgSection::Talkgroups,
+                None,
+                None,
+                false,
+                "New talkgroup".to_string(),
+                vec![
+                    FormFieldDraft::digits("GSSI", String::new()),
+                    FormFieldDraft::text("Name", String::new()),
+                    folder_cycle(cp, None),
+                    class_cycle(0),
+                ],
+                vec![],
+            ),
+        },
+        ProgSection::Scanlists => {
+            let (key, title, name, active, members): (Option<String>, String, String, bool, Vec<u32>) =
+                match idx {
+                    Some(i) => {
+                        let s = cp.scanlists.get(i)?;
+                        (Some(s.name.clone()), "Edit scan list".to_string(), s.name.clone(), s.active, s.talkgroups.clone())
+                    }
+                    None => (None, "New scan list".to_string(), String::new(), true, vec![]),
+                };
+            let mut fields = vec![
+                FormFieldDraft::text("Name", name),
+                FormFieldDraft::toggle("Active", active),
+            ];
+            let mut member_gssis = Vec::new();
+            for t in &cp.all_talkgroups {
+                fields.push(FormFieldDraft::toggle(
+                    &format!("{} ({})", t.name, t.gssi),
+                    members.contains(&t.gssi),
+                ));
+                member_gssis.push(t.gssi);
+            }
+            new_draft(ProgSection::Scanlists, key, None, idx.is_some(), title, fields, member_gssis)
+        }
+        ProgSection::Gateways => match idx {
+            Some(i) => {
+                let g = cp.gateways.get(i)?;
+                new_draft(
+                    ProgSection::Gateways,
+                    Some(g.id.clone()),
+                    None,
+                    true,
+                    "Edit gateway".to_string(),
+                    vec![
+                        FormFieldDraft::text("Id", g.id.clone()),
+                        FormFieldDraft::text("Name", g.name.clone()),
+                        FormFieldDraft::digits("Gateway ISSI", g.gateway_issi.to_string()),
+                        FormFieldDraft::dial("Prefix", g.prefix.clone()),
+                    ],
+                    vec![],
+                )
+            }
+            None => new_draft(
+                ProgSection::Gateways,
+                None,
+                None,
+                false,
+                "New gateway".to_string(),
+                vec![
+                    FormFieldDraft::text("Id", String::new()),
+                    FormFieldDraft::text("Name", String::new()),
+                    FormFieldDraft::digits("Gateway ISSI", String::new()),
+                    FormFieldDraft::dial("Prefix", String::new()),
+                ],
+                vec![],
+            ),
+        },
+        ProgSection::Settings => build_settings_draft(app),
+    };
+    Some(d)
+}
+
+fn prog_open_entry(app: &mut AppState, weak: &slint::Weak<MainWindow>, idx: usize) {
+    if let Some(d) = build_draft(app, Some(idx)) {
+        app.prog_draft = Some(d);
+        push_form(app, weak);
+        let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::ProgramEdit));
+    }
+}
+
+fn prog_add_entry(app: &mut AppState, weak: &slint::Weak<MainWindow>) {
+    if let Some(d) = build_draft(app, None) {
+        app.prog_draft = Some(d);
+        push_form(app, weak);
+        let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::ProgramEdit));
+    }
+}
+
+fn fval(d: &ProgDraft, i: usize) -> String {
+    d.fields.get(i).map(|f| f.value.trim().to_string()).unwrap_or_default()
+}
+
+/// Commit the current programming form via the matching codeplug writer.
+fn prog_save(app: &mut AppState, weak: &slint::Weak<MainWindow>) {
+    let Some(d) = app.prog_draft.as_ref() else { return };
+    let toml = &app.last_config_toml;
+    let section = d.section;
+    let result: Result<(String, String), String> = (|| match section {
+        ProgSection::Networks => {
+            if d.key.as_deref() == Some("__home__") {
+                let mcc = fval(d, 0).parse::<u16>().map_err(|_| "MCC must be a number".to_string())?;
+                let mnc = fval(d, 1).parse::<u16>().map_err(|_| "MNC must be a number".to_string())?;
+                Ok((crate::codeplug::set_net_info(toml, mcc, mnc)?, "Saved home network".to_string()))
+            } else {
+                let mcc = fval(d, 0).parse::<u16>().map_err(|_| "MCC must be a number".to_string())?;
+                let mnc = fval(d, 1).parse::<u16>().map_err(|_| "MNC must be a number".to_string())?;
+                let name = fval(d, 2);
+                let priority = fval(d, 3).parse::<i64>().unwrap_or(0);
+                let input = crate::codeplug::NetworkInput {
+                    mcc,
+                    mnc,
+                    name: Some(name).filter(|s| !s.is_empty()),
+                    priority,
+                };
+                Ok((crate::codeplug::upsert_network(toml, &input, d.index)?, "Saved network".to_string()))
+            }
+        }
+        ProgSection::Folders => {
+            let input = crate::codeplug::FolderInput { id: fval(d, 0), name: fval(d, 1) };
+            Ok((crate::codeplug::upsert_folder(toml, &input, d.key.as_deref())?, "Saved folder".to_string()))
+        }
+        ProgSection::Talkgroups => {
+            let gssi = fval(d, 0).parse::<u32>().map_err(|_| "GSSI must be a number".to_string())?;
+            let folder = d.fields.get(2).and_then(|f| f.opt_values.get(f.opt_idx)).cloned().filter(|s| !s.is_empty());
+            let class = d.fields.get(3).map(|f| f.opt_idx as u8).unwrap_or(0);
+            let input = crate::codeplug::TalkgroupInput {
+                gssi,
+                name: fval(d, 1),
+                folder,
+                class_of_usage: class,
+            };
+            let key = d.key.as_deref().and_then(|s| s.parse::<u32>().ok());
+            Ok((crate::codeplug::upsert_talkgroup(toml, &input, key)?, "Saved talkgroup".to_string()))
+        }
+        ProgSection::Scanlists => {
+            let name = fval(d, 0);
+            let active = d.fields.get(1).map(|f| f.on).unwrap_or(true);
+            let mut talkgroups = Vec::new();
+            for (j, g) in d.member_gssis.iter().enumerate() {
+                if d.fields.get(2 + j).map(|f| f.on).unwrap_or(false) {
+                    talkgroups.push(*g);
+                }
+            }
+            let input = crate::codeplug::ScanlistInput { name, talkgroups, active };
+            Ok((crate::codeplug::upsert_scanlist(toml, &input, d.key.as_deref())?, "Saved scan list".to_string()))
+        }
+        ProgSection::Gateways => {
+            let gssi = fval(d, 2).parse::<u32>().map_err(|_| "Gateway ISSI must be a number".to_string())?;
+            let input = crate::codeplug::GatewayInput {
+                id: fval(d, 0),
+                name: fval(d, 1),
+                gateway_issi: gssi,
+                prefix: fval(d, 3),
+            };
+            Ok((crate::codeplug::upsert_gateway(toml, &input, d.key.as_deref())?, "Saved gateway".to_string()))
+        }
+        ProgSection::Settings => {
+            let enabled = d.fields.first().map(|f| f.on).unwrap_or(false);
+            let pid = fval(d, 1).parse::<u8>().unwrap_or(130);
+            Ok((crate::codeplug::set_home_display(toml, enabled, pid)?, "Saved settings".to_string()))
+        }
+    })();
+
+    match result {
+        Ok((new_toml, msg)) => {
+            let back = if matches!(section, ProgSection::Settings) {
+                Screen::Program
+            } else {
+                Screen::ProgramList
+            };
+            app.prog_draft = None;
+            write_codeplug(app, weak, new_toml, "Programming", &msg, back);
+            push_prog_list(app, weak);
+        }
+        Err(e) => app.notify(weak, "Invalid entry", &e, 0),
+    }
+}
+
+/// Delete the entry currently open in the programming form.
+fn prog_delete(app: &mut AppState, weak: &slint::Weak<MainWindow>) {
+    let Some(d) = app.prog_draft.as_ref() else { return };
+    let toml = &app.last_config_toml;
+    let result: Result<(String, String), String> = match d.section {
+        ProgSection::Networks => match d.index {
+            Some(i) => crate::codeplug::delete_network(toml, i).map(|t| (t, "Deleted network".to_string())),
+            None => Err("Cannot delete this network".to_string()),
+        },
+        ProgSection::Folders => match d.key.as_deref() {
+            Some(id) => crate::codeplug::delete_folder(toml, id).map(|t| (t, "Deleted folder".to_string())),
+            None => Err("Nothing to delete".to_string()),
+        },
+        ProgSection::Talkgroups => match d.key.as_deref().and_then(|s| s.parse::<u32>().ok()) {
+            Some(g) => crate::codeplug::delete_talkgroup(toml, g).map(|t| (t, "Deleted talkgroup".to_string())),
+            None => Err("Nothing to delete".to_string()),
+        },
+        ProgSection::Scanlists => match d.key.as_deref() {
+            Some(n) => crate::codeplug::delete_scanlist(toml, n).map(|t| (t, "Deleted scan list".to_string())),
+            None => Err("Nothing to delete".to_string()),
+        },
+        ProgSection::Gateways => match d.key.as_deref() {
+            Some(id) => crate::codeplug::delete_gateway(toml, id).map(|t| (t, "Deleted gateway".to_string())),
+            None => Err("Nothing to delete".to_string()),
+        },
+        ProgSection::Settings => Err("Nothing to delete".to_string()),
+    };
+    match result {
+        Ok((new_toml, msg)) => {
+            app.prog_draft = None;
+            write_codeplug(app, weak, new_toml, "Programming", &msg, Screen::ProgramList);
+            push_prog_list(app, weak);
+        }
+        Err(e) => app.notify(weak, "Delete failed", &e, 0),
+    }
+}
+
+/// Build the current section's list rows + header/labels.
+fn push_prog_list(app: &AppState, weak: &slint::Weak<MainWindow>) {
+    let mut rows: Vec<EntityRow> = Vec::new();
+    let (title, empty, add): (&str, &str, &str) = match app.prog_section {
+        ProgSection::Networks => ("Networks", "No networks", "Add network"),
+        ProgSection::Folders => ("Folders", "No folders", "Add folder"),
+        ProgSection::Talkgroups => ("Talkgroups", "No talkgroups", "Add talkgroup"),
+        ProgSection::Scanlists => ("Scan lists", "No scan lists", "Add scan list"),
+        ProgSection::Gateways => ("Gateways", "No gateways", "Add gateway"),
+        ProgSection::Settings => ("Settings", "", ""),
+    };
+    if let Some(cp) = &app.codeplug {
+        match app.prog_section {
+            ProgSection::Networks => {
+                for (i, n) in cp.networks.iter().enumerate() {
+                    let name = if n.home {
+                        "Home network".to_string()
+                    } else {
+                        n.name.clone().unwrap_or_else(|| "Network".to_string())
+                    };
+                    rows.push(EntityRow {
+                        index: i as i32,
+                        title: name.into(),
+                        sub: format!("MCC {} / MNC {}", n.mcc, n.mnc).into(),
+                    });
+                }
+            }
+            ProgSection::Folders => {
+                for (i, f) in cp.folder_defs.iter().enumerate() {
+                    rows.push(EntityRow {
+                        index: i as i32,
+                        title: f.name.clone().into(),
+                        sub: format!("id {}", f.id).into(),
+                    });
+                }
+            }
+            ProgSection::Talkgroups => {
+                for (i, t) in cp.all_talkgroups.iter().enumerate() {
+                    let folder = t.folder.clone().unwrap_or_else(|| "Other".to_string());
+                    rows.push(EntityRow {
+                        index: i as i32,
+                        title: t.name.clone().into(),
+                        sub: format!("GSSI {} - {}", t.gssi, folder).into(),
+                    });
+                }
+            }
+            ProgSection::Scanlists => {
+                for (i, s) in cp.scanlists.iter().enumerate() {
+                    let state = if s.active { "on" } else { "off" };
+                    rows.push(EntityRow {
+                        index: i as i32,
+                        title: s.name.clone().into(),
+                        sub: format!("{} groups - {}", s.talkgroups.len(), state).into(),
+                    });
+                }
+            }
+            ProgSection::Gateways => {
+                for (i, g) in cp.gateways.iter().enumerate() {
+                    let pfx = if g.prefix.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" - prefix {}", g.prefix)
+                    };
+                    rows.push(EntityRow {
+                        index: i as i32,
+                        title: g.name.clone().into(),
+                        sub: format!("ISSI {}{}", g.gateway_issi, pfx).into(),
+                    });
+                }
+            }
+            ProgSection::Settings => {}
+        }
+    }
+    let (title, empty, add) = (title.to_string(), empty.to_string(), add.to_string());
+    let _ = weak.upgrade_in_event_loop(move |w| {
+        w.set_prog_title(title.into());
+        w.set_prog_empty(empty.into());
+        w.set_prog_add_label(add.into());
+        w.set_prog_rows(ModelRc::new(VecModel::from(rows)));
+    });
+}
+
+/// Push the open edit form's fields + header/state.
+fn push_form(app: &AppState, weak: &slint::Weak<MainWindow>) {
+    let Some(d) = app.prog_draft.as_ref() else { return };
+    let fields: Vec<FormField> = d
+        .fields
+        .iter()
+        .map(|f| FormField {
+            label: f.label.clone().into(),
+            kind: f.kind as i32,
+            value: f.value.clone().into(),
+            on: f.on,
+        })
+        .collect();
+    let title = d.title.clone();
+    let focus = if d.focus == usize::MAX { -1 } else { d.focus as i32 };
+    let shift = d.shift;
+    let can_delete = d.can_delete;
+    let _ = weak.upgrade_in_event_loop(move |w| {
+        w.set_form_title(title.into());
+        w.set_form_fields(ModelRc::new(VecModel::from(fields)));
+        w.set_form_focus(focus);
+        w.set_form_shift(shift);
+        w.set_form_can_delete(can_delete);
+    });
 }
 
 /// Push the open contact's detail-page fields.

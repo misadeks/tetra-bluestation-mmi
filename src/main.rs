@@ -354,6 +354,78 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     {
         let tx = events_tx.clone();
+        window.on_prog_section(move |s| {
+            let _ = tx.send(app::AppEvent::UiProgSection(s));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_prog_open(move |i| {
+            let _ = tx.send(app::AppEvent::UiProgOpen(i));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_prog_add(move || {
+            let _ = tx.send(app::AppEvent::UiProgAdd);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_form_pick(move |i| {
+            let _ = tx.send(app::AppEvent::UiFormPick(i));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_form_key(move |c| {
+            let _ = tx.send(app::AppEvent::UiFormKey(c.to_string()));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_form_backspace(move || {
+            let _ = tx.send(app::AppEvent::UiFormBackspace);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_form_shift_toggle(move || {
+            let _ = tx.send(app::AppEvent::UiFormShift);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_form_toggle(move |i| {
+            let _ = tx.send(app::AppEvent::UiFormToggle(i));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_form_cycle(move |i| {
+            let _ = tx.send(app::AppEvent::UiFormCycle(i));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_form_save(move || {
+            let _ = tx.send(app::AppEvent::UiFormSave);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_form_cancel(move || {
+            let _ = tx.send(app::AppEvent::UiFormCancel);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_form_delete(move || {
+            let _ = tx.send(app::AppEvent::UiFormDelete);
+        });
+    }
+    {
+        let tx = events_tx.clone();
         window.on_open_logs(move || {
             let _ = tx.send(app::AppEvent::UiOpenLogs);
         });
