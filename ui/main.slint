@@ -417,6 +417,42 @@ component PrimaryButton inherits Rectangle {
     }
 }
 
+component DangerButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    in property <string> icon: Icons.trash;
+    callback clicked;
+    height: 64px;
+    border-radius: 16px;
+    border-width: 1px;
+    border-color: root.enabled ? #f0555a80 : Palette.line;
+    background: root.enabled
+        ? (touch.pressed ? #3a1618 : @linear-gradient(180deg, #3a1618 0%, #2a1013 100%))
+        : Palette.surface;
+    opacity: root.enabled ? 1.0 : 0.45;
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => {
+            root.clicked();
+        }
+    }
+    HorizontalLayout {
+        alignment: center;
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            Icon { d: root.icon; tint: root.enabled ? #ff9a9d : Palette.muted; size: 20px; }
+        }
+        Text {
+            text: root.text;
+            color: root.enabled ? #ff9a9d : Palette.muted;
+            font-size: 18px;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
+    }
+}
+
 component SecondaryButton inherits Rectangle {
     in property <string> text;
     in property <string> icon;
@@ -2945,10 +2981,9 @@ component FormEditScreen inherits Rectangle {
         Rectangle { height: 6px; }
         HorizontalLayout {
             spacing: 10px;
-            if root.can-delete: SecondaryButton {
+            if root.can-delete: DangerButton {
                 text: "Delete";
                 icon: Icons.trash;
-                danger: true;
                 horizontal-stretch: 1;
                 clicked => {
                     root.delete();
