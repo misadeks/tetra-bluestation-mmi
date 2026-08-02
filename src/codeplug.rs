@@ -34,10 +34,47 @@ pub struct Scanlist {
     pub talkgroups: Vec<u32>,
 }
 
+/// External-network access point (PABX/PSTN gateway). `kind` is a UI label only
+/// and has no on-air effect.
+#[derive(Debug, Clone)]
+pub struct Gateway {
+    pub id: String,
+    pub name: String,
+    /// "pstn" | "pabx" (display label only).
+    pub kind: String,
+    pub gateway_issi: u32,
+    /// Optional access-code digits prepended to a contact's number.
+    pub prefix: String,
+}
+
+/// Phone-book entry. Exactly one target form: an on-network `issi`, or a
+/// `number` dialled through a `gateway`.
+#[derive(Debug, Clone)]
+pub struct Contact {
+    pub name: String,
+    pub callsign: Option<String>,
+    pub issi: Option<u32>,
+    pub number: Option<String>,
+    pub gateway: Option<String>,
+    #[allow(dead_code)] // sort key; retained for parity with the codeplug
+    pub order: i64,
+}
+
+/// The resolved on-air target of a contact.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CallTarget {
+    /// On-network individual call to this ISSI.
+    Individual(u32),
+    /// External (PABX/PSTN) call: dial the gateway ISSI, enclose the digits.
+    External { gateway_ssi: u32, digits: String },
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Codeplug {
     pub folders: Vec<Folder>,
     pub scanlists: Vec<Scanlist>,
+    pub gateways: Vec<Gateway>,
+    pub contacts: Vec<Contact>,
     #[allow(dead_code)] // used by name_of, handy for later screens/logs
     names: HashMap<u32, String>,
 }
@@ -50,6 +87,40 @@ struct Doc {
     talkgroup: Vec<TalkgroupDef>,
     #[serde(default)]
     scanlist: Vec<ScanlistDef>,
+    #[serde(default)]
+    gateway: Vec<GatewayDef>,
+    #[serde(default)]
+    contact: Vec<ContactDef>,
+}
+
+#[derive(Deserialize)]
+struct GatewayDef {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    kind: String,
+    #[serde(default)]
+    gateway_issi: u32,
+    #[serde(default)]
+    prefix: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ContactDef {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    callsign: Option<String>,
+    #[serde(default)]
+    issi: Option<u32>,
+    #[serde(default)]
+    number: Option<String>,
+    #[serde(default)]
+    gateway: Option<String>,
+    #[serde(default)]
+    order: i64,
 }
 
 #[derive(Deserialize)]
@@ -90,7 +161,7 @@ impl Codeplug {
     /// unparseable or carries no talkgroups.
     pub fn parse(toml_str: &str) -> Option<Codeplug> {
         let doc: Doc = toml::from_str(toml_str).ok()?;
-        if doc.talkgroup.is_empty() {
+        if doc.talkgroup.is_empty() && doc.contact.is_empty() && doc.gateway.is_empty() {
             return None;
         }
 
@@ -182,9 +253,39 @@ impl Codeplug {
             })
             .collect();
 
+        let gateways = doc
+            .gateway
+            .into_iter()
+            .filter(|g| !g.id.is_empty())
+            .map(|g| Gateway {
+                name: if g.name.is_empty() { g.id.clone() } else { g.name },
+                id: g.id,
+                kind: g.kind,
+                gateway_issi: g.gateway_issi,
+                prefix: g.prefix.unwrap_or_default(),
+            })
+            .collect();
+
+        let mut contact_defs = doc.contact;
+        contact_defs.sort_by(|a, b| a.order.cmp(&b.order).then_with(|| a.name.cmp(&b.name)));
+        let contacts = contact_defs
+            .into_iter()
+            .filter(|c| !c.name.is_empty())
+            .map(|c| Contact {
+                name: c.name,
+                callsign: c.callsign.filter(|s| !s.is_empty()),
+                issi: c.issi,
+                number: c.number.filter(|s| !s.is_empty()),
+                gateway: c.gateway.filter(|s| !s.is_empty()),
+                order: c.order,
+            })
+            .collect();
+
         Some(Codeplug {
             folders,
             scanlists,
+            gateways,
+            contacts,
             names,
         })
     }
@@ -202,6 +303,75 @@ impl Codeplug {
     /// shows its raw id on its own line instead of a "TG {id}" label.
     pub fn known_name(&self, gssi: u32) -> Option<String> {
         self.names.get(&gssi).cloned()
+    }
+
+    pub fn gateway_by_id(&self, id: &str) -> Option<&Gateway> {
+        self.gateways.iter().find(|g| g.id == id)
+    }
+}
+
+/// The max length of the TETRA external-subscriber-number IE
+/// (ETSI TS 100 392-2 cl. 14.8.20).
+pub const MAX_EXTERNAL_DIGITS: usize = 24;
+
+/// Strip whitespace and validate the dial-digit set (`0-9 * # +`). Returns the
+/// cleaned digit string, or an error describing why it is unencodable.
+pub fn normalize_dial(raw: &str) -> Result<String, String> {
+    let mut out = String::new();
+    for c in raw.chars() {
+        if c.is_whitespace() {
+            continue;
+        }
+        if c.is_ascii_digit() || c == '*' || c == '#' || c == '+' {
+            out.push(c);
+        } else {
+            return Err(format!("Invalid dial character '{c}'"));
+        }
+    }
+    if out.is_empty() {
+        return Err("Empty dial string".to_string());
+    }
+    if out.chars().count() > MAX_EXTERNAL_DIGITS {
+        return Err(format!("Number exceeds {MAX_EXTERNAL_DIGITS} digits"));
+    }
+    Ok(out)
+}
+
+impl Contact {
+    /// True when this is a phone (external) contact rather than an ISSI one.
+    pub fn is_phone(&self) -> bool {
+        self.number.is_some() || self.gateway.is_some()
+    }
+
+    /// Resolve to an on-air call target, applying the gateway prefix. Enforces
+    /// the exactly-one-form rule, the dial-digit set, and the 24-digit limit.
+    pub fn resolve(&self, cp: &Codeplug) -> Result<CallTarget, String> {
+        let has_issi = self.issi.is_some();
+        if has_issi && self.is_phone() {
+            return Err("Contact has both an ISSI and a phone number".to_string());
+        }
+        if let Some(issi) = self.issi {
+            if issi < 1 || issi > 16_777_215 {
+                return Err("ISSI out of range (1..=16777215)".to_string());
+            }
+            return Ok(CallTarget::Individual(issi));
+        }
+        let number = self
+            .number
+            .as_deref()
+            .ok_or("Contact has no ISSI or number")?;
+        let gw_id = self
+            .gateway
+            .as_deref()
+            .ok_or("Phone contact has no gateway")?;
+        let gw = cp
+            .gateway_by_id(gw_id)
+            .ok_or_else(|| format!("Unknown gateway '{gw_id}'"))?;
+        let digits = normalize_dial(&format!("{}{}", gw.prefix, number))?;
+        Ok(CallTarget::External {
+            gateway_ssi: gw.gateway_issi,
+            digits,
+        })
     }
 }
 
@@ -255,6 +425,25 @@ name = "Loose"
 name = "Alpha"
 talkgroups = [101, 300]
 order = 0
+
+[[gateway]]
+id = "pabx1"
+name = "HQ PABX"
+kind = "pabx"
+gateway_issi = 8000002
+prefix = "9"
+
+[[contact]]
+name = "Alice"
+callsign = "A1"
+issi = 1000123
+order = 1
+
+[[contact]]
+name = "Front Desk"
+number = "1234"
+gateway = "pabx1"
+order = 0
 "#;
 
     #[test]
@@ -274,6 +463,50 @@ order = 0
         assert_eq!(cp.scanlists.len(), 1);
         assert_eq!(cp.scanlists[0].name, "Alpha");
         assert_eq!(cp.scanlists[0].talkgroups, vec![101, 300]);
+    }
+
+    #[test]
+    fn parses_and_resolves_contacts_and_gateways() {
+        let cp = Codeplug::parse(SAMPLE).expect("codeplug parses");
+        assert_eq!(cp.gateways.len(), 1);
+        assert_eq!(cp.gateways[0].gateway_issi, 8000002);
+        // Contacts sorted by order: Front Desk (0) before Alice (1).
+        assert_eq!(cp.contacts.len(), 2);
+        assert_eq!(cp.contacts[0].name, "Front Desk");
+        assert_eq!(cp.contacts[1].name, "Alice");
+
+        // ISSI contact -> individual.
+        assert_eq!(
+            cp.contacts[1].resolve(&cp).unwrap(),
+            CallTarget::Individual(1000123)
+        );
+        // Phone contact -> external; gateway prefix "9" prepended to "1234".
+        assert_eq!(
+            cp.contacts[0].resolve(&cp).unwrap(),
+            CallTarget::External { gateway_ssi: 8000002, digits: "91234".to_string() }
+        );
+    }
+
+    #[test]
+    fn dial_validation_rules() {
+        assert_eq!(normalize_dial(" 12 34 ").unwrap(), "1234");
+        assert_eq!(normalize_dial("+49*99#").unwrap(), "+49*99#");
+        assert!(normalize_dial("").is_err());
+        assert!(normalize_dial("12ab").is_err());
+        assert!(normalize_dial(&"9".repeat(25)).is_err());
+    }
+
+    #[test]
+    fn rejects_contact_with_both_forms() {
+        let toml = r#"
+[[contact]]
+name = "Bad"
+issi = 5
+number = "1"
+gateway = "gw"
+"#;
+        let cp = Codeplug::parse(toml).expect("parses");
+        assert!(cp.contacts[0].resolve(&cp).is_err());
     }
 
     #[test]

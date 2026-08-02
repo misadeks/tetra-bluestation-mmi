@@ -14,7 +14,7 @@ use slint::{ModelRc, VecModel};
 
 use crate::codeplug::Codeplug;
 use crate::protocol::{self, MsRuntimeState, ServiceStatus};
-use crate::{FolderRow, GroupRow, LogRow, MainWindow, ScanRow, SurveyRow};
+use crate::{ContactRow, FolderRow, GroupRow, LogRow, MainWindow, ScanRow, SurveyRow};
 
 /// Events fed into the app loop from net threads, timers, and the UI.
 pub enum AppEvent {
@@ -41,6 +41,8 @@ pub enum AppEvent {
     UiDialKey(String),
     /// Place a dialer call: (call_type 0=private/1=pstn/2=pabx, duplex).
     UiDialCall(i32, bool),
+    /// Place a call to a phone-book contact by its index in the pushed list.
+    UiCallContact(i32),
     UiCallPttDown,
     UiCallPttUp,
     UiGroupPttDown,
@@ -154,6 +156,10 @@ struct Call {
     answered: bool,
     queued: bool,
     active_since: Option<Instant>,
+    /// Display override for the peer name (e.g. a contact name). None = show SSI.
+    peer_label: Option<String>,
+    /// Display override for the sub-line (e.g. the dialled external number).
+    peer_sub: Option<String>,
     /// When we last played a downlink speech frame for this call (someone is
     /// speaking now, even if the SwMI doesn't tell us who).
     rx_at: Option<Instant>,
@@ -164,6 +170,10 @@ struct Dialing {
     peer_ssi: u32,
     group: bool,
     simplex: bool,
+    /// Display override for the peer name (e.g. a contact name).
+    peer_label: Option<String>,
+    /// Display override for the sub-line (e.g. the dialled external number).
+    peer_sub: Option<String>,
 }
 
 #[derive(Clone)]
@@ -571,7 +581,54 @@ pub fn run(
                 app.mic_muted = false;
                 let h = app.next_handle();
                 app.send(protocol::tncc_setup(h, ssi, false, duplex));
-                app.dialing = Some(Dialing { peer_ssi: ssi, group: false, simplex: !duplex });
+                app.dialing = Some(Dialing { peer_ssi: ssi, group: false, simplex: !duplex, peer_label: None, peer_sub: None });
+                push_calls(&app, &weak);
+            }
+            AppEvent::UiCallContact(idx) => {
+                if !app.require_online(&weak) {
+                    continue;
+                }
+                if app.state.registration_state != protocol::RegistrationState::Registered {
+                    app.notify(&weak, "Not registered", "Register the radio before placing a call.", 0);
+                    continue;
+                }
+                let Some(cp) = app.codeplug.as_ref() else { continue };
+                let Some(contact) = cp.contacts.get(idx as usize).cloned() else {
+                    continue;
+                };
+                let target = match contact.resolve(cp) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        app.notify(&weak, "Cannot call contact", &e, 0);
+                        continue;
+                    }
+                };
+                let label = match &contact.callsign {
+                    Some(cs) => format!("{} ({})", contact.name, cs),
+                    None => contact.name.clone(),
+                };
+                // Phone-book calls are duplex (hands-free), like the green Call button.
+                app.mic_muted = false;
+                let h = app.next_handle();
+                let (peer_ssi, sub) = match target {
+                    crate::codeplug::CallTarget::Individual(ssi) => {
+                        tracing::info!(name = %contact.name, ssi, "UI: call contact (individual)");
+                        app.send(protocol::tncc_setup(h, ssi, false, true));
+                        (ssi, ssi.to_string())
+                    }
+                    crate::codeplug::CallTarget::External { gateway_ssi, digits } => {
+                        tracing::info!(name = %contact.name, gateway_ssi, %digits, "UI: call contact (external)");
+                        app.send(protocol::tncc_setup_external(h, gateway_ssi, &digits, true));
+                        (gateway_ssi, digits)
+                    }
+                };
+                app.dialing = Some(Dialing {
+                    peer_ssi,
+                    group: false,
+                    simplex: false,
+                    peer_label: Some(label),
+                    peer_sub: Some(sub),
+                });
                 push_calls(&app, &weak);
             }
             AppEvent::UiCallPttDown => {
@@ -613,7 +670,7 @@ pub fn run(
                 if app.grp_call.is_none() && existing.is_none() {
                     // Idle -> start the group call; TnccSetup demands the floor.
                     app.grp_call = Some(GrpCall { gssi: sel, cid: None, talking: true });
-                    app.dialing = Some(Dialing { peer_ssi: sel, group: true, simplex: true });
+                    app.dialing = Some(Dialing { peer_ssi: sel, group: true, simplex: true, peer_label: None, peer_sub: None });
                     let h = app.next_handle();
                     app.send(protocol::tncc_setup(h, sel, true, false));
                 } else {
@@ -1277,6 +1334,12 @@ fn bind_dialing(app: &mut AppState, cid: u32) {
         if c.peer_ssi.is_none() {
             c.peer_ssi = Some(d.peer_ssi);
         }
+        if c.peer_label.is_none() {
+            c.peer_label = d.peer_label.clone();
+        }
+        if c.peer_sub.is_none() {
+            c.peer_sub = d.peer_sub.clone();
+        }
         if d.group {
             c.group = true;
         }
@@ -1838,6 +1901,47 @@ fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
     });
 
     push_groups(app, weak);
+    push_contacts(app, weak);
+}
+
+/// Build the Contacts model (phone book) from the codeplug, in `order`. Each row
+/// shows the target (ISSI, or number via a named gateway) and its kind badge.
+fn push_contacts(app: &AppState, weak: &slint::Weak<MainWindow>) {
+    let mut rows: Vec<ContactRow> = Vec::new();
+    if let Some(cp) = &app.codeplug {
+        for (i, c) in cp.contacts.iter().enumerate() {
+            // kind: 0 = individual (ISSI), 1 = external phone (PABX/PSTN).
+            let (kind, sub) = if let Some(issi) = c.issi {
+                (0, format!("ISSI {issi}"))
+            } else if let (Some(num), Some(gw_id)) = (c.number.as_ref(), c.gateway.as_ref()) {
+                let gw = cp.gateway_by_id(gw_id);
+                let gw_name = gw.map(|g| g.name.clone()).unwrap_or_else(|| gw_id.clone());
+                let kind_label = gw
+                    .map(|g| g.kind.to_uppercase())
+                    .filter(|k| !k.is_empty());
+                let sub = match kind_label {
+                    Some(k) => format!("{num} via {gw_name} ({k})"),
+                    None => format!("{num} via {gw_name}"),
+                };
+                (1, sub)
+            } else {
+                (0, "Invalid contact".to_string())
+            };
+            let title = match &c.callsign {
+                Some(cs) if !cs.is_empty() => format!("{} - {}", c.name, cs),
+                _ => c.name.clone(),
+            };
+            rows.push(ContactRow {
+                index: i as i32,
+                name: title.into(),
+                sub: sub.into(),
+                kind,
+            });
+        }
+    }
+    let _ = weak.upgrade_in_event_loop(move |w| {
+        w.set_contacts(ModelRc::new(VecModel::from(rows)));
+    });
 }
 
 /// Build the Groups + scan-list models (all codeplug talkgroups tagged
@@ -1999,8 +2103,8 @@ fn push_calls(app: &AppState, weak: &slint::Weak<MainWindow>) {
             (
                 true,
                 dir.to_string(),
-                peer_name(c.peer_ssi, false),
-                c.peer_ssi.map(|s| s.to_string()).unwrap_or_default(),
+                c.peer_label.clone().unwrap_or_else(|| peer_name(c.peer_ssi, false)),
+                c.peer_sub.clone().unwrap_or_else(|| c.peer_ssi.map(|s| s.to_string()).unwrap_or_default()),
                 label,
                 clock,
                 can_ptt,
@@ -2010,8 +2114,8 @@ fn push_calls(app: &AppState, weak: &slint::Weak<MainWindow>) {
             (
                 true,
                 "Outgoing".to_string(),
-                peer_name(Some(d.peer_ssi), false),
-                d.peer_ssi.to_string(),
+                d.peer_label.clone().unwrap_or_else(|| peer_name(Some(d.peer_ssi), false)),
+                d.peer_sub.clone().unwrap_or_else(|| d.peer_ssi.to_string()),
                 "Setting up...".to_string(),
                 String::new(),
                 false,

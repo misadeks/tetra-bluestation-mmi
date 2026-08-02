@@ -14,12 +14,19 @@ import "fonts/Inter-Bold.ttf";
 import "fonts/Inter-ExtraBold.ttf";
 
 export enum DeviceInput { Touch, Keypad }
-enum Screen { Home, Menu, Info, Folders, Dialer, Logs, LogDetail, Groups, Config, Survey, InCall }
+enum Screen { Home, Menu, Info, Folders, Dialer, Logs, LogDetail, Groups, Config, Survey, InCall, Contacts }
 
 export struct FolderRow {
     name: string,
     count: int,
     selected: bool,
+}
+
+export struct ContactRow {
+    index: int,
+    name: string,
+    sub: string,
+    kind: int, // 0 individual (ISSI), 1 external phone (PABX/PSTN)
 }
 
 export struct LogRow {
@@ -842,6 +849,7 @@ component MenuScreen inherits Rectangle {
     callback open-info;
     callback open-logs;
     callback open-groups;
+    callback open-contacts;
     callback open-config;
     callback open-survey;
     callback register;
@@ -873,6 +881,14 @@ component MenuScreen inherits Rectangle {
             icon: Icons.logs;
             clicked => {
                 root.open-logs();
+            }
+        }
+        ListRow {
+            title: "Contacts";
+            subtitle: "Phone book: call people and gateways";
+            icon: Icons.phone;
+            clicked => {
+                root.open-contacts();
             }
         }
         ListRow {
@@ -1382,6 +1398,34 @@ component GroupsScreen inherits Rectangle {
                 }
                 detach => {
                     root.detach(g.gssi);
+                }
+            }
+        }
+    }
+}
+
+component ContactsScreen inherits Rectangle {
+    in property <[ContactRow]> contacts;
+    callback call-contact(int);
+    background: transparent;
+    Flickable {
+        viewport-height: col.preferred-height;
+        col := VerticalLayout {
+            padding: 16px;
+            spacing: 10px;
+            alignment: start;
+            if root.contacts.length == 0: Text {
+                text: "No contacts programmed";
+                color: Palette.muted;
+                font-size: 16px;
+                horizontal-alignment: center;
+            }
+            for c in root.contacts: ListRow {
+                title: c.name;
+                subtitle: c.sub;
+                icon: c.kind == 1 ? Icons.phone : Icons.users;
+                clicked => {
+                    root.call-contact(c.index);
                 }
             }
         }
@@ -2115,6 +2159,7 @@ export component MainWindow inherits Window {
     in property <string> folder-name: "Talkgroups";
     in property <int> sel-folder;
     in property <[FolderRow]> folders;
+    in property <[ContactRow]> contacts;
     in property <bool> restart-required;
     in property <string> clock: "--:--:--";
     in property <string> date: "";
@@ -2160,6 +2205,7 @@ export component MainWindow inherits Window {
     callback ptt;
     callback dial-key(string);
     callback dial-call(int, bool);
+    callback call-contact(int);
     callback open-logs;
     callback alert-dismiss;
     callback group-select(int, int);
@@ -2212,6 +2258,9 @@ export component MainWindow inherits Window {
         if (root.screen == Screen.Config) {
             return "Config";
         }
+        if (root.screen == Screen.Contacts) {
+            return "Contacts";
+        }
         if (root.screen == Screen.Survey) {
             return "Cell Survey";
         }
@@ -2223,7 +2272,7 @@ export component MainWindow inherits Window {
 
     // Parent screen for the Back softkey.
     function back-target() -> Screen {
-        if (root.screen == Screen.Info || root.screen == Screen.Logs || root.screen == Screen.Groups || root.screen == Screen.Config || root.screen == Screen.Survey) {
+        if (root.screen == Screen.Info || root.screen == Screen.Logs || root.screen == Screen.Groups || root.screen == Screen.Config || root.screen == Screen.Survey || root.screen == Screen.Contacts) {
             return Screen.Menu;
         }
         if (root.screen == Screen.LogDetail) {
@@ -2307,6 +2356,9 @@ export component MainWindow inherits Window {
             }
             open-groups => {
                 root.screen = Screen.Groups;
+            }
+            open-contacts => {
+                root.screen = Screen.Contacts;
             }
             open-logs => {
                 root.open-logs();
@@ -2398,6 +2450,14 @@ export component MainWindow inherits Window {
             }
             refresh => {
                 root.refresh();
+            }
+        }
+
+        if root.device-input == DeviceInput.Touch && root.screen == Screen.Contacts: ContactsScreen {
+            vertical-stretch: 1;
+            contacts: root.contacts;
+            call-contact(i) => {
+                root.call-contact(i);
             }
         }
 

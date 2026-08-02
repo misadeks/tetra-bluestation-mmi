@@ -202,6 +202,32 @@ pub fn tncc_setup(handle: u32, called_party_ssi: u32, group: bool, duplex: bool)
     }}})
 }
 
+/// Originate an external (PABX/PSTN) call through a gateway ISSI, carrying the
+/// dialled digits verbatim in the external-subscriber-number IE. The UI has
+/// already applied any gateway prefix. External calls are duplex speech.
+pub fn tncc_setup_external(handle: u32, gateway_ssi: u32, digits: &str, duplex: bool) -> Value {
+    json!({ "TnccSetup": { "handle": handle, "request": {
+        "access_priority": null,
+        "area_selection": null,
+        "basic_service_information": basic_service("PointToPoint"),
+        "call_priority": "PriorityNotDefined",
+        "called_party_type_identifier": "Ssi",
+        "called_party_sna": null,
+        "called_party_ssi": gateway_ssi,
+        "called_party_extension": null,
+        "external_subscriber_number_called": digits,
+        "clir_control": null,
+        "hook_method_selection": "NoHookSignallingDirectThroughConnect",
+        "request_to_transmit_send_data": if duplex {
+            "RequestThatOtherMsLsMayTransmitSendData"
+        } else {
+            "RequestToTransmitSendData"
+        },
+        "simplex_duplex_selection": if duplex { "DuplexOperation" } else { "SimplexOperation" },
+        "traffic_stealing": null,
+    }}})
+}
+
 /// Answer an incoming call (U-CONNECT / U-ALERT) named by `call_identifier`.
 pub fn tncc_setup_response(handle: u32, call_identifier: u32, duplex: bool, on_hook: bool) -> Value {
     json!({ "TnccSetupResponse": { "handle": handle, "call_identifier": call_identifier, "response": {
@@ -444,6 +470,17 @@ mod tests {
         assert_eq!(
             setup["TnccSetup"]["request"]["called_party_ssi"],
             json!(1234567)
+        );
+
+        let ext = tncc_setup_external(9, 8000002, "91234", true);
+        let req = &ext["TnccSetup"]["request"];
+        assert_eq!(req["called_party_ssi"], json!(8000002));
+        assert_eq!(req["external_subscriber_number_called"], json!("91234"));
+        assert_eq!(req["called_party_type_identifier"], json!("Ssi"));
+        assert_eq!(req["simplex_duplex_selection"], json!("DuplexOperation"));
+        assert_eq!(
+            req["basic_service_information"]["communication_type"],
+            json!("PointToPoint")
         );
     }
 
