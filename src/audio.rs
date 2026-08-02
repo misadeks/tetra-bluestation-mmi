@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use crossbeam_channel::Sender;
+use crossbeam_channel::{Receiver, Sender};
 use libloading::Library;
 
 use crate::app::AppEvent;
@@ -303,10 +303,9 @@ impl Resampler {
 /// The running voice engine. Owns the audio streams (kept alive) and shared
 /// playback/uplink state. Created and dropped on the app loop thread.
 pub struct AudioEngine {
-    decoder: Option<Decoder>,
-    playback: Arc<Mutex<VecDeque<i16>>>, // output-rate mono
-    out_rate: u32,
-    prebuffer: usize,
+    /// Raw downlink frames to the decoder thread (bounded, drop-oldest).
+    dec_tx: Sender<(Vec<u8>, bool)>,
+    dec_drop: Receiver<(Vec<u8>, bool)>,
     uplink_active: Arc<AtomicBool>,
     uplink_cid: Arc<AtomicU32>,
     _out_stream: cpal::Stream,
@@ -361,8 +360,50 @@ impl AudioEngine {
         )?;
         out_stream.play().ok()?;
 
+        // Decoder thread: raw downlink bits -> PCM -> playback queue. Runs OFF the
+        // app-loop thread so heavy ACELP decode never delays the uplink relay. A
+        // small bounded queue with drop-oldest keeps downlink latency in check.
+        let (dec_tx, dec_rx) = crossbeam_channel::bounded::<(Vec<u8>, bool)>(8);
+        let dec_drop = dec_rx.clone();
+        {
+            let codec = codec.clone();
+            let playback = playback.clone();
+            std::thread::Builder::new()
+                .name("acelp-dec".into())
+                .spawn(move || {
+                    let Some(dec) = Decoder::new(codec) else {
+                        tracing::warn!("audio: decoder context init failed; downlink muted");
+                        return;
+                    };
+                    for (bits, bad) in dec_rx.iter() {
+                        let Some(pcm8k) = dec.decode(&bits, bad) else { continue };
+                        let mut rs = Resampler::new(CODEC_RATE, out_rate);
+                        let input: Vec<f32> = pcm8k.iter().map(|&s| s as f32).collect();
+                        let mut out =
+                            Vec::with_capacity((FRAME_SAMPLES * out_rate as usize) / 8000 + 4);
+                        rs.process(&input, &mut out);
+                        let mut q = playback.lock().unwrap();
+                        for v in out {
+                            q.push_back(v.clamp(-32768.0, 32767.0) as i16);
+                        }
+                        // Bound latency: keep at most ~4x the jitter cushion (or
+                        // ~1 s if none), dropping oldest if we get far ahead.
+                        let cap = if prebuffer > 0 { prebuffer * 4 } else { out_rate as usize };
+                        while q.len() > cap {
+                            q.pop_front();
+                        }
+                    }
+                })
+                .ok()?;
+        }
+
         // Encoder thread: PCM frames -> ACELP bits -> MsUplinkSpeech via app loop.
-        let (enc_tx, enc_rx) = crossbeam_channel::unbounded::<Vec<i16>>();
+        // The capture->encode queue is bounded (drop-oldest, see build_input_stream)
+        // so if the encoder ever runs below real time the uplink stays current
+        // instead of accumulating unbounded latency (which the far end hears as a
+        // fade to silence).
+        let (enc_tx, enc_rx) = crossbeam_channel::bounded::<Vec<i16>>(3);
+        let enc_drop = enc_rx.clone();
         {
             let codec = codec.clone();
             let cid = uplink_cid.clone();
@@ -402,19 +443,13 @@ impl AudioEngine {
             in_rate,
             uplink_active.clone(),
             enc_tx,
+            enc_drop,
         )?;
         in_stream.play().ok()?;
 
-        let decoder = Decoder::new(codec.clone());
-        if decoder.is_none() {
-            tracing::warn!("audio: decoder context init failed; downlink muted");
-        }
-
         Some(AudioEngine {
-            decoder,
-            playback,
-            out_rate,
-            prebuffer,
+            dec_tx,
+            dec_drop,
             uplink_active,
             uplink_cid,
             _out_stream: out_stream,
@@ -422,28 +457,18 @@ impl AudioEngine {
         })
     }
 
-    /// Decode a downlink speech frame and queue it for playback.
+    /// Queue a downlink speech frame for decoding on the decoder thread. Cheap:
+    /// no decode happens on the caller (app-loop) thread. If the decoder has
+    /// fallen behind, drop the oldest queued frame so latency stays bounded.
     pub fn play_downlink(&self, bits: &[u8], bad: bool) {
-        let Some(dec) = &self.decoder else { return };
-        let Some(pcm8k) = dec.decode(bits, bad) else { return };
-        // Resample 8 kHz -> output rate with a fresh linear pass per frame.
-        let mut rs = Resampler::new(CODEC_RATE, self.out_rate);
-        let input: Vec<f32> = pcm8k.iter().map(|&s| s as f32).collect();
-        let mut out = Vec::with_capacity((FRAME_SAMPLES * self.out_rate as usize) / 8000 + 4);
-        rs.process(&input, &mut out);
-        let mut q = self.playback.lock().unwrap();
-        for v in out {
-            q.push_back(v.clamp(-32768.0, 32767.0) as i16);
-        }
-        // Bound latency: keep at most ~4x the jitter cushion (or ~1 s if none),
-        // dropping the oldest audio if we ever get far ahead.
-        let cap = if self.prebuffer > 0 {
-            self.prebuffer * 4
-        } else {
-            self.out_rate as usize
-        };
-        while q.len() > cap {
-            q.pop_front();
+        let item = (bits.to_vec(), bad);
+        match self.dec_tx.try_send(item) {
+            Ok(()) => {}
+            Err(crossbeam_channel::TrySendError::Full(item)) => {
+                let _ = self.dec_drop.try_recv();
+                let _ = self.dec_tx.try_send(item);
+            }
+            Err(crossbeam_channel::TrySendError::Disconnected(_)) => {}
         }
     }
 
@@ -530,6 +555,7 @@ fn build_input_stream(
     in_rate: u32,
     uplink_active: Arc<AtomicBool>,
     enc_tx: Sender<Vec<i16>>,
+    enc_drop: Receiver<Vec<i16>>,
 ) -> Option<cpal::Stream> {
     let sample_format = cfg.sample_format();
     let config: cpal::StreamConfig = cfg.clone().into();
@@ -558,7 +584,17 @@ fn build_input_stream(
         }
         while acc.len() >= FRAME_SAMPLES {
             let frame: Vec<i16> = acc.drain(0..FRAME_SAMPLES).collect();
-            let _ = enc_tx.send(frame);
+            // Bounded, drop-oldest: if the encoder has fallen behind, discard the
+            // oldest queued frame and enqueue the newest so uplink latency stays
+            // capped instead of growing without bound.
+            match enc_tx.try_send(frame) {
+                Ok(()) => {}
+                Err(crossbeam_channel::TrySendError::Full(f)) => {
+                    let _ = enc_drop.try_recv();
+                    let _ = enc_tx.try_send(f);
+                }
+                Err(crossbeam_channel::TrySendError::Disconnected(_)) => {}
+            }
         }
     };
 
