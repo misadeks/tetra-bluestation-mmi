@@ -14,7 +14,7 @@ use slint::{ModelRc, VecModel};
 
 use crate::codeplug::Codeplug;
 use crate::protocol::{self, MsRuntimeState, ServiceStatus};
-use crate::{ContactRow, FolderRow, GroupRow, LogRow, MainWindow, ScanRow, SurveyRow};
+use crate::{ContactRow, DialTarget, FolderRow, GroupRow, LogRow, MainWindow, ScanRow, SurveyRow};
 
 /// Events fed into the app loop from net threads, timers, and the UI.
 pub enum AppEvent {
@@ -545,7 +545,7 @@ pub fn run(
                 let weak = weak.clone();
                 let _ = weak.upgrade_in_event_loop(move |w| w.set_dial_number(n.into()));
             }
-            AppEvent::UiDialCall(call_type, duplex) => {
+            AppEvent::UiDialCall(target, duplex) => {
                 if !app.require_online(&weak) {
                     continue;
                 }
@@ -553,35 +553,60 @@ pub fn run(
                     app.notify(&weak, "Not registered", "Register the radio before placing a call.", 0);
                     continue;
                 }
-                // PSTN/PABX gateway calls are not wired up yet (UI is ready; the
-                // wire encoding needs confirming against the stack).
-                if call_type != 0 {
-                    app.notify(
-                        &weak,
-                        "Not available",
-                        "PSTN and PABX calls are not supported yet.",
-                        0,
-                    );
+                if target == 0 {
+                    // Private (individual ISSI) call.
+                    let valid = app.dial_number.parse::<u32>().map(|n| n >= 1).unwrap_or(false);
+                    if !valid {
+                        app.notify(
+                            &weak,
+                            "Invalid number",
+                            "Enter a valid private number (ISSI) to call.",
+                            0,
+                        );
+                        continue;
+                    }
+                    let ssi = app.dial_number.parse::<u32>().unwrap_or(0);
+                    tracing::info!(number = %app.dial_number, duplex, "UI: dial private call");
+                    // Individual call: duplex (mic streams the whole call) or
+                    // simplex (PTT-keyed).
+                    app.mic_muted = false;
+                    let h = app.next_handle();
+                    app.send(protocol::tncc_setup(h, ssi, false, duplex));
+                    app.dialing = Some(Dialing { peer_ssi: ssi, group: false, simplex: !duplex, peer_label: None, peer_sub: None });
+                    push_calls(&app, &weak);
                     continue;
                 }
-                let valid = app.dial_number.parse::<u32>().map(|n| n >= 1).unwrap_or(false);
-                if !valid {
-                    app.notify(
-                        &weak,
-                        "Invalid number",
-                        "Enter a valid private number (ISSI) to call.",
-                        0,
-                    );
+                // Gateway (external PABX/PSTN) call: target index 1.. maps to
+                // codeplug.gateways[target - 1]. Dial the gateway ISSI and carry
+                // prefix + typed number in the external-subscriber-number IE.
+                let gw = app
+                    .codeplug
+                    .as_ref()
+                    .and_then(|cp| cp.gateways.get((target - 1) as usize))
+                    .cloned();
+                let Some(gw) = gw else {
+                    app.notify(&weak, "No gateway", "That gateway is no longer available.", 0);
                     continue;
-                }
-                tracing::info!(number = %app.dial_number, duplex, "UI: dial call");
-                let ssi = app.dial_number.parse::<u32>().unwrap_or(0);
-                // Individual call from the dialer: duplex (full-duplex, mic streams
-                // the whole call) or simplex (PTT-keyed).
+                };
+                let digits = match crate::codeplug::normalize_dial(&format!("{}{}", gw.prefix, app.dial_number)) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        app.notify(&weak, "Invalid number", &e, 0);
+                        continue;
+                    }
+                };
+                tracing::info!(gateway = %gw.name, gateway_ssi = gw.gateway_issi, %digits, "UI: dial external call");
+                // External calls are always duplex (phone-style).
                 app.mic_muted = false;
                 let h = app.next_handle();
-                app.send(protocol::tncc_setup(h, ssi, false, duplex));
-                app.dialing = Some(Dialing { peer_ssi: ssi, group: false, simplex: !duplex, peer_label: None, peer_sub: None });
+                app.send(protocol::tncc_setup_external(h, gw.gateway_issi, &digits, true));
+                app.dialing = Some(Dialing {
+                    peer_ssi: gw.gateway_issi,
+                    group: false,
+                    simplex: false,
+                    peer_label: Some(gw.name.clone()),
+                    peer_sub: Some(digits),
+                });
                 push_calls(&app, &weak);
             }
             AppEvent::UiCallContact(idx) => {
@@ -1902,6 +1927,32 @@ fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
 
     push_groups(app, weak);
     push_contacts(app, weak);
+    push_dial_targets(app, weak);
+}
+
+/// Build the dialer target selector: "Private" (ISSI) plus one entry per
+/// codeplug gateway, in order. Each carries the digit cap for the typed number
+/// (private ISSI = 8; gateway = 24 - prefix length, since prefix + number must
+/// fit the 24-digit external-subscriber-number IE).
+fn push_dial_targets(app: &AppState, weak: &slint::Weak<MainWindow>) {
+    let mut targets: Vec<DialTarget> = vec![DialTarget {
+        label: "Private".into(),
+        max_len: 8,
+    }];
+    if let Some(cp) = &app.codeplug {
+        for g in &cp.gateways {
+            let cap = (crate::codeplug::MAX_EXTERNAL_DIGITS as i32
+                - g.prefix.chars().count() as i32)
+                .max(1);
+            targets.push(DialTarget {
+                label: g.name.clone().into(),
+                max_len: cap,
+            });
+        }
+    }
+    let _ = weak.upgrade_in_event_loop(move |w| {
+        w.set_dial_targets(ModelRc::new(VecModel::from(targets)));
+    });
 }
 
 /// Build the Contacts model (phone book) from the codeplug, in `order`. Each row

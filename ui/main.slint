@@ -29,6 +29,13 @@ export struct ContactRow {
     kind: int, // 0 individual (ISSI), 1 external phone (PABX/PSTN)
 }
 
+// A selectable dialer target: index 0 is always "Private" (ISSI); the rest are
+// codeplug gateways in order. max-len is the digit cap for the typed number.
+export struct DialTarget {
+    label: string,
+    max-len: int,
+}
+
 export struct LogRow {
     time: string,
     variant: string,
@@ -1892,43 +1899,61 @@ component DialKey inherits Rectangle {
 
 component DialerScreen inherits Rectangle {
     in property <string> number;
-    // 0 = Private (ISSI), 1 = PSTN, 2 = PABX.
-    property <int> call-type: 0;
-    // Max digits: ISSI is 24 bits (8 digits); external PSTN/PABX numbers are
-    // E.164 (up to 20 digits per the TETRA CMCE external-subscriber-number IE).
-    property <int> max-len: root.call-type == 0 ? 8 : 20;
+    // Selectable targets: index 0 = Private (ISSI), then one per codeplug gateway.
+    in property <[DialTarget]> targets: [{ label: "Private", max-len: 8 }];
+    // Currently selected target index.
+    property <int> sel: 0;
+    // Digit cap for the current target (private ISSI = 8; gateway = 24 - prefix).
+    property <int> max-len: root.sel < root.targets.length ? root.targets[root.sel].max-len : 8;
+    property <bool> is-private: root.sel == 0;
     callback key(string);
-    // place-call(call-type, duplex)
+    // place-call(target-index, duplex)
     callback place-call(int, bool);
     background: transparent;
     VerticalLayout {
         padding: 18px;
         spacing: 12px;
 
-        // Call-type selector: Private / PSTN / PABX.
-        HorizontalLayout {
-            spacing: 8px;
-            for seg[i] in ["Private", "PSTN", "PABX"]: Rectangle {
-                height: 54px;
-                horizontal-stretch: 1;
-                border-radius: 12px;
-                border-width: 1px;
-                border-color: root.call-type == i ? Palette.accent : Palette.line2;
-                background: root.call-type == i ? #33a7dd29 : Palette.surface;
-                TouchArea {
-                    clicked => {
-                        root.call-type = i;
-                        // Trim an over-long number when switching to a tighter cap.
-                        root.key(i == 0 ? "max8" : "max20");
+        // Target selector: Private + one segment per gateway. Scrolls sideways
+        // when there are more targets than fit on screen.
+        Rectangle {
+            height: 54px;
+            Flickable {
+                width: 100%;
+                height: 100%;
+                viewport-width: selrow.preferred-width;
+                viewport-height: 54px;
+                selrow := HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+                    for t[i] in root.targets: Rectangle {
+                        height: 54px;
+                        min-width: 92px;
+                        border-radius: 12px;
+                        border-width: 1px;
+                        border-color: root.sel == i ? Palette.accent : Palette.line2;
+                        background: root.sel == i ? #33a7dd29 : Palette.surface;
+                        TouchArea {
+                            clicked => {
+                                root.sel = i;
+                                // Trim an over-long number to the new target's cap.
+                                root.key("max\{t.max-len}");
+                            }
+                        }
+                        HorizontalLayout {
+                            padding-left: 16px;
+                            padding-right: 16px;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: t.label;
+                                    color: root.sel == i ? #9fd3ef : Palette.muted;
+                                    font-size: 16px;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
                     }
-                }
-                Text {
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    text: seg;
-                    color: root.call-type == i ? #9fd3ef : Palette.muted;
-                    font-size: 16px;
-                    font-weight: 700;
                 }
             }
         }
@@ -2005,7 +2030,7 @@ component DialerScreen inherits Rectangle {
                     enabled: root.number != "";
                     clicked => {
                         // Green Call = duplex.
-                        root.place-call(root.call-type, true);
+                        root.place-call(root.sel, true);
                     }
                 }
                 Icon {
@@ -2045,13 +2070,13 @@ component DialerScreen inherits Rectangle {
         Rectangle { height: 26px; }
 
         // Docked PTT: press to place a SIMPLEX (PTT) private call. Only for
-        // Private calls; PSTN/PABX are phone calls (duplex only, use Call).
+        // Private calls; gateway (PABX/PSTN) calls are duplex only, use Call.
         Ptt {
-            text: root.call-type == 0 ? "Push to talk" : "PTT (private only)";
-            enabled: root.number != "" && root.call-type == 0;
+            text: root.is-private ? "Push to talk" : "PTT (private only)";
+            enabled: root.number != "" && root.is-private;
             state: 0;
             press-down => {
-                root.place-call(root.call-type, false);
+                root.place-call(root.sel, false);
             }
         }
     }
@@ -2160,6 +2185,7 @@ export component MainWindow inherits Window {
     in property <int> sel-folder;
     in property <[FolderRow]> folders;
     in property <[ContactRow]> contacts;
+    in property <[DialTarget]> dial-targets: [{ label: "Private", max-len: 8 }];
     in property <bool> restart-required;
     in property <string> clock: "--:--:--";
     in property <string> date: "";
@@ -2484,6 +2510,7 @@ export component MainWindow inherits Window {
         if root.device-input == DeviceInput.Touch && root.screen == Screen.Dialer: DialerScreen {
             vertical-stretch: 1;
             number: root.dial-number;
+            targets: root.dial-targets;
             key(k) => {
                 root.dial-key(k);
             }
