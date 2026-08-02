@@ -3054,7 +3054,7 @@ component TreeFolderHeader inherits Rectangle {
     in property <bool> collapsed;
     callback tapped;
     callback edit;
-    height: 60px;
+    height: 76px;
     border-radius: 12px;
     background: touch.pressed ? #1b2836 : #16202b;
     border-width: 1px;
@@ -3117,7 +3117,7 @@ component TreeGroupRow inherits Rectangle {
     callback tapped;
     callback move-up;
     callback move-down;
-    height: 66px;
+    height: 62px;
     border-radius: 12px;
     background: touch.pressed ? #16202b : Palette.surface;
     border-width: 1px;
@@ -3233,7 +3233,7 @@ component TreeScreen inherits Rectangle {
                 spacing: 8px;
                 alignment: start;
                 for r in root.rows: Rectangle {
-                    height: r.kind == 0 ? 60px : (r.kind == 2 ? 46px : (r.kind == 3 ? 40px : 66px));
+                    height: r.kind == 0 ? 76px : (r.kind == 2 ? 46px : (r.kind == 3 ? 40px : 62px));
                     if r.kind == 0: TreeFolderHeader {
                         width: 100%;
                         title: r.title;
