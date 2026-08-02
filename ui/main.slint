@@ -34,6 +34,7 @@ export struct ConvRow {
 
 // A single message bubble within a thread.
 export struct MsgRow {
+    id: int,
     outgoing: bool,
     text: string,
     state: int, // 0 sending, 1 delivered, 2 read, 3 failed, 4 inbound
@@ -1147,6 +1148,92 @@ component AlertOverlay inherits Rectangle {
     }
 }
 
+// Modal confirm dialog for destructive actions (e.g. deleting a message or
+// thread). `confirm` runs the action; tapping the scrim or Cancel dismisses.
+component ConfirmOverlay inherits Rectangle {
+    in property <string> title;
+    in property <string> message;
+    in property <string> confirm-label: "Delete";
+    callback confirm;
+    callback cancel;
+    width: 100%;
+    height: 100%;
+    background: #03070cc7;
+
+    TouchArea {
+        clicked => {
+            root.cancel();
+        }
+    }
+
+    Rectangle {
+        width: Math.min(parent.width - 44px, 400px);
+        height: card.preferred-height;
+        background: #131c26;
+        border-radius: 20px;
+        border-width: 1px;
+        border-color: Palette.line2;
+        // Swallow taps on the card so they don't dismiss via the scrim.
+        TouchArea { }
+        card := VerticalLayout {
+            padding: 26px;
+            spacing: 16px;
+            alignment: start;
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 68px;
+                    height: 68px;
+                    border-radius: 34px;
+                    background: #f0555a29;
+                    Icon {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        d: Icons.trash;
+                        tint: Palette.red;
+                        size: 32px;
+                    }
+                }
+            }
+            Text {
+                text: root.title;
+                color: #ffffff;
+                font-size: 22px;
+                font-weight: 700;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+            if root.message != "": Text {
+                text: root.message;
+                color: Palette.muted;
+                font-size: 16px;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+            HorizontalLayout {
+                spacing: 12px;
+                SecondaryButton {
+                    text: "Cancel";
+                    icon: Icons.close;
+                    horizontal-stretch: 1;
+                    clicked => {
+                        root.cancel();
+                    }
+                }
+                SecondaryButton {
+                    text: root.confirm-label;
+                    icon: Icons.trash;
+                    danger: true;
+                    horizontal-stretch: 1;
+                    clicked => {
+                        root.confirm();
+                    }
+                }
+            }
+        }
+    }
+}
+
 component InfoScreen inherits Rectangle {
     in property <string> reg-state;
     in property <bool> registered;
@@ -2139,14 +2226,37 @@ component ConvRowView inherits Rectangle {
     in property <int> unread;
     in property <string> ts;
     callback open;
+    callback long-press;
+    property <bool> held: false;
     height: 88px;
     border-radius: 16px;
     border-width: 1px;
     border-color: Palette.line;
     background: touch.pressed ? #16202b : Palette.surface;
+    hold-timer := Timer {
+        interval: 500ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            root.held = true;
+            root.long-press();
+        }
+    }
     touch := TouchArea {
-        clicked => {
-            root.open();
+        pointer-event(ev) => {
+            if (ev.kind == PointerEventKind.down) {
+                root.held = false;
+                hold-timer.running = true;
+            }
+            if (ev.kind == PointerEventKind.up) {
+                hold-timer.running = false;
+                if (!root.held) {
+                    root.open();
+                }
+            }
+            if (ev.kind == PointerEventKind.cancel) {
+                hold-timer.running = false;
+            }
         }
     }
     HorizontalLayout {
@@ -2218,6 +2328,11 @@ component MessagesScreen inherits Rectangle {
     in property <[ConvRow]> conversations;
     callback open-thread(int);
     callback new-message;
+    callback delete-thread(int, bool);
+    property <bool> confirm-visible: false;
+    property <int> pending-peer;
+    property <bool> pending-group;
+    property <string> pending-name;
     background: transparent;
     VerticalLayout {
         padding: 16px;
@@ -2242,6 +2357,12 @@ component MessagesScreen inherits Rectangle {
                     open => {
                         root.open-thread(c.peer);
                     }
+                    long-press => {
+                        root.pending-peer = c.peer;
+                        root.pending-group = c.is-group;
+                        root.pending-name = c.name;
+                        root.confirm-visible = true;
+                    }
                 }
             }
         }
@@ -2253,6 +2374,18 @@ component MessagesScreen inherits Rectangle {
             }
         }
     }
+    if root.confirm-visible: ConfirmOverlay {
+        title: "Delete conversation";
+        message: "Delete all messages with " + root.pending-name + "? This cannot be undone.";
+        confirm-label: "Delete";
+        confirm => {
+            root.confirm-visible = false;
+            root.delete-thread(root.pending-peer, root.pending-group);
+        }
+        cancel => {
+            root.confirm-visible = false;
+        }
+    }
 }
 
 // A single message bubble (right-aligned + ticks when outgoing).
@@ -2261,13 +2394,38 @@ component MsgBubble inherits Rectangle {
     in property <string> text;
     in property <int> state; // 0 sending,1 delivered,2 read,3 failed,4 inbound
     in property <string> ts;
+    callback long-press;
+    property <bool> held: false;
     HorizontalLayout {
         padding: 2px;
         if root.outgoing: Rectangle { horizontal-stretch: 1; }
         Rectangle {
             max-width: 520px;
             border-radius: 14px;
-            background: root.outgoing ? #1f6f9e : #1b2732;
+            background: bubble-touch.pressed ? (root.outgoing ? #2a7fb0 : #24333f) : (root.outgoing ? #1f6f9e : #1b2732);
+            hold-timer := Timer {
+                interval: 500ms;
+                running: false;
+                triggered => {
+                    self.running = false;
+                    root.held = true;
+                    root.long-press();
+                }
+            }
+            bubble-touch := TouchArea {
+                pointer-event(ev) => {
+                    if (ev.kind == PointerEventKind.down) {
+                        root.held = false;
+                        hold-timer.running = true;
+                    }
+                    if (ev.kind == PointerEventKind.up) {
+                        hold-timer.running = false;
+                    }
+                    if (ev.kind == PointerEventKind.cancel) {
+                        hold-timer.running = false;
+                    }
+                }
+            }
             VerticalLayout {
                 padding: 10px;
                 spacing: 3px;
@@ -2309,6 +2467,10 @@ component MsgThreadScreen inherits Rectangle {
     callback backspace;
     callback shift-toggle;
     callback send;
+    callback delete-message(int);
+    property <bool> confirm-visible: false;
+    property <int> pending-id;
+    property <string> pending-text;
     background: transparent;
     VerticalLayout {
         padding: 12px;
@@ -2330,6 +2492,11 @@ component MsgThreadScreen inherits Rectangle {
                     text: m.text;
                     state: m.state;
                     ts: m.ts;
+                    long-press => {
+                        root.pending-id = m.id;
+                        root.pending-text = m.text;
+                        root.confirm-visible = true;
+                    }
                 }
             }
         }
@@ -2375,6 +2542,18 @@ component MsgThreadScreen inherits Rectangle {
             clicked => {
                 root.send();
             }
+        }
+    }
+    if root.confirm-visible: ConfirmOverlay {
+        title: "Delete message";
+        message: "Delete this message? This cannot be undone.";
+        confirm-label: "Delete";
+        confirm => {
+            root.confirm-visible = false;
+            root.delete-message(root.pending-id);
+        }
+        cancel => {
+            root.confirm-visible = false;
         }
     }
 }
@@ -3314,6 +3493,8 @@ export component MainWindow inherits Window {
     callback msg-backspace;
     callback msg-shift-toggle;
     callback msg-send;
+    callback msg-delete(int);
+    callback msg-delete-thread(int, bool);
     callback contact-edit(int);
     callback contact-delete(int);
     callback contact-save;
@@ -3637,6 +3818,9 @@ export component MainWindow inherits Window {
                 root.msg-new();
                 root.screen = Screen.MsgNew;
             }
+            delete-thread(p, g) => {
+                root.msg-delete-thread(p, g);
+            }
         }
 
         if root.device-input == DeviceInput.Touch && root.screen == Screen.MsgThread: MsgThreadScreen {
@@ -3655,6 +3839,9 @@ export component MainWindow inherits Window {
             }
             send => {
                 root.msg-send();
+            }
+            delete-message(id) => {
+                root.msg-delete(id);
             }
         }
 

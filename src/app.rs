@@ -119,6 +119,10 @@ pub enum AppEvent {
     UiMsgNewBackspace,
     /// Open a thread for the entered new-conversation ISSI.
     UiMsgNewStart,
+    /// Delete a single stored message by its local id.
+    UiMsgDelete(i32),
+    /// Delete a whole conversation (peer ssi, is_group).
+    UiMsgDeleteThread(i32, bool),
 }
 
 struct AppState {
@@ -1300,6 +1304,33 @@ pub fn run(
                         let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::MsgThread));
                     }
                     _ => app.notify(&weak, "Invalid ISSI", "Enter a valid ISSI number.", 0),
+                }
+            }
+            AppEvent::UiMsgDelete(id) => {
+                let id = id as u64;
+                let before = app.messages.messages.len();
+                app.messages.messages.retain(|m| m.id != id);
+                if app.messages.messages.len() != before {
+                    app.messages.save();
+                    push_thread(&app, &weak);
+                    push_conversations(&app, &weak);
+                }
+            }
+            AppEvent::UiMsgDeleteThread(peer, is_group) => {
+                let ssi = peer as u32;
+                let before = app.messages.messages.len();
+                app.messages
+                    .messages
+                    .retain(|m| !(m.peer_ssi == ssi && m.is_group == is_group));
+                if app.messages.messages.len() != before {
+                    app.messages.save();
+                    // If the deleted thread was open, drop back to the list.
+                    if app.msg_thread_peer == Some((ssi, is_group)) {
+                        app.msg_thread_peer = None;
+                        let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::Messages));
+                    }
+                    push_thread(&app, &weak);
+                    push_conversations(&app, &weak);
                 }
             }
         }
@@ -2599,6 +2630,7 @@ fn push_thread(app: &AppState, weak: &slint::Weak<MainWindow>) {
         for m in &app.messages.messages {
             if m.peer_ssi == ssi && m.is_group == is_group {
                 rows.push(MsgRow {
+                    id: m.id as i32,
                     outgoing: m.outgoing,
                     text: m.text.clone().into(),
                     state: m.state as i32,

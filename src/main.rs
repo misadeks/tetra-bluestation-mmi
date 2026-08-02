@@ -342,6 +342,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     {
         let tx = events_tx.clone();
+        window.on_msg_delete(move |id| {
+            let _ = tx.send(app::AppEvent::UiMsgDelete(id));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_msg_delete_thread(move |peer, is_group| {
+            let _ = tx.send(app::AppEvent::UiMsgDeleteThread(peer, is_group));
+        });
+    }
+    {
+        let tx = events_tx.clone();
         window.on_open_logs(move || {
             let _ = tx.send(app::AppEvent::UiOpenLogs);
         });
