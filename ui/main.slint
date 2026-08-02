@@ -4419,6 +4419,7 @@ component DialerScreen inherits Rectangle {
     // place-call(target-index, duplex)
     callback place-call(int, bool);
     callback open-recents;
+    callback open-contacts;
     background: transparent;
     VerticalLayout {
         padding: 18px;
@@ -4505,51 +4506,99 @@ component DialerScreen inherits Rectangle {
                         horizontal-alignment: center;
                     }
                 }
-                // Recent calls entry, pinned just above the dialer keypad.
-                Rectangle {
-                    height: 78px;
-                    border-radius: 16px;
-                    border-width: 1px;
-                    border-color: Palette.line2;
-                    background: rec-ta.pressed ? #16202b : Palette.surface;
-                    rec-ta := TouchArea {
-                        clicked => {
-                            root.open-recents();
+                // Recent calls + Contacts, side by side, pinned above the keypad.
+                HorizontalLayout {
+                    spacing: 10px;
+                    // Recent calls.
+                    Rectangle {
+                        height: 78px;
+                        horizontal-stretch: 1;
+                        border-radius: 16px;
+                        border-width: 1px;
+                        border-color: Palette.line2;
+                        background: rec-ta.pressed ? #16202b : Palette.surface;
+                        rec-ta := TouchArea {
+                            clicked => {
+                                root.open-recents();
+                            }
                         }
-                    }
-                    HorizontalLayout {
-                        padding-left: 16px;
-                        padding-right: 16px;
-                        spacing: 14px;
-                        VerticalLayout {
-                            alignment: center;
-                            Rectangle {
-                                width: 50px;
-                                height: 50px;
-                                border-radius: 14px;
-                                background: #33a7dd1f;
-                                Icon {
-                                    x: (parent.width - self.width) / 2;
-                                    y: (parent.height - self.height) / 2;
-                                    d: Icons.phone;
-                                    tint: Palette.accent;
-                                    size: 24px;
+                        HorizontalLayout {
+                            padding-left: 14px;
+                            padding-right: 14px;
+                            spacing: 12px;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 46px;
+                                    height: 46px;
+                                    border-radius: 13px;
+                                    background: #33a7dd1f;
+                                    Icon {
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                        d: Icons.phone;
+                                        tint: Palette.accent;
+                                        size: 22px;
+                                    }
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                Text {
+                                    text: "Recents";
+                                    color: Palette.txt;
+                                    font-size: 19px;
+                                    font-weight: 700;
+                                    overflow: elide;
                                 }
                             }
                         }
-                        VerticalLayout {
-                            alignment: center;
-                            horizontal-stretch: 1;
-                            Text {
-                                text: "Recent calls";
-                                color: Palette.txt;
-                                font-size: 20px;
-                                font-weight: 700;
+                    }
+                    // Contacts.
+                    Rectangle {
+                        height: 78px;
+                        horizontal-stretch: 1;
+                        border-radius: 16px;
+                        border-width: 1px;
+                        border-color: Palette.line2;
+                        background: con-ta.pressed ? #16202b : Palette.surface;
+                        con-ta := TouchArea {
+                            clicked => {
+                                root.open-contacts();
                             }
                         }
-                        VerticalLayout {
-                            alignment: center;
-                            Icon { d: Icons.chevron; tint: Palette.faint; size: 22px; }
+                        HorizontalLayout {
+                            padding-left: 14px;
+                            padding-right: 14px;
+                            spacing: 12px;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 46px;
+                                    height: 46px;
+                                    border-radius: 13px;
+                                    background: #37c06a24;
+                                    Icon {
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                        d: Icons.users;
+                                        tint: #6fe0a0;
+                                        size: 22px;
+                                    }
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                Text {
+                                    text: "Contacts";
+                                    color: Palette.txt;
+                                    font-size: 19px;
+                                    font-weight: 700;
+                                    overflow: elide;
+                                }
+                            }
                         }
                     }
                 }
@@ -5682,6 +5731,10 @@ export component MainWindow inherits Window {
             open-recents => {
                 root.open-recents();
                 root.screen = Screen.Recents;
+            }
+            open-contacts => {
+                root.contact-search-clear();
+                root.screen = Screen.Contacts;
             }
         }
         if root.device-input == DeviceInput.Keypad: KeypadHome {
