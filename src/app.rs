@@ -14,7 +14,7 @@ use slint::{ModelRc, VecModel};
 
 use crate::codeplug::Codeplug;
 use crate::protocol::{self, MsRuntimeState, ServiceStatus};
-use crate::{ContactRow, ConvRow, DialTarget, EntityRow, FolderRow, FormField, GroupRow, LogRow, MainWindow, MsgRow, PickRow, RecentRow, ScanRow, Screen, SurveyRow, TreeRow};
+use crate::{ContactRow, ConvRow, DialTarget, EntityRow, FolderRow, FormField, LogRow, MainWindow, MsgRow, PickRow, RecentRow, Screen, SurveyRow, TreeRow};
 
 /// Events fed into the app loop from net threads, timers, and the UI.
 pub enum AppEvent {
@@ -91,6 +91,9 @@ pub enum AppEvent {
     UiGroupAttach(i32, i32),
     UiGroupDetach(i32),
     UiTogglePickerFolder(i32),
+    UiPickerSearchKey(String),
+    UiPickerSearchBackspace,
+    UiPickerSearchClear,
     UiScanlistToggle(String, bool),
     UiSurveyToggleMode,
     UiSurveyScan,
@@ -283,6 +286,8 @@ struct AppState {
     /// Home folder-picker expansion state, keyed by folder index. Folders start
     /// collapsed (empty set); tapping a header adds it here to expand it.
     picker_expanded: std::collections::HashSet<usize>,
+    /// Search query for the folder/talkgroup picker (empty = no filter).
+    picker_query: String,
     /// Ringtone player (None if no output device). Plays on incoming calls.
     ringtone: Option<crate::ringtone::RingtonePlayer>,
     /// Local UI-only preferences (ringtone selection, etc.).
@@ -663,6 +668,7 @@ pub fn run(
         prog_draft: None,
         collapsed_folders: std::collections::HashSet::new(),
         picker_expanded: std::collections::HashSet::new(),
+        picker_query: String::new(),
         ringtone: crate::ringtone::RingtonePlayer::new(),
         prefs: crate::prefs::UiPrefs::load(&storage_dir),
         ring_preview_gen: 0,
@@ -1403,6 +1409,18 @@ pub fn run(
                 if !app.picker_expanded.remove(&idx) {
                     app.picker_expanded.insert(idx);
                 }
+                push_picker(&app, &weak);
+            }
+            AppEvent::UiPickerSearchKey(c) => {
+                app.picker_query.push_str(&c);
+                push_picker(&app, &weak);
+            }
+            AppEvent::UiPickerSearchBackspace => {
+                app.picker_query.pop();
+                push_picker(&app, &weak);
+            }
+            AppEvent::UiPickerSearchClear => {
+                app.picker_query.clear();
                 push_picker(&app, &weak);
             }
             AppEvent::UiScanlistToggle(name, active) => {
@@ -3315,7 +3333,6 @@ fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
         w.set_folders(ModelRc::new(VecModel::from(rows)));
     });
 
-    push_groups(app, weak);
     push_picker(app, weak);
     push_contacts(app, weak);
     push_dial_targets(app, weak);
@@ -4545,64 +4562,75 @@ fn push_contact_editor(app: &AppState, weak: &slint::Weak<MainWindow>) {
     });
 }
 
-/// Build the Groups + scan-list models (all codeplug talkgroups tagged
-/// TX/SCAN/none, plus programmed scan lists with their active state).
-fn push_groups(app: &AppState, weak: &slint::Weak<MainWindow>) {
-    let tx = effective_tx(app);
-    let attached = &app.state.attached_groups;
-    let active_scanlists = app.state.active_scanlists.clone().unwrap_or_default();
-
-    let mut groups: Vec<GroupRow> = Vec::new();
-    let mut scanlists: Vec<ScanRow> = Vec::new();
-    if let Some(cp) = &app.codeplug {
-        for folder in &cp.folders {
-            for t in &folder.talkgroups {
-                let is_attached = attached.contains(&t.gssi);
-                let is_tx = is_attached && Some(t.gssi) == tx;
-                let tag = if is_tx {
-                    2
-                } else if is_attached {
-                    1
-                } else {
-                    0
-                };
-                groups.push(GroupRow {
-                    gssi: t.gssi as i32,
-                    name: t.name.clone().into(),
-                    sub: format!("GSSI {} - {}", t.gssi, folder.name).into(),
-                    tag,
-                    cou: t.class_of_usage as i32,
-                    attached: is_attached,
-                    is_tx,
-                });
-            }
-        }
-        for sl in &cp.scanlists {
-            let names: Vec<String> = sl.talkgroups.iter().map(|g| cp.name_of(*g)).collect();
-            scanlists.push(ScanRow {
-                name: sl.name.clone().into(),
-                sub: names.join(", ").into(),
-                active: active_scanlists.iter().any(|n| n == &sl.name),
-            });
-        }
-    }
-
-    let _ = weak.upgrade_in_event_loop(move |w| {
-        w.set_groups(ModelRc::new(VecModel::from(groups)));
-        w.set_scanlists(ModelRc::new(VecModel::from(scanlists)));
-    });
-}
-
-/// Build the home folder-picker tree: each codeplug folder as a collapsible
-/// header with its talkgroups nested, carrying attach/TX state for selection.
+/// Build the folder/talkgroup picker: an optional Scan-lists section, then each
+/// codeplug folder as a collapsible header with its talkgroups nested (attach/TX
+/// state for selection). A non-empty search query filters folders, groups and
+/// scan lists, auto-expanding folders that contain matches.
 fn push_picker(app: &AppState, weak: &slint::Weak<MainWindow>) {
     let tx = effective_tx(app);
     let attached = &app.state.attached_groups;
+    let active_scanlists = app.state.active_scanlists.clone().unwrap_or_default();
+    let q = app.picker_query.trim().to_lowercase();
+    let searching = !q.is_empty();
+    let hit = |s: &str| s.to_lowercase().contains(&q);
+
+    let header = |title: &str| PickRow {
+        kind: 3,
+        findex: -1,
+        gssi: 0,
+        cou: 0,
+        title: title.into(),
+        sub: "".into(),
+        collapsed: false,
+        tag: 0,
+        attached: false,
+        is_tx: false,
+    };
+
     let mut rows: Vec<PickRow> = Vec::new();
     if let Some(cp) = &app.codeplug {
+        // Scan lists section (filtered by name when searching).
+        let mut scan_rows: Vec<PickRow> = Vec::new();
+        for sl in &cp.scanlists {
+            if searching && !hit(&sl.name) {
+                continue;
+            }
+            let names: Vec<String> = sl.talkgroups.iter().map(|g| cp.name_of(*g)).collect();
+            scan_rows.push(PickRow {
+                kind: 2,
+                findex: -1,
+                gssi: 0,
+                cou: 0,
+                title: sl.name.clone().into(),
+                sub: names.join(", ").into(),
+                collapsed: false,
+                tag: 0,
+                attached: active_scanlists.iter().any(|n| n == &sl.name),
+                is_tx: false,
+            });
+        }
+        if !scan_rows.is_empty() {
+            rows.push(header("SCAN LISTS"));
+            rows.append(&mut scan_rows);
+        }
+
+        // Folders with their talkgroups.
+        let mut folder_section: Vec<PickRow> = Vec::new();
         for (fidx, folder) in cp.folders.iter().enumerate() {
-            let collapsed = !app.picker_expanded.contains(&fidx);
-            rows.push(PickRow {
+            let folder_hit = searching && hit(&folder.name);
+            // Which groups to show for this folder.
+            let matching: Vec<_> = folder
+                .talkgroups
+                .iter()
+                .filter(|t| {
+                    !searching || folder_hit || hit(&t.name) || hit(&t.gssi.to_string())
+                })
+                .collect();
+            if searching && matching.is_empty() {
+                continue;
+            }
+            let collapsed = !searching && !app.picker_expanded.contains(&fidx);
+            folder_section.push(PickRow {
                 kind: 0,
                 findex: fidx as i32,
                 gssi: 0,
@@ -4622,7 +4650,7 @@ fn push_picker(app: &AppState, weak: &slint::Weak<MainWindow>) {
             if collapsed {
                 continue;
             }
-            for t in &folder.talkgroups {
+            for t in matching {
                 let is_attached = attached.contains(&t.gssi);
                 let is_tx = is_attached && Some(t.gssi) == tx;
                 let tag = if is_tx {
@@ -4632,7 +4660,7 @@ fn push_picker(app: &AppState, weak: &slint::Weak<MainWindow>) {
                 } else {
                     0
                 };
-                rows.push(PickRow {
+                folder_section.push(PickRow {
                     kind: 1,
                     findex: fidx as i32,
                     gssi: t.gssi as i32,
@@ -4646,9 +4674,17 @@ fn push_picker(app: &AppState, weak: &slint::Weak<MainWindow>) {
                 });
             }
         }
+        if !folder_section.is_empty() {
+            if !rows.is_empty() {
+                rows.push(header("TALKGROUPS"));
+            }
+            rows.append(&mut folder_section);
+        }
     }
+    let query = app.picker_query.clone();
     let _ = weak.upgrade_in_event_loop(move |w| {
         w.set_picker_rows(ModelRc::new(VecModel::from(rows)));
+        w.set_picker_query(query.into());
     });
 }
 

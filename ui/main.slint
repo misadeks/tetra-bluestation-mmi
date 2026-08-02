@@ -1717,58 +1717,6 @@ component SectionHeader inherits Text {
     color: Palette.faint;
 }
 
-component GroupsScreen inherits Rectangle {
-    in property <[GroupRow]> groups;
-    in property <[ScanRow]> scanlists;
-    callback select(int, int);
-    callback add(int, int);
-    callback detach(int);
-    callback toggle-scan(string, bool);
-    background: transparent;
-    Flickable {
-        viewport-height: col.preferred-height;
-        col := VerticalLayout {
-            padding: 16px;
-            spacing: 10px;
-            alignment: start;
-            if root.groups.length == 0: Text {
-                text: "No talkgroups programmed";
-                color: Palette.muted;
-                font-size: 16px;
-                horizontal-alignment: center;
-            }
-            if root.scanlists.length > 0: SectionHeader { text: "SCAN LISTS"; }
-            for s in root.scanlists: ScanRowView {
-                name: s.name;
-                sub: s.sub;
-                active: s.active;
-                toggled(v) => {
-                    root.toggle-scan(s.name, v);
-                }
-            }
-            if root.scanlists.length > 0 && root.groups.length > 0: SectionHeader {
-                text: "TALKGROUPS";
-            }
-            for g in root.groups: GroupRowView {
-                name: g.name;
-                sub: g.sub;
-                tag: g.tag;
-                attached: g.attached;
-                is-tx: g.is-tx;
-                select => {
-                    root.select(g.gssi, g.cou);
-                }
-                add => {
-                    root.add(g.gssi, g.cou);
-                }
-                detach => {
-                    root.detach(g.gssi);
-                }
-            }
-        }
-    }
-}
-
 // One contact row: tap the body to open the detail page, tap the green side
 // button for a fast duplex call.
 component ContactRowView inherits Rectangle {
@@ -2231,9 +2179,10 @@ component EditFieldRow inherits Rectangle {
     }
 }
 
-// Contacts search bar: tap to search, shows the query and a clear button.
+// Search bar: tap to search, shows the query and a clear button.
 component SearchBar inherits Rectangle {
     in property <string> query;
+    in property <string> placeholder: "Search";
     callback activate;
     callback clear;
     height: 58px;
@@ -2258,7 +2207,7 @@ component SearchBar inherits Rectangle {
             alignment: center;
             horizontal-stretch: 1;
             Text {
-                text: root.query == "" ? "Search contacts" : root.query;
+                text: root.query == "" ? root.placeholder : root.query;
                 color: root.query == "" ? Palette.faint : Palette.txt;
                 font-size: 20px;
                 overflow: elide;
@@ -2298,6 +2247,7 @@ component ContactsScreen inherits Rectangle {
         spacing: 10px;
         SearchBar {
             query: root.query;
+            placeholder: "Search contacts";
             activate => {
                 root.searching = true;
             }
@@ -3466,51 +3416,107 @@ component TreeScreen inherits Rectangle {
 // group; the +/- button attaches/detaches it from scan.
 component PickerScreen inherits Rectangle {
     in property <[PickRow]> rows;
+    in property <string> query;
+    property <bool> searching: false;
     callback toggle-folder(int);
     callback select(int, int);
     callback attach(int, int);
     callback detach(int);
+    callback toggle-scan(string, bool);
+    callback search-key(string);
+    callback search-backspace;
+    callback search-clear;
     background: transparent;
-    Flickable {
-        viewport-height: pcol.preferred-height;
-        pcol := VerticalLayout {
-            padding: 16px;
-            spacing: 10px;
-            alignment: start;
-            if root.rows.length == 0: Text {
-                text: "No talkgroups programmed";
-                color: Palette.muted;
-                font-size: 16px;
-                horizontal-alignment: center;
+    VerticalLayout {
+        padding: 16px;
+        spacing: 10px;
+        SearchBar {
+            query: root.query;
+            placeholder: "Search talkgroups";
+            activate => {
+                root.searching = true;
             }
-            for r in root.rows: Rectangle {
-                height: r.kind == 0 ? 76px : 84px;
-                if r.kind == 0: TreeFolderHeader {
-                    width: 100%;
-                    title: r.title;
-                    sub: r.sub;
-                    editable: false;
-                    collapsed: r.collapsed;
-                    tapped => {
-                        root.toggle-folder(r.findex);
+            clear => {
+                root.search-clear();
+            }
+        }
+        Rectangle { height: 6px; }
+        Flickable {
+            vertical-stretch: 1;
+            viewport-height: pcol.preferred-height;
+            pcol := VerticalLayout {
+                spacing: 8px;
+                alignment: start;
+                if root.rows.length == 0: Text {
+                    text: root.query == "" ? "No talkgroups programmed" : "No matches for '\{root.query}'";
+                    color: Palette.muted;
+                    font-size: 16px;
+                    horizontal-alignment: center;
+                }
+                for r in root.rows: Rectangle {
+                    height: r.kind == 0 ? 76px : (r.kind == 2 ? 76px : (r.kind == 3 ? 30px : 84px));
+                    if r.kind == 3: SectionHeader {
+                        text: r.title;
+                        vertical-alignment: bottom;
+                    }
+                    if r.kind == 0: TreeFolderHeader {
+                        width: 100%;
+                        title: r.title;
+                        sub: r.sub;
+                        editable: false;
+                        collapsed: r.collapsed;
+                        tapped => {
+                            root.toggle-folder(r.findex);
+                        }
+                    }
+                    if r.kind == 1: GroupRowView {
+                        width: 100%;
+                        name: r.title;
+                        sub: r.sub;
+                        tag: r.tag;
+                        attached: r.attached;
+                        is-tx: r.is-tx;
+                        select => {
+                            root.select(r.gssi, r.cou);
+                        }
+                        add => {
+                            root.attach(r.gssi, r.cou);
+                        }
+                        detach => {
+                            root.detach(r.gssi);
+                        }
+                    }
+                    if r.kind == 2: ScanRowView {
+                        width: 100%;
+                        name: r.title;
+                        sub: r.sub;
+                        active: r.attached;
+                        toggled(v) => {
+                            root.toggle-scan(r.title, v);
+                        }
                     }
                 }
-                if r.kind == 1: GroupRowView {
-                    width: 100%;
-                    name: r.title;
-                    sub: r.sub;
-                    tag: r.tag;
-                    attached: r.attached;
-                    is-tx: r.is-tx;
-                    select => {
-                        root.select(r.gssi, r.cou);
-                    }
-                    add => {
-                        root.attach(r.gssi, r.cou);
-                    }
-                    detach => {
-                        root.detach(r.gssi);
-                    }
+            }
+        }
+        if root.searching: VerticalLayout {
+            spacing: 10px;
+            OnScreenKeyboard {
+                numeric: false;
+                shift: false;
+                key(c) => {
+                    root.search-key(c);
+                }
+                backspace => {
+                    root.search-backspace();
+                }
+                shift-toggle => {
+                }
+            }
+            SecondaryButton {
+                text: "Done";
+                icon: Icons.check;
+                clicked => {
+                    root.searching = false;
                 }
             }
         }
@@ -5021,6 +5027,7 @@ export component MainWindow inherits Window {
     in property <int> sel-folder;
     in property <[FolderRow]> folders;
     in property <[PickRow]> picker-rows;
+    in property <string> picker-query;
     in property <[ContactRow]> contacts;
     in property <string> contact-query;
     in property <[ConvRow]> conversations;
@@ -5125,6 +5132,9 @@ export component MainWindow inherits Window {
     callback cancel-select;
     callback select-folder(int);
     callback picker-toggle-folder(int);
+    callback picker-search-key(string);
+    callback picker-search-backspace;
+    callback picker-search-clear;
     callback ptt;
     callback dial-key(string);
     callback dial-call(int, bool);
@@ -5234,7 +5244,7 @@ export component MainWindow inherits Window {
             return "Network";
         }
         if (root.screen == Screen.Folders) {
-            return "Folders";
+            return "Talkgroups";
         }
         if (root.screen == Screen.Dialer) {
             return "Dialer";
@@ -5390,7 +5400,7 @@ export component MainWindow inherits Window {
                 root.screen = Screen.Recents;
             }
             open-groups => {
-                root.screen = Screen.Groups;
+                root.screen = Screen.Folders;
             }
             open-contacts => {
                 root.contact-search-clear();
@@ -5440,6 +5450,7 @@ export component MainWindow inherits Window {
         if root.device-input == DeviceInput.Touch && root.screen == Screen.Folders: PickerScreen {
             vertical-stretch: 1;
             rows: root.picker-rows;
+            query: root.picker-query;
             toggle-folder(i) => {
                 root.picker-toggle-folder(i);
             }
@@ -5453,23 +5464,17 @@ export component MainWindow inherits Window {
             detach(g) => {
                 root.group-detach(g);
             }
-        }
-
-        if root.device-input == DeviceInput.Touch && root.screen == Screen.Groups: GroupsScreen {
-            vertical-stretch: 1;
-            groups: root.groups;
-            scanlists: root.scanlists;
-            select(g, c) => {
-                root.group-select(g, c);
-            }
-            add(g, c) => {
-                root.group-attach(g, c);
-            }
-            detach(g) => {
-                root.group-detach(g);
-            }
             toggle-scan(n, a) => {
                 root.scanlist-toggle(n, a);
+            }
+            search-key(c) => {
+                root.picker-search-key(c);
+            }
+            search-backspace => {
+                root.picker-search-backspace();
+            }
+            search-clear => {
+                root.picker-search-clear();
             }
         }
 

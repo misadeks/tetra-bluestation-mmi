@@ -176,6 +176,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     {
         let tx = events_tx.clone();
+        window.on_picker_search_key(move |c| {
+            let _ = tx.send(app::AppEvent::UiPickerSearchKey(c.to_string()));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_picker_search_backspace(move || {
+            let _ = tx.send(app::AppEvent::UiPickerSearchBackspace);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_picker_search_clear(move || {
+            let _ = tx.send(app::AppEvent::UiPickerSearchClear);
+        });
+    }
+    {
+        let tx = events_tx.clone();
         window.on_dial_key(move |k| {
             let _ = tx.send(app::AppEvent::UiDialKey(k.to_string()));
         });
