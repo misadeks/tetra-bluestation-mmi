@@ -14,7 +14,7 @@ import "fonts/Inter-Bold.ttf";
 import "fonts/Inter-ExtraBold.ttf";
 
 export enum DeviceInput { Touch, Keypad }
-export enum Screen { Home, Menu, Info, Folders, Dialer, Logs, LogDetail, Groups, Config, Survey, InCall, Contacts, ContactDetail, ContactEdit, Messages, MsgThread, MsgNew, Program, ProgramList, ProgramEdit, Tree, Ringtones, Settings }
+export enum Screen { Home, Menu, Info, Folders, Dialer, Logs, LogDetail, Groups, Config, Survey, InCall, Contacts, ContactDetail, ContactEdit, Messages, MsgThread, MsgNew, Program, ProgramList, ProgramEdit, Tree, Ringtones, Settings, Network }
 
 export struct FolderRow {
     name: string,
@@ -958,6 +958,7 @@ component MenuScreen inherits Rectangle {
     callback open-program;
     callback open-settings;
     callback open-survey;
+    callback open-network;
     callback register;
     callback deregister;
     background: transparent;
@@ -982,11 +983,11 @@ component MenuScreen inherits Rectangle {
             }
         }
         ListRow {
-            title: "Radio Info";
-            subtitle: "Registration, network, signal";
-            icon: Icons.info;
+            title: "Network";
+            subtitle: "Registration, signal and cell survey";
+            icon: Icons.radio;
             clicked => {
-                root.open-info();
+                root.open-network();
             }
         }
         if root.show-event-log: ListRow {
@@ -1027,14 +1028,6 @@ component MenuScreen inherits Rectangle {
             icon: Icons.gear;
             clicked => {
                 root.open-settings();
-            }
-        }
-        ListRow {
-            title: "Cell Survey";
-            subtitle: "Survey carriers and camp on a cell";
-            icon: Icons.radio;
-            clicked => {
-                root.open-survey();
             }
         }
         ListRow {
@@ -1380,6 +1373,68 @@ component InfoScreen inherits Rectangle {
             color: Palette.amber;
             font-size: 14px;
             wrap: word-wrap;
+        }
+    }
+}
+
+// Network hub: the radio-info card plus an entry to the cell survey.
+component NetworkScreen inherits Rectangle {
+    in property <string> reg-state;
+    in property <bool> registered;
+    in property <string> service-status;
+    in property <bool> in-service;
+    in property <string> issi;
+    in property <string> network;
+    in property <string> serving-la;
+    in property <string> colour-code;
+    in property <string> rssi;
+    in property <int> attached-count;
+    in property <bool> restart-required;
+    callback open-survey;
+    background: transparent;
+    VerticalLayout {
+        padding: 18px;
+        spacing: 12px;
+        alignment: start;
+        Rectangle {
+            background: Palette.surface;
+            border-radius: 16px;
+            border-width: 1px;
+            border-color: Palette.line;
+            VerticalLayout {
+                padding: 18px;
+                spacing: 2px;
+                InfoRow {
+                    label: "Registration";
+                    value: root.reg-state;
+                    value-color: root.registered ? Palette.green : Palette.muted;
+                }
+                InfoRow {
+                    label: "Service";
+                    value: root.service-status;
+                    value-color: root.in-service ? Palette.green : Palette.red;
+                }
+                InfoRow { label: "Own ISSI"; value: root.issi; }
+                InfoRow { label: "Network (MCC/MNC)"; value: root.network; }
+                InfoRow { label: "Serving LA"; value: root.serving-la; }
+                InfoRow { label: "Colour code"; value: root.colour-code; }
+                InfoRow { label: "Signal"; value: root.rssi; }
+                InfoRow { label: "Attached groups"; value: root.attached-count; }
+            }
+        }
+        if root.restart-required: Text {
+            text: "Restart required to apply staged config";
+            color: Palette.amber;
+            font-size: 14px;
+            wrap: word-wrap;
+        }
+        ListRow {
+            title: "Cell survey";
+            subtitle: "Survey carriers and camp on a cell";
+            icon: Icons.radio;
+            clicked => {
+                root.open-survey();
+            }
         }
     }
 }
@@ -4382,6 +4437,9 @@ export component MainWindow inherits Window {
         if (root.screen == Screen.Info) {
             return "Radio Info";
         }
+        if (root.screen == Screen.Network) {
+            return "Network";
+        }
         if (root.screen == Screen.Folders) {
             return "Folders";
         }
@@ -4447,8 +4505,11 @@ export component MainWindow inherits Window {
 
     // Parent screen for the Back softkey.
     function back-target() -> Screen {
-        if (root.screen == Screen.Info || root.screen == Screen.Logs || root.screen == Screen.Groups || root.screen == Screen.Config || root.screen == Screen.Survey || root.screen == Screen.Contacts) {
+        if (root.screen == Screen.Info || root.screen == Screen.Logs || root.screen == Screen.Groups || root.screen == Screen.Config || root.screen == Screen.Network || root.screen == Screen.Contacts) {
             return Screen.Menu;
+        }
+        if (root.screen == Screen.Survey) {
+            return Screen.Network;
         }
         if (root.screen == Screen.LogDetail) {
             return Screen.Logs;
@@ -4582,6 +4643,9 @@ export component MainWindow inherits Window {
             open-settings => {
                 root.open-settings();
             }
+            open-network => {
+                root.screen = Screen.Network;
+            }
             open-survey => {
                 root.refresh();
                 root.screen = Screen.Survey;
@@ -4654,6 +4718,25 @@ export component MainWindow inherits Window {
             rssi: root.rssi;
             attached-count: root.attached-count;
             restart-required: root.restart-required;
+        }
+
+        if root.device-input == DeviceInput.Touch && root.screen == Screen.Network: NetworkScreen {
+            vertical-stretch: 1;
+            reg-state: root.reg-state;
+            registered: root.registered;
+            service-status: root.service-status;
+            in-service: root.in-service;
+            issi: root.issi;
+            network: root.network;
+            serving-la: root.serving-la;
+            colour-code: root.colour-code;
+            rssi: root.rssi;
+            attached-count: root.attached-count;
+            restart-required: root.restart-required;
+            open-survey => {
+                root.refresh();
+                root.screen = Screen.Survey;
+            }
         }
 
         if root.device-input == DeviceInput.Touch && root.screen == Screen.Config: ConfigScreen {
