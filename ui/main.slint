@@ -2302,22 +2302,24 @@ component InCallScreen inherits Rectangle {
         if root.show-dtmf: VerticalLayout {
             spacing: 8px;
             Rectangle {
-                height: 34px;
-                border-radius: 10px;
+                height: 60px;
+                border-radius: 12px;
                 border-width: 1px;
                 border-color: Palette.line2;
                 background: #0b1119;
                 Text {
                     text: root.digits == "" ? "DTMF" : root.digits;
                     color: root.digits == "" ? Palette.faint : #cfe9ff;
-                    font-size: 18px;
+                    font-size: 32px;
                     font-weight: 700;
-                    letter-spacing: 2px;
+                    letter-spacing: 3px;
                     horizontal-alignment: center;
                     vertical-alignment: center;
                     overflow: elide;
                 }
             }
+            // Gap between the DTMF readout and the keypad.
+            Rectangle { height: 14px; }
             for row in [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["*", "0", "#"]]: HorizontalLayout {
                 spacing: 10px;
                 for d in row: KeyCap {
