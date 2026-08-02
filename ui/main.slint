@@ -4666,6 +4666,88 @@ export component MainWindow inherits Window {
     in property <bool> show-event-log: true;
     in-out property <Screen> screen: Screen.Home;
 
+    // --- Navigation history (breadcrumb stack) ---
+    // Back returns to where the user actually came from, not a fixed parent.
+    // Forward navigations are recorded automatically via `changed screen`; the
+    // Back softkey pops this stack. Programmatic returns use `nav-return()`.
+    property <Screen> nav0;
+    property <Screen> nav1;
+    property <Screen> nav2;
+    property <Screen> nav3;
+    property <Screen> nav4;
+    property <Screen> nav5;
+    property <Screen> nav6;
+    property <Screen> nav7;
+    property <int> nav-sp: 0;            // number of entries on the stack
+    property <Screen> nav-prev: Screen.Home; // the screen before the current one
+    property <bool> nav-going-back: false;   // suppress recording during back/return
+
+    function nav-push(s: Screen) {
+        if (root.nav-sp == 0) { root.nav0 = s; }
+        if (root.nav-sp == 1) { root.nav1 = s; }
+        if (root.nav-sp == 2) { root.nav2 = s; }
+        if (root.nav-sp == 3) { root.nav3 = s; }
+        if (root.nav-sp == 4) { root.nav4 = s; }
+        if (root.nav-sp == 5) { root.nav5 = s; }
+        if (root.nav-sp == 6) { root.nav6 = s; }
+        if (root.nav-sp == 7) { root.nav7 = s; }
+        if (root.nav-sp < 8) { root.nav-sp = root.nav-sp + 1; }
+    }
+    function nav-pop() -> Screen {
+        if (root.nav-sp <= 0) { root.nav-sp = 0; return Screen.Home; }
+        root.nav-sp = root.nav-sp - 1;
+        if (root.nav-sp == 0) { return root.nav0; }
+        if (root.nav-sp == 1) { return root.nav1; }
+        if (root.nav-sp == 2) { return root.nav2; }
+        if (root.nav-sp == 3) { return root.nav3; }
+        if (root.nav-sp == 4) { return root.nav4; }
+        if (root.nav-sp == 5) { return root.nav5; }
+        if (root.nav-sp == 6) { return root.nav6; }
+        return root.nav7;
+    }
+    // Value of stack slot `i` (for the unwind search).
+    // (unwind uses the inline chain in nav-return.)
+
+    // Record forward navigations automatically. Returning to Home resets the
+    // stack (Home is the root).
+    changed screen => {
+        if (root.nav-going-back) {
+            root.nav-going-back = false;
+        } else {
+            if (root.nav-prev == Screen.Home) {
+                root.nav-sp = 0;
+            }
+            root.nav-push(root.nav-prev);
+        }
+        if (root.screen == Screen.Home) {
+            root.nav-sp = 0;
+        }
+        root.nav-prev = root.screen;
+    }
+
+    // The Back softkey target: pop the history.
+    function nav-back() {
+        root.nav-going-back = true;
+        root.screen = root.nav-pop();
+    }
+
+    // Programmatic return to `t` (after save/delete/cancel). If `t` is already in
+    // the history, unwind to it so Back continues to its real parent; otherwise
+    // just replace the current screen without recording it.
+    callback nav-return(Screen);
+    nav-return(t) => {
+        root.nav-going-back = true;
+        if (root.nav-sp > 7 && root.nav7 == t) { root.nav-sp = 7; }
+        else if (root.nav-sp > 6 && root.nav6 == t) { root.nav-sp = 6; }
+        else if (root.nav-sp > 5 && root.nav5 == t) { root.nav-sp = 5; }
+        else if (root.nav-sp > 4 && root.nav4 == t) { root.nav-sp = 4; }
+        else if (root.nav-sp > 3 && root.nav3 == t) { root.nav-sp = 3; }
+        else if (root.nav-sp > 2 && root.nav2 == t) { root.nav-sp = 2; }
+        else if (root.nav-sp > 1 && root.nav1 == t) { root.nav-sp = 1; }
+        else if (root.nav-sp > 0 && root.nav0 == t) { root.nav-sp = 0; }
+        root.screen = t;
+    }
+
     // Auto-open the in-call screen while an individual call is live, and leave it
     // when the call ends (mirrors the web UI pushing/popping the call view).
     changed call-live => {
@@ -4675,6 +4757,7 @@ export component MainWindow inherits Window {
             root.screen = Screen.Home;
         }
     }
+
 
     // Live state (set from Rust off MsRuntimeState + channel status).
     in property <bool> control-connected;
@@ -4982,53 +5065,6 @@ export component MainWindow inherits Window {
             return "Call";
         }
         return root.clock + "   " + root.date;
-    }
-
-    // Parent screen for the Back softkey.
-    function back-target() -> Screen {
-        if (root.screen == Screen.Info || root.screen == Screen.Logs || root.screen == Screen.Groups || root.screen == Screen.Config || root.screen == Screen.Network || root.screen == Screen.Contacts) {
-            return Screen.Menu;
-        }
-        if (root.screen == Screen.Survey) {
-            return Screen.Network;
-        }
-        if (root.screen == Screen.LogDetail) {
-            return Screen.Logs;
-        }
-        if (root.screen == Screen.ContactDetail || root.screen == Screen.ContactEdit) {
-            return Screen.Contacts;
-        }
-        if (root.screen == Screen.Messages) {
-            return Screen.Menu;
-        }
-        if (root.screen == Screen.MsgThread || root.screen == Screen.MsgNew) {
-            return Screen.Messages;
-        }
-        if (root.screen == Screen.Program) {
-            return Screen.Menu;
-        }
-        if (root.screen == Screen.Ringtones) {
-            return Screen.Settings;
-        }
-        if (root.screen == Screen.Settings) {
-            return Screen.Menu;
-        }
-        if (root.screen == Screen.Recents) {
-            return Screen.Menu;
-        }
-        if (root.screen == Screen.RecentDetail) {
-            return Screen.Recents;
-        }
-        if (root.screen == Screen.Tree) {
-            return Screen.Program;
-        }
-        if (root.screen == Screen.ProgramList) {
-            return Screen.Program;
-        }
-        if (root.screen == Screen.ProgramEdit) {
-            return root.form-from-tree ? Screen.Tree : Screen.ProgramList;
-        }
-        return Screen.Home;
     }
 
     VerticalLayout {
@@ -5647,7 +5683,7 @@ export component MainWindow inherits Window {
                     icon: Icons.back;
                     horizontal-stretch: 1;
                     clicked => {
-                        root.screen = root.back-target();
+                        root.nav-back();
                     }
                 }
 

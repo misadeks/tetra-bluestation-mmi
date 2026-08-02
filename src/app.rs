@@ -1509,7 +1509,7 @@ pub fn run(
                 match app.msg_new_issi.parse::<u32>() {
                     Ok(ssi) if ssi > 0 => {
                         open_thread(&mut app, &weak, ssi, false);
-                        let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::MsgThread));
+                        let _ = weak.upgrade_in_event_loop(|w| w.invoke_nav_return(Screen::MsgThread));
                     }
                     _ => app.notify(&weak, "Invalid ISSI", "Enter a valid ISSI number.", 0),
                 }
@@ -1535,7 +1535,7 @@ pub fn run(
                     // If the deleted thread was open, drop back to the list.
                     if app.msg_thread_peer == Some((ssi, is_group)) {
                         app.msg_thread_peer = None;
-                        let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::Messages));
+                        let _ = weak.upgrade_in_event_loop(|w| w.invoke_nav_return(Screen::Messages));
                     }
                     push_thread(&app, &weak);
                     push_conversations(&app, &weak);
@@ -1632,7 +1632,7 @@ pub fn run(
                 let back = prog_return_screen(app.prog_section);
                 app.prog_draft = None;
                 refresh_prog(&app, &weak, back);
-                let _ = weak.upgrade_in_event_loop(move |w| w.set_screen(back));
+                let _ = weak.upgrade_in_event_loop(move |w| w.invoke_nav_return(back));
             }
             AppEvent::UiFormDelete => {
                 prog_delete(&mut app, &weak);
@@ -1833,7 +1833,7 @@ pub fn run(
                     app.call_log.entries.retain(|e| e.id != id);
                     app.call_log.save();
                     push_recents(&app, &weak);
-                    let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::Recents));
+                    let _ = weak.upgrade_in_event_loop(|w| w.invoke_nav_return(Screen::Recents));
                 }
             }
         }
@@ -3663,7 +3663,7 @@ fn write_codeplug(
 ) {
     apply_codeplug(app, weak, toml);
     app.notify(weak, title, msg, 0);
-    let _ = weak.upgrade_in_event_loop(move |w| w.set_screen(return_screen));
+    let _ = weak.upgrade_in_event_loop(move |w| w.invoke_nav_return(return_screen));
 }
 
 // --- Codeplug programming: section lists, edit form, save/delete -------------
