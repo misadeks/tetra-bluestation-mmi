@@ -1684,16 +1684,19 @@ component KeyCap inherits Rectangle {
     in property <string> label;
     in property <string> icon;
     in property <bool> active;
+    in property <bool> enabled: true;
     callback tapped;
     height: 76px;
     horizontal-stretch: 1;
     border-radius: 16px;
     border-width: 1px;
+    opacity: root.enabled ? 1.0 : 0.35;
     border-color: root.active ? Palette.accent : Palette.line2;
     background: kt.pressed
         ? #1b2836
         : (root.active ? #33a7dd29 : @linear-gradient(180deg, #17222f 0%, #0f1822 100%));
     kt := TouchArea {
+        enabled: root.enabled;
         clicked => {
             root.tapped();
         }
@@ -1720,6 +1723,8 @@ component KeyCap inherits Rectangle {
 component OnScreenKeyboard inherits Rectangle {
     in property <bool> numeric;
     in property <bool> shift;
+    // When true (ISSI field), the *, # and + keys are disabled (digits only).
+    in property <bool> digits-only;
     callback key(string);
     callback backspace;
     callback shift-toggle;
@@ -1808,13 +1813,13 @@ component OnScreenKeyboard inherits Rectangle {
             }
             HorizontalLayout {
                 spacing: 6px;
-                KeyCap { label: "*"; tapped => { root.key("*"); } }
+                KeyCap { label: "*"; enabled: !root.digits-only; tapped => { root.key("*"); } }
                 KeyCap { label: "0"; tapped => { root.key("0"); } }
-                KeyCap { label: "#"; tapped => { root.key("#"); } }
+                KeyCap { label: "#"; enabled: !root.digits-only; tapped => { root.key("#"); } }
             }
             HorizontalLayout {
                 spacing: 6px;
-                KeyCap { label: "+"; tapped => { root.key("+"); } }
+                KeyCap { label: "+"; enabled: !root.digits-only; tapped => { root.key("+"); } }
                 KeyCap { icon: Icons.backspace; horizontal-stretch: 2; tapped => { root.backspace(); } }
             }
         }
@@ -1975,6 +1980,7 @@ component ContactEditScreen inherits Rectangle {
         OnScreenKeyboard {
             numeric: root.numeric;
             shift: root.shift;
+            digits-only: root.numeric && !root.is-phone;
             key(c) => {
                 root.key(c);
             }

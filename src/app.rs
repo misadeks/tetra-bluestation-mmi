@@ -804,10 +804,13 @@ pub fn run(
             AppEvent::UiEditKey(s) => {
                 if let Some(d) = app.contact_draft.as_mut() {
                     let numeric = d.focus.numeric();
+                    // ISSI is digits only; the phone number also allows * # +.
+                    let allow_symbols = matches!(d.focus, EditField::Number);
                     for ch in s.chars() {
                         if numeric {
-                            // Digit fields accept the dial set only.
-                            if ch.is_ascii_digit() || ch == '*' || ch == '#' || ch == '+' {
+                            let ok = ch.is_ascii_digit()
+                                || (allow_symbols && (ch == '*' || ch == '#' || ch == '+'));
+                            if ok {
                                 d.field_mut().push(ch);
                             }
                         } else {
