@@ -1775,10 +1775,11 @@ component ContactRowView inherits Rectangle {
     border-radius: 16px;
     border-width: 1px;
     border-color: Palette.line;
+    clip: true;
     background: Palette.surface;
     HorizontalLayout {
         padding-left: 14px;
-        padding-right: 12px;
+        padding-right: 96px;
         spacing: 12px;
         // Body (icon + text) opens the detail page.
         body := Rectangle {
@@ -1826,29 +1827,32 @@ component ContactRowView inherits Rectangle {
                 }
             }
         }
-        // Fast duplex call.
-        VerticalLayout {
-            alignment: center;
-            Rectangle {
-                width: 62px;
-                height: 62px;
-                border-radius: 18px;
-                border-width: 1px;
-                border-color: #2bb76880;
-                background: ctouch.pressed ? #17402a : #2bb76824;
-                ctouch := TouchArea {
-                    clicked => {
-                        root.call();
-                    }
-                }
-                Icon {
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    d: Icons.phone;
-                    tint: #7fe0a6;
-                    size: 26px;
-                }
+    }
+    // Green call button filling the whole right end of the card (clip rounds it).
+    Rectangle {
+        x: parent.width - self.width;
+        y: 0;
+        width: 84px;
+        height: parent.height;
+        background: ctouch.pressed ? #16321f : #10281a;
+        // Left divider between the content and the call button.
+        Rectangle {
+            x: 0;
+            width: 1px;
+            height: parent.height;
+            background: #37c06a4d;
+        }
+        ctouch := TouchArea {
+            clicked => {
+                root.call();
             }
+        }
+        Icon {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            d: Icons.phone;
+            tint: Palette.green;
+            size: 28px;
         }
     }
 }
@@ -2295,6 +2299,8 @@ component ContactsScreen inherits Rectangle {
                 root.search-clear();
             }
         }
+        // A little extra breathing room between the search bar and the list.
+        Rectangle { height: 6px; }
         Flickable {
             vertical-stretch: 1;
             viewport-height: col.preferred-height;
