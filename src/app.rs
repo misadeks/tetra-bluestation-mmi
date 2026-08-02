@@ -882,8 +882,19 @@ pub fn run(
                     continue;
                 }
                 if target == 0 {
-                    // Private (individual ISSI) call. Valid ISSI range is 1..0xFFFFFF
-                    // (0xFFFFFF is the broadcast address, not individually callable).
+                    // Private (individual ISSI) call. A "+" (international prefix) is
+                    // only valid for gateway calls, never for a private ISSI.
+                    if app.dial_number.contains('+') {
+                        app.notify(
+                            &weak,
+                            "Invalid number",
+                            "A private call cannot contain a \"+\". Use a gateway for external numbers.",
+                            0,
+                        );
+                        continue;
+                    }
+                    // Valid ISSI range is 1..0xFFFFFF (0xFFFFFF is the broadcast
+                    // address, not individually callable).
                     let parsed = app.dial_number.parse::<u32>().ok();
                     let valid = parsed.map(|n| n >= 1 && n < 0xFF_FFFF).unwrap_or(false);
                     if !valid {
