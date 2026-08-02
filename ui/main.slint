@@ -272,10 +272,13 @@ component Battery inherits Rectangle {
 component StatusBar inherits Rectangle {
     in property <int> bars;
     in property <bool> registered;
+    in property <bool> in-service: true;
     in property <string> network;
     in property <bool> scan;
     in property <bool> control-on;
     in property <bool> telemetry-on;
+    // Green only when attached AND in service; red otherwise.
+    property <bool> ok: root.registered && root.in-service;
     height: 70px;
     background: @linear-gradient(180deg, #0e1822 0%, #0b131b 100%);
 
@@ -288,12 +291,12 @@ component StatusBar inherits Rectangle {
             alignment: center;
             Icon {
                 d: Icons.antenna;
-                size: 22px;
-                weight: 2.0;
-                tint: root.registered ? #55d98a : Palette.red;
+                size: 30px;
+                weight: 2.2;
+                tint: root.ok ? #55d98a : Palette.red;
             }
         }
-        VerticalLayout { alignment: center; SignalBars { bars: root.bars; registered: root.registered; } }
+        VerticalLayout { alignment: center; SignalBars { bars: root.bars; registered: root.ok; } }
         VerticalLayout {
             alignment: center;
             Text {
@@ -5121,6 +5124,7 @@ export component MainWindow inherits Window {
         StatusBar {
             bars: root.signal-bars;
             registered: root.registered;
+            in-service: root.in-service;
             network: root.network;
             scan: root.scan-active;
             control-on: root.control-connected;
