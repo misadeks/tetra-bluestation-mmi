@@ -4443,7 +4443,20 @@ component DialerScreen inherits Rectangle {
             }
             if root.number == "": VerticalLayout {
                 spacing: 0px;
-                // Recent calls entry, pinned to the top (opens the full Recents).
+                // "Enter a number" centred in the free space above the card.
+                Rectangle {
+                    vertical-stretch: 1;
+                    Text {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        text: "Enter a number";
+                        color: Palette.faint;
+                        font-size: 22px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                    }
+                }
+                // Recent calls entry, pinned just above the dialer keypad.
                 Rectangle {
                     height: 78px;
                     border-radius: 16px;
@@ -4489,19 +4502,6 @@ component DialerScreen inherits Rectangle {
                             alignment: center;
                             Icon { d: Icons.chevron; tint: Palette.faint; size: 22px; }
                         }
-                    }
-                }
-                // "Enter a number" centred in the space below the button.
-                Rectangle {
-                    vertical-stretch: 1;
-                    Text {
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                        text: "Enter a number";
-                        color: Palette.faint;
-                        font-size: 22px;
-                        font-weight: 700;
-                        horizontal-alignment: center;
                     }
                 }
             }
