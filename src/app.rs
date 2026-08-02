@@ -433,6 +433,9 @@ struct Call {
     peer_sub: Option<String>,
     /// True when this individual call is an external (gateway) call.
     is_external: bool,
+    /// Hook-signalling incoming call: we sent the ringing U-ALERT
+    /// (TnccSetupResponse) once, so we don't repeat it on re-sent indications.
+    alerted: bool,
     /// When we last played a downlink speech frame for this call (someone is
     /// speaking now, even if the SwMI doesn't tell us who).
     rx_at: Option<Instant>,
@@ -1948,6 +1951,10 @@ fn handle_telemetry(
     // Call-control telemetry drives the call state machine + call UI.
     if variant.starts_with("Tncc") {
         apply_call_event(app, variant, payload, weak);
+        // Signal "ringing" (U-ALERT) to the network for hook-signalling incoming
+        // calls, the moment they start ringing - mirroring the web UI's call_ring
+        // step. Direct (no-hook) calls send nothing until the user answers.
+        emit_ringing_alerts(app);
         push_calls(app, weak);
     }
 
@@ -2213,6 +2220,28 @@ fn pretty_cause(cause: &str) -> String {
         out.push(ch);
     }
     out
+}
+
+/// Emit the ringing U-ALERT (TnccSetupResponse with the hook method) for any
+/// hook-signalling incoming call that just started ringing and hasn't been
+/// alerted yet. This tells the network the MS is ringing before the user
+/// answers, matching the web UI's `call_ring` step. No-hook calls send nothing
+/// here (a single SetupResponse on answer connects them).
+fn emit_ringing_alerts(app: &mut AppState) {
+    let pending: Vec<(u32, bool)> = app
+        .calls
+        .values()
+        .filter(|c| !c.group && c.hook_on && c.rang && !c.answered && !c.alerted)
+        .map(|c| (c.cid, !c.simplex))
+        .collect();
+    for (cid, duplex) in pending {
+        let h = app.next_handle();
+        app.send(protocol::tncc_setup_response(h, cid, duplex, true));
+        if let Some(c) = app.calls.get_mut(&cid) {
+            c.alerted = true;
+        }
+        tracing::info!(cid, "call: sent ringing alert (U-ALERT)");
+    }
 }
 
 /// First call in a live state, preferring a non-group individual call.
