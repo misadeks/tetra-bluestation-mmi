@@ -882,18 +882,20 @@ pub fn run(
                     continue;
                 }
                 if target == 0 {
-                    // Private (individual ISSI) call.
-                    let valid = app.dial_number.parse::<u32>().map(|n| n >= 1).unwrap_or(false);
+                    // Private (individual ISSI) call. Valid ISSI range is 1..0xFFFFFF
+                    // (0xFFFFFF is the broadcast address, not individually callable).
+                    let parsed = app.dial_number.parse::<u32>().ok();
+                    let valid = parsed.map(|n| n >= 1 && n < 0xFF_FFFF).unwrap_or(false);
                     if !valid {
                         app.notify(
                             &weak,
                             "Invalid number",
-                            "Enter a valid private number (ISSI) to call.",
+                            "Enter a valid private number (ISSI, 1 to 16777214).",
                             0,
                         );
                         continue;
                     }
-                    let ssi = app.dial_number.parse::<u32>().unwrap_or(0);
+                    let ssi = parsed.unwrap_or(0);
                     tracing::info!(number = %app.dial_number, duplex, "UI: dial private call");
                     // Individual call: duplex (mic streams the whole call) or
                     // simplex (PTT-keyed).

@@ -4334,14 +4334,37 @@ component DialKey inherits Rectangle {
     in property <string> text;
     in property <string> sub;
     callback clicked;
+    callback long-press;
+    property <bool> held: false;
     height: 76px;
     border-radius: 16px;
     border-width: 1px;
     border-color: Palette.line2;
     background: touch.pressed ? #1b2836 : @linear-gradient(180deg, #17222f 0%, #0f1822 100%);
+    hold-timer := Timer {
+        interval: 450ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            root.held = true;
+            root.long-press();
+        }
+    }
     touch := TouchArea {
-        clicked => {
-            root.clicked();
+        pointer-event(ev) => {
+            if (ev.kind == PointerEventKind.down) {
+                root.held = false;
+                hold-timer.running = true;
+            }
+            if (ev.kind == PointerEventKind.up) {
+                hold-timer.running = false;
+                if (!root.held) {
+                    root.clicked();
+                }
+            }
+            if (ev.kind == PointerEventKind.cancel) {
+                hold-timer.running = false;
+            }
         }
     }
     VerticalLayout {
@@ -4357,7 +4380,7 @@ component DialKey inherits Rectangle {
         if root.sub != "": Text {
             text: root.sub;
             color: Palette.faint;
-            font-size: 10px;
+            font-size: 14px;
             font-weight: 700;
             letter-spacing: 1px;
             horizontal-alignment: center;
@@ -4521,10 +4544,17 @@ component DialerScreen inherits Rectangle {
             spacing: 10px;
             for d in row: DialKey {
                 text: d;
+                sub: d == "0" ? "+" : "";
                 horizontal-stretch: 1;
                 clicked => {
                     if root.number.character-count < root.max-len {
                         root.key(d);
+                    }
+                }
+                long-press => {
+                    // Long-press 0 inserts a leading "+" for international numbers.
+                    if d == "0" && root.number.character-count < root.max-len {
+                        root.key("+");
                     }
                 }
             }
