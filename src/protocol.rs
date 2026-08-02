@@ -267,8 +267,7 @@ pub fn tncc_tx(handle: u32, call_identifier: u32, pressed: bool) -> Value {
 }
 
 /// Hang up a call (DisconnectCall). `rejected` uses the called-party reject cause.
-pub fn tncc_release(handle: u32, call_identifier: u32, rejected: bool) -> Value {
-    json!({ "TnccRelease": { "handle": handle, "call_identifier": call_identifier, "request": {
+pub fn tncc_release(handle: u32, call_identifier: u32, rejected: bool) -> Value {    json!({ "TnccRelease": { "handle": handle, "call_identifier": call_identifier, "request": {
         "access_priority": null,
         "disconnect_cause": if rejected {
             "CallRejectedByTheCalledParty"
@@ -276,6 +275,42 @@ pub fn tncc_release(handle: u32, call_identifier: u32, rejected: bool) -> Value 
             "UserRequestedDisconnection"
         },
         "disconnect_type": "DisconnectCall",
+        "traffic_stealing": null,
+    }}})
+}
+
+/// Map a keypad character to the TnccDtmf digit enum name.
+pub fn dtmf_digit_name(c: char) -> Option<&'static str> {
+    Some(match c {
+        '0' => "Digit0",
+        '1' => "Digit1",
+        '2' => "Digit2",
+        '3' => "Digit3",
+        '4' => "Digit4",
+        '5' => "Digit5",
+        '6' => "Digit6",
+        '7' => "Digit7",
+        '8' => "Digit8",
+        '9' => "Digit9",
+        '*' => "DigitStar",
+        '#' => "DigitHash",
+        'A' | 'a' => "DigitA",
+        'B' | 'b' => "DigitB",
+        'C' | 'c' => "DigitC",
+        'D' | 'd' => "DigitD",
+        _ => return None,
+    })
+}
+
+/// Send a single DTMF digit (tone start) on an active individual/duplex call.
+/// One command per key press; the stack replies with an Ack. `digit_name` is a
+/// value from `dtmf_digit_name`.
+pub fn tncc_dtmf(handle: u32, call_identifier: u32, digit_name: &str) -> Value {
+    json!({ "TnccDtmf": { "handle": handle, "call_identifier": call_identifier, "request": {
+        "access_priority": null,
+        "dtmf_tone_delimiter": "Dtmf",
+        "number_of_dtmf_digits": 1,
+        "dtmf_digits": [digit_name],
         "traffic_stealing": null,
     }}})
 }
@@ -482,6 +517,17 @@ mod tests {
             req["basic_service_information"]["communication_type"],
             json!("PointToPoint")
         );
+
+        let dtmf = tncc_dtmf(101, 7, dtmf_digit_name('5').unwrap());
+        let dreq = &dtmf["TnccDtmf"]["request"];
+        assert_eq!(dtmf["TnccDtmf"]["call_identifier"], json!(7));
+        assert_eq!(dreq["dtmf_tone_delimiter"], json!("Dtmf"));
+        assert_eq!(dreq["number_of_dtmf_digits"], json!(1));
+        assert_eq!(dreq["dtmf_digits"], json!(["Digit5"]));
+        assert_eq!(dtmf_digit_name('*'), Some("DigitStar"));
+        assert_eq!(dtmf_digit_name('#'), Some("DigitHash"));
+        assert_eq!(dtmf_digit_name('D'), Some("DigitD"));
+        assert_eq!(dtmf_digit_name('x'), None);
     }
 
     #[test]

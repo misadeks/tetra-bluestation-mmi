@@ -257,6 +257,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     {
         let tx = events_tx.clone();
+        window.on_call_dtmf_key(move |k| {
+            let _ = tx.send(app::AppEvent::UiDtmf(k.to_string()));
+        });
+    }
+    {
+        let tx = events_tx.clone();
         window.on_open_logs(move || {
             let _ = tx.send(app::AppEvent::UiOpenLogs);
         });

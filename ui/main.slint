@@ -2243,11 +2243,15 @@ component InCallScreen inherits Rectangle {
     in property <bool> can-ptt;
     in property <int> ptt-state;
     in property <bool> ptt-enabled;
+    in property <bool> show-dtmf;
+    in property <string> digits;
     callback ptt-down;
     callback ptt-up;
+    callback dtmf(string);
     background: transparent;
     VerticalLayout {
         padding: 22px;
+        spacing: 10px;
         // Hero, vertically centered.
         Rectangle {
             vertical-stretch: 1;
@@ -2290,6 +2294,36 @@ component InCallScreen inherits Rectangle {
                     font-size: 24px;
                     font-weight: 700;
                     horizontal-alignment: center;
+                }
+            }
+        }
+        // DTMF keypad (duplex calls: post-dial / IVR). Sends one tone per key.
+        if root.show-dtmf: VerticalLayout {
+            spacing: 8px;
+            Rectangle {
+                height: 34px;
+                border-radius: 10px;
+                border-width: 1px;
+                border-color: Palette.line2;
+                background: #0b1119;
+                Text {
+                    text: root.digits == "" ? "DTMF" : root.digits;
+                    color: root.digits == "" ? Palette.faint : #cfe9ff;
+                    font-size: 18px;
+                    font-weight: 700;
+                    letter-spacing: 2px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+            }
+            for row in [["1", "2", "3", "A"], ["4", "5", "6", "B"], ["7", "8", "9", "C"], ["*", "0", "#", "D"]]: HorizontalLayout {
+                spacing: 8px;
+                for d in row: KeyCap {
+                    label: d;
+                    tapped => {
+                        root.dtmf(d);
+                    }
                 }
             }
         }
@@ -2802,6 +2836,8 @@ export component MainWindow inherits Window {
     in property <bool> call-can-ptt;
     in property <int> call-ptt-state;
     in property <bool> call-muted;
+    in property <bool> call-dtmf;
+    in property <string> call-digits: "";
     in property <bool> call-incoming;
     in property <string> incoming-peer: "";
     in property <string> incoming-sub: "";
@@ -2821,6 +2857,7 @@ export component MainWindow inherits Window {
     callback ptt;
     callback dial-key(string);
     callback dial-call(int, bool);
+    callback call-dtmf-key(string);
     callback call-contact(int, bool);
     callback open-contact(int);
     callback contact-new;
@@ -3212,11 +3249,16 @@ export component MainWindow inherits Window {
             can-ptt: root.call-can-ptt;
             ptt-state: root.call-ptt-state;
             ptt-enabled: root.ptt-enabled;
+            show-dtmf: root.call-dtmf;
+            digits: root.call-digits;
             ptt-down => {
                 root.call-ptt-down();
             }
             ptt-up => {
                 root.call-ptt-up();
+            }
+            dtmf(k) => {
+                root.call-dtmf-key(k);
             }
         }
 

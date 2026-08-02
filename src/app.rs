@@ -67,6 +67,8 @@ pub enum AppEvent {
     UiEditToggleForm(bool),
     /// Choose the gateway for a phone contact by index into codeplug.gateways.
     UiEditGateway(i32),
+    /// Send a single DTMF digit on the active in-call session.
+    UiDtmf(String),
     UiCallPttDown,
     UiCallPttUp,
     UiGroupPttDown,
@@ -153,6 +155,8 @@ struct AppState {
     sel_contact: Option<usize>,
     /// In-progress contact add/edit form, if the editor is open.
     contact_draft: Option<ContactDraft>,
+    /// Locally-echoed DTMF digits sent during the current in-call session.
+    dtmf_echo: String,
 }
 
 /// Which field of the contact editor the on-screen keyboard is editing.
@@ -406,6 +410,7 @@ pub fn run(
         mic_muted: false,
         sel_contact: None,
         contact_draft: None,
+        dtmf_echo: String::new(),
     };
 
     for event in rx.iter() {
@@ -644,6 +649,7 @@ pub fn run(
                     // Individual call: duplex (mic streams the whole call) or
                     // simplex (PTT-keyed).
                     app.mic_muted = false;
+                    app.dtmf_echo.clear();
                     let h = app.next_handle();
                     app.send(protocol::tncc_setup(h, ssi, false, duplex));
                     app.dialing = Some(Dialing { peer_ssi: ssi, group: false, simplex: !duplex, peer_label: None, peer_sub: None });
@@ -672,6 +678,7 @@ pub fn run(
                 tracing::info!(gateway = %gw.name, gateway_ssi = gw.gateway_issi, %digits, "UI: dial external call");
                 // External calls are always duplex (phone-style).
                 app.mic_muted = false;
+                app.dtmf_echo.clear();
                 let h = app.next_handle();
                 app.send(protocol::tncc_setup_external(h, gw.gateway_issi, &digits, true));
                 app.dialing = Some(Dialing {
@@ -707,6 +714,7 @@ pub fn run(
                     None => contact.name.clone(),
                 };
                 app.mic_muted = false;
+                app.dtmf_echo.clear();
                 let h = app.next_handle();
                 // External (phone) calls are always duplex; ISSI honors the flag.
                 let (peer_ssi, sub, simplex) = match target {
@@ -844,8 +852,7 @@ pub fn run(
             }
             AppEvent::UiContactCancel => {
                 app.contact_draft = None;
-            }
-            AppEvent::UiContactSave => {
+            }            AppEvent::UiContactSave => {
                 let Some(d) = app.contact_draft.as_ref() else { continue };
                 let input = crate::codeplug::ContactInput {
                     name: d.name.trim().to_string(),
@@ -870,6 +877,27 @@ pub fn run(
                         write_codeplug(&mut app, &weak, toml, &format!("Saved {saved}"));
                     }
                     Err(e) => app.notify(&weak, "Save failed", &e, 0),
+                }
+            }
+            AppEvent::UiDtmf(key) => {
+                let Some(cid) = in_call_individual(&app) else { continue };
+                let active = app
+                    .calls
+                    .get(&cid)
+                    .map(|c| c.state == CallState::Active)
+                    .unwrap_or(false);
+                if !active {
+                    continue;
+                }
+                let ch = key.chars().next().unwrap_or(' ');
+                if let Some(name) = protocol::dtmf_digit_name(ch) {
+                    let h = app.next_handle();
+                    app.send(protocol::tncc_dtmf(h, cid, name));
+                    app.dtmf_echo.push(ch);
+                    while app.dtmf_echo.chars().count() > 32 {
+                        app.dtmf_echo.remove(0);
+                    }
+                    push_calls(&app, &weak);
                 }
             }
             AppEvent::UiCallPttDown => {
@@ -950,6 +978,7 @@ pub fn run(
                     continue;
                 }
                 if let Some(cid) = incoming_call(&app) {
+                    app.dtmf_echo.clear();
                     let (on_hook, duplex) = app
                         .calls
                         .get(&cid)
@@ -2584,6 +2613,11 @@ fn push_calls(app: &AppState, weak: &slint::Weak<MainWindow>) {
     };
 
     let call_muted = app.mic_muted;
+    // DTMF pad: only on an active individual duplex call. Echo shows locally.
+    let (call_dtmf, call_digits) = match in_call_individual(app).and_then(|cid| app.calls.get(&cid)) {
+        Some(c) if c.state == CallState::Active && !c.simplex => (true, app.dtmf_echo.clone()),
+        _ => (false, String::new()),
+    };
     let _ = weak.upgrade_in_event_loop(move |w| {
         w.set_call_live(call_live);
         w.set_call_dir(call_dir.into());
@@ -2594,6 +2628,8 @@ fn push_calls(app: &AppState, weak: &slint::Weak<MainWindow>) {
         w.set_call_can_ptt(call_can_ptt);
         w.set_call_ptt_state(call_ptt_state);
         w.set_call_muted(call_muted);
+        w.set_call_dtmf(call_dtmf);
+        w.set_call_digits(call_digits.into());
         w.set_call_incoming(call_incoming);
         w.set_incoming_peer(inc_peer.into());
         w.set_incoming_sub(inc_sub.into());
