@@ -245,14 +245,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     {
         let tx = events_tx.clone();
-        window.on_edit_toggle_form(move |is_phone| {
-            let _ = tx.send(app::AppEvent::UiEditToggleForm(is_phone));
-        });
-    }
-    {
-        let tx = events_tx.clone();
-        window.on_edit_gateway(move |gidx| {
-            let _ = tx.send(app::AppEvent::UiEditGateway(gidx));
+        window.on_edit_target(move |i| {
+            let _ = tx.send(app::AppEvent::UiEditTarget(i));
         });
     }
     {

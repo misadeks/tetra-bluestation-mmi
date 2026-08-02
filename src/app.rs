@@ -63,10 +63,8 @@ pub enum AppEvent {
     UiEditBackspace,
     /// Toggle the QWERTY shift latch.
     UiEditShift,
-    /// Switch the contact form (false = ISSI, true = phone).
-    UiEditToggleForm(bool),
-    /// Choose the gateway for a phone contact by index into codeplug.gateways.
-    UiEditGateway(i32),
+    /// Choose the contact target: 0 = Private (ISSI), 1.. = gateway (phone).
+    UiEditTarget(i32),
     /// Send a single DTMF digit on the active in-call session.
     UiDtmf(String),
     UiCallPttDown,
@@ -834,22 +832,26 @@ pub fn run(
                     push_contact_editor(&app, &weak);
                 }
             }
-            AppEvent::UiEditToggleForm(is_phone) => {
+            AppEvent::UiEditTarget(i) => {
+                // 0 = Private (ISSI); i>=1 selects codeplug.gateways[i-1] (phone).
+                let gid = if i == 0 {
+                    None
+                } else {
+                    app.codeplug
+                        .as_ref()
+                        .and_then(|cp| cp.gateways.get((i - 1) as usize))
+                        .map(|g| g.id.clone())
+                };
                 if let Some(d) = app.contact_draft.as_mut() {
-                    d.is_phone = is_phone;
-                    // Move focus to a sensible field for the new form.
-                    d.focus = if is_phone { EditField::Number } else { EditField::Issi };
-                    push_contact_editor(&app, &weak);
-                }
-            }
-            AppEvent::UiEditGateway(gidx) => {
-                let gid = app
-                    .codeplug
-                    .as_ref()
-                    .and_then(|cp| cp.gateways.get(gidx as usize))
-                    .map(|g| g.id.clone());
-                if let (Some(d), Some(gid)) = (app.contact_draft.as_mut(), gid) {
-                    d.gateway_id = gid;
+                    if i == 0 {
+                        d.is_phone = false;
+                        d.gateway_id.clear();
+                        d.focus = EditField::Issi;
+                    } else if let Some(gid) = gid {
+                        d.is_phone = true;
+                        d.gateway_id = gid;
+                        d.focus = EditField::Number;
+                    }
                     push_contact_editor(&app, &weak);
                 }
             }
@@ -2317,22 +2319,16 @@ fn push_contact_editor(app: &AppState, weak: &slint::Weak<MainWindow>) {
         EditField::Issi => 2,
         EditField::Number => 3,
     };
-    // Gateway picker: labels + which one is selected.
-    let mut gw_rows: Vec<ContactRow> = Vec::new();
-    let mut gw_sel: i32 = -1;
-    if let Some(cp) = &app.codeplug {
-        for (i, g) in cp.gateways.iter().enumerate() {
-            if g.id == d.gateway_id {
-                gw_sel = i as i32;
-            }
-            gw_rows.push(ContactRow {
-                index: i as i32,
-                name: g.name.clone().into(),
-                sub: g.kind.to_uppercase().into(),
-                kind: 1,
-            });
-        }
-    }
+    // Target selector index: 0 = Private (ISSI); a gateway maps to its index + 1.
+    let target_sel: i32 = if !d.is_phone {
+        0
+    } else {
+        app.codeplug
+            .as_ref()
+            .and_then(|cp| cp.gateways.iter().position(|g| g.id == d.gateway_id))
+            .map(|i| i as i32 + 1)
+            .unwrap_or(0)
+    };
     let _ = weak.upgrade_in_event_loop(move |w| {
         w.set_edit_title(title.into());
         w.set_edit_name(name.into());
@@ -2343,8 +2339,7 @@ fn push_contact_editor(app: &AppState, weak: &slint::Weak<MainWindow>) {
         w.set_edit_focus(focus);
         w.set_edit_numeric(numeric);
         w.set_edit_shift(shift);
-        w.set_edit_gateways(ModelRc::new(VecModel::from(gw_rows)));
-        w.set_edit_gateway_sel(gw_sel);
+        w.set_edit_target_sel(target_sel);
     });
 }
 

@@ -1577,6 +1577,29 @@ component TargetSeg inherits Rectangle {
     }
 }
 
+// Dialer-style selector: Private + one button per gateway, equal-width buttons
+// up to 4 per row and 2 rows. Shared by the dialer and the contact editor.
+component TargetSelector inherits VerticalLayout {
+    in property <[DialTarget]> targets;
+    in property <int> sel;
+    callback selected(int);
+    spacing: 8px;
+    HorizontalLayout {
+        spacing: 8px;
+        if root.targets.length > 0: TargetSeg { label: root.targets[0].label; selected: root.sel == 0; clicked => { root.selected(0); } }
+        if root.targets.length > 1: TargetSeg { label: root.targets[1].label; selected: root.sel == 1; clicked => { root.selected(1); } }
+        if root.targets.length > 2: TargetSeg { label: root.targets[2].label; selected: root.sel == 2; clicked => { root.selected(2); } }
+        if root.targets.length > 3: TargetSeg { label: root.targets[3].label; selected: root.sel == 3; clicked => { root.selected(3); } }
+    }
+    if root.targets.length > 4: HorizontalLayout {
+        spacing: 8px;
+        TargetSeg { label: root.targets[4].label; selected: root.sel == 4; clicked => { root.selected(4); } }
+        if root.targets.length > 5: TargetSeg { label: root.targets[5].label; selected: root.sel == 5; clicked => { root.selected(5); } }
+        if root.targets.length > 6: TargetSeg { label: root.targets[6].label; selected: root.sel == 6; clicked => { root.selected(6); } }
+        if root.targets.length > 7: TargetSeg { label: root.targets[7].label; selected: root.sel == 7; clicked => { root.selected(7); } }
+    }
+}
+
 component ContactDetailScreen inherits Rectangle {
     in property <string> name;
     in property <string> callsign;
@@ -1685,6 +1708,8 @@ component KeyCap inherits Rectangle {
     in property <string> icon;
     in property <bool> active;
     in property <bool> enabled: true;
+    // When true, show the letter uppercase (QWERTY shift is on).
+    in property <bool> caps;
     callback tapped;
     height: 76px;
     horizontal-stretch: 1;
@@ -1711,7 +1736,7 @@ component KeyCap inherits Rectangle {
     if root.icon == "": Text {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
-        text: root.label;
+        text: root.caps ? root.label.to-uppercase() : root.label;
         color: #e8f0f6;
         font-size: 26px;
         font-weight: 600;
@@ -1747,41 +1772,41 @@ component OnScreenKeyboard inherits Rectangle {
             }
             HorizontalLayout {
                 spacing: 6px;
-                KeyCap { label: "q"; tapped => { root.key("q"); } }
-                KeyCap { label: "w"; tapped => { root.key("w"); } }
-                KeyCap { label: "e"; tapped => { root.key("e"); } }
-                KeyCap { label: "r"; tapped => { root.key("r"); } }
-                KeyCap { label: "t"; tapped => { root.key("t"); } }
-                KeyCap { label: "y"; tapped => { root.key("y"); } }
-                KeyCap { label: "u"; tapped => { root.key("u"); } }
-                KeyCap { label: "i"; tapped => { root.key("i"); } }
-                KeyCap { label: "o"; tapped => { root.key("o"); } }
-                KeyCap { label: "p"; tapped => { root.key("p"); } }
+                KeyCap { label: "q"; caps: root.shift; tapped => { root.key("q"); } }
+                KeyCap { label: "w"; caps: root.shift; tapped => { root.key("w"); } }
+                KeyCap { label: "e"; caps: root.shift; tapped => { root.key("e"); } }
+                KeyCap { label: "r"; caps: root.shift; tapped => { root.key("r"); } }
+                KeyCap { label: "t"; caps: root.shift; tapped => { root.key("t"); } }
+                KeyCap { label: "y"; caps: root.shift; tapped => { root.key("y"); } }
+                KeyCap { label: "u"; caps: root.shift; tapped => { root.key("u"); } }
+                KeyCap { label: "i"; caps: root.shift; tapped => { root.key("i"); } }
+                KeyCap { label: "o"; caps: root.shift; tapped => { root.key("o"); } }
+                KeyCap { label: "p"; caps: root.shift; tapped => { root.key("p"); } }
             }
             HorizontalLayout {
                 spacing: 6px;
                 Rectangle { width: 22px; }
-                KeyCap { label: "a"; tapped => { root.key("a"); } }
-                KeyCap { label: "s"; tapped => { root.key("s"); } }
-                KeyCap { label: "d"; tapped => { root.key("d"); } }
-                KeyCap { label: "f"; tapped => { root.key("f"); } }
-                KeyCap { label: "g"; tapped => { root.key("g"); } }
-                KeyCap { label: "h"; tapped => { root.key("h"); } }
-                KeyCap { label: "j"; tapped => { root.key("j"); } }
-                KeyCap { label: "k"; tapped => { root.key("k"); } }
-                KeyCap { label: "l"; tapped => { root.key("l"); } }
+                KeyCap { label: "a"; caps: root.shift; tapped => { root.key("a"); } }
+                KeyCap { label: "s"; caps: root.shift; tapped => { root.key("s"); } }
+                KeyCap { label: "d"; caps: root.shift; tapped => { root.key("d"); } }
+                KeyCap { label: "f"; caps: root.shift; tapped => { root.key("f"); } }
+                KeyCap { label: "g"; caps: root.shift; tapped => { root.key("g"); } }
+                KeyCap { label: "h"; caps: root.shift; tapped => { root.key("h"); } }
+                KeyCap { label: "j"; caps: root.shift; tapped => { root.key("j"); } }
+                KeyCap { label: "k"; caps: root.shift; tapped => { root.key("k"); } }
+                KeyCap { label: "l"; caps: root.shift; tapped => { root.key("l"); } }
                 Rectangle { width: 22px; }
             }
             HorizontalLayout {
                 spacing: 6px;
                 KeyCap { label: root.shift ? "SHIFT" : "shift"; active: root.shift; horizontal-stretch: 2; tapped => { root.shift-toggle(); } }
-                KeyCap { label: "z"; tapped => { root.key("z"); } }
-                KeyCap { label: "x"; tapped => { root.key("x"); } }
-                KeyCap { label: "c"; tapped => { root.key("c"); } }
-                KeyCap { label: "v"; tapped => { root.key("v"); } }
-                KeyCap { label: "b"; tapped => { root.key("b"); } }
-                KeyCap { label: "n"; tapped => { root.key("n"); } }
-                KeyCap { label: "m"; tapped => { root.key("m"); } }
+                KeyCap { label: "z"; caps: root.shift; tapped => { root.key("z"); } }
+                KeyCap { label: "x"; caps: root.shift; tapped => { root.key("x"); } }
+                KeyCap { label: "c"; caps: root.shift; tapped => { root.key("c"); } }
+                KeyCap { label: "v"; caps: root.shift; tapped => { root.key("v"); } }
+                KeyCap { label: "b"; caps: root.shift; tapped => { root.key("b"); } }
+                KeyCap { label: "n"; caps: root.shift; tapped => { root.key("n"); } }
+                KeyCap { label: "m"; caps: root.shift; tapped => { root.key("m"); } }
                 KeyCap { icon: Icons.backspace; horizontal-stretch: 2; tapped => { root.backspace(); } }
             }
             HorizontalLayout {
@@ -1880,20 +1905,19 @@ component ContactEditScreen inherits Rectangle {
     in property <int> focus-field; // 0 name, 1 callsign, 2 issi, 3 number
     in property <bool> numeric;
     in property <bool> shift;
-    in property <[ContactRow]> gateways;
-    in property <int> gateway-sel;
+    in property <[DialTarget]> targets;
+    in property <int> target-sel;
     callback set-focus(int);
     callback key(string);
     callback backspace;
     callback shift-toggle;
-    callback toggle-form(bool);
-    callback set-gateway(int);
+    callback select-target(int);
     callback save;
     callback cancel;
     background: transparent;
     VerticalLayout {
-        padding: 12px;
-        spacing: 8px;
+        padding: 14px;
+        spacing: 16px;
         EditFieldRow {
             label: "Name";
             text: root.name;
@@ -1912,21 +1936,12 @@ component ContactEditScreen inherits Rectangle {
                 root.set-focus(1);
             }
         }
-        HorizontalLayout {
-            spacing: 8px;
-            TargetSeg {
-                label: "Private (ISSI)";
-                selected: !root.is-phone;
-                clicked => {
-                    root.toggle-form(false);
-                }
-            }
-            TargetSeg {
-                label: "Phone (gateway)";
-                selected: root.is-phone;
-                clicked => {
-                    root.toggle-form(true);
-                }
+        // Contact target: Private (ISSI) or one of the gateways (phone).
+        TargetSelector {
+            targets: root.targets;
+            sel: root.target-sel;
+            selected(i) => {
+                root.select-target(i);
             }
         }
         if !root.is-phone: EditFieldRow {
@@ -1947,32 +1962,6 @@ component ContactEditScreen inherits Rectangle {
                 root.set-focus(3);
             }
         }
-        if root.is-phone: Rectangle {
-            height: 54px;
-            Flickable {
-                width: 100%;
-                height: 100%;
-                viewport-width: gwrow.preferred-width;
-                viewport-height: 54px;
-                gwrow := HorizontalLayout {
-                    spacing: 8px;
-                    alignment: start;
-                    if root.gateways.length == 0: Text {
-                        text: "No gateways programmed";
-                        color: Palette.muted;
-                        font-size: 15px;
-                        vertical-alignment: center;
-                    }
-                    for g in root.gateways: TargetSeg {
-                        label: g.name;
-                        selected: root.gateway-sel == g.index;
-                        clicked => {
-                            root.set-gateway(g.index);
-                        }
-                    }
-                }
-            }
-        }
         Rectangle {
             vertical-stretch: 1;
             min-height: 6px;
@@ -1991,6 +1980,8 @@ component ContactEditScreen inherits Rectangle {
                 root.shift-toggle();
             }
         }
+        // Extra breathing room between the keyboard and the action buttons.
+        Rectangle { height: 22px; }
         HorizontalLayout {
             spacing: 10px;
             SecondaryButton {
@@ -2818,8 +2809,7 @@ export component MainWindow inherits Window {
     in property <int> edit-focus;
     in property <bool> edit-numeric;
     in property <bool> edit-shift;
-    in property <[ContactRow]> edit-gateways;
-    in property <int> edit-gateway-sel: -1;
+    in property <int> edit-target-sel;
     in property <bool> restart-required;
     in property <string> clock: "--:--:--";
     in property <string> date: "";
@@ -2879,8 +2869,7 @@ export component MainWindow inherits Window {
     callback edit-key(string);
     callback edit-backspace;
     callback edit-shift-toggle;
-    callback edit-toggle-form(bool);
-    callback edit-gateway(int);
+    callback edit-target(int);
     callback open-logs;
     callback alert-dismiss;
     callback group-select(int, int);
@@ -3185,8 +3174,8 @@ export component MainWindow inherits Window {
             focus-field: root.edit-focus;
             numeric: root.edit-numeric;
             shift: root.edit-shift;
-            gateways: root.edit-gateways;
-            gateway-sel: root.edit-gateway-sel;
+            targets: root.dial-targets;
+            target-sel: root.edit-target-sel;
             set-focus(f) => {
                 root.edit-set-focus(f);
             }
@@ -3199,11 +3188,8 @@ export component MainWindow inherits Window {
             shift-toggle => {
                 root.edit-shift-toggle();
             }
-            toggle-form(p) => {
-                root.edit-toggle-form(p);
-            }
-            set-gateway(g) => {
-                root.edit-gateway(g);
+            select-target(i) => {
+                root.edit-target(i);
             }
             save => {
                 root.contact-save();
