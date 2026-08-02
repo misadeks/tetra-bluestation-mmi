@@ -1594,6 +1594,7 @@ component GroupRowView inherits Rectangle {
     border-radius: 16px;
     border-width: 1px;
     border-color: root.is-tx ? #37c06a55 : Palette.line;
+    clip: true;
     background: touch.pressed ? #16202b : Palette.surface;
     touch := TouchArea {
         clicked => {
@@ -1602,7 +1603,7 @@ component GroupRowView inherits Rectangle {
     }
     HorizontalLayout {
         padding-left: 16px;
-        padding-right: 12px;
+        padding-right: root.is-tx ? 16px : 96px;
         spacing: 12px;
         VerticalLayout {
             alignment: center;
@@ -1628,34 +1629,39 @@ component GroupRowView inherits Rectangle {
                 overflow: elide;
             }
         }
-        if !root.is-tx: VerticalLayout {
-            alignment: center;
-            Rectangle {
-                width: 48px;
-                height: 48px;
-                border-radius: 13px;
-                border-width: 1px;
-                border-color: Palette.line2;
-                background: act.pressed
-                    ? #24303d
-                    : (root.attached ? #f0555a1f : #37c06a1f);
-                act := TouchArea {
-                    clicked => {
-                        if (root.attached) {
-                            root.detach();
-                        } else {
-                            root.add();
-                        }
-                    }
-                }
-                Icon {
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    d: root.attached ? Icons.minus : Icons.plus;
-                    tint: root.attached ? #ff9a9d : #79dfa0;
-                    size: 24px;
+    }
+    // Attach / detach button filling the whole right end of the card (clip
+    // rounds it), styled like the Contacts / Recents call button.
+    if !root.is-tx: Rectangle {
+        x: parent.width - self.width;
+        y: 0;
+        width: 84px;
+        height: parent.height;
+        background: root.attached
+            ? (act.pressed ? #3a1417 : #2a1214)
+            : (act.pressed ? #16321f : #10281a);
+        // Left divider between the content and the button.
+        Rectangle {
+            x: 0;
+            width: 1px;
+            height: parent.height;
+            background: root.attached ? #f0555a4d : #37c06a4d;
+        }
+        act := TouchArea {
+            clicked => {
+                if (root.attached) {
+                    root.detach();
+                } else {
+                    root.add();
                 }
             }
+        }
+        Icon {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            d: root.attached ? Icons.minus : Icons.plus;
+            tint: root.attached ? Palette.red : Palette.green;
+            size: 28px;
         }
     }
 }
@@ -3206,7 +3212,7 @@ component TreeFolderHeader inherits Rectangle {
     callback edit;
     height: 76px;
     border-radius: 12px;
-    background: touch.pressed ? #121b26 : #0d141d;
+    background: touch.pressed ? #1b2836 : #16202b;
     border-width: 1px;
     border-color: Palette.line;
     touch := TouchArea {
@@ -3239,7 +3245,22 @@ component TreeFolderHeader inherits Rectangle {
         }
         VerticalLayout {
             alignment: center;
-            Text { text: root.sub; color: Palette.faint; font-size: 13px; }
+            Rectangle {
+                height: 28px;
+                border-radius: 9px;
+                background: #33a7dd24;
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    Text {
+                        text: root.sub;
+                        color: #9fd3ef;
+                        font-size: 14px;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+                }
+            }
         }
         if root.editable: Rectangle {
             width: 48px;
