@@ -2683,20 +2683,13 @@ fn push_contacts(app: &AppState, weak: &slint::Weak<MainWindow>) {
                     continue;
                 }
             }
-            // kind: 0 = individual (ISSI), 1 = external phone (PABX/PSTN).
+            // kind: 0 = individual (ISSI), 1 = external phone (via gateway).
             let (kind, sub) = if let Some(issi) = c.issi {
                 (0, format!("ISSI {issi}"))
             } else if let (Some(num), Some(gw_id)) = (c.number.as_ref(), c.gateway.as_ref()) {
                 let gw = cp.gateway_by_id(gw_id);
                 let gw_name = gw.map(|g| g.name.clone()).unwrap_or_else(|| gw_id.clone());
-                let kind_label = gw
-                    .map(|g| g.kind.to_uppercase())
-                    .filter(|k| !k.is_empty());
-                let sub = match kind_label {
-                    Some(k) => format!("{num} via {gw_name} ({k})"),
-                    None => format!("{num} via {gw_name}"),
-                };
-                (1, sub)
+                (1, format!("{num} via {gw_name}"))
             } else {
                 (0, "Invalid contact".to_string())
             };
