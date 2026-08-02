@@ -3499,6 +3499,7 @@ component RecentRowView inherits Rectangle {
     border-radius: 16px;
     border-width: 1px;
     border-color: Palette.line;
+    clip: true;
     background: touch.pressed ? #16202b : Palette.surface;
     hold-timer := Timer {
         interval: 500ms;
@@ -3528,7 +3529,7 @@ component RecentRowView inherits Rectangle {
     }
     HorizontalLayout {
         padding-left: 16px;
-        padding-right: 10px;
+        padding-right: root.can-call ? 96px : 16px;
         spacing: 14px;
         VerticalLayout {
             alignment: center;
@@ -3568,25 +3569,32 @@ component RecentRowView inherits Rectangle {
             alignment: center;
             Text { text: root.time; color: Palette.faint; font-size: 13px; }
         }
-        if root.can-call: Rectangle {
-            width: 64px;
-            height: 64px;
-            border-radius: 16px;
-            border-width: 1px;
-            border-color: #37c06a4d;
-            background: callta.pressed ? #16321f : #10281a;
-            callta := TouchArea {
-                clicked => {
-                    root.call();
-                }
+    }
+    // Green call button filling the whole right end of the card (clip rounds it).
+    if root.can-call: Rectangle {
+        x: parent.width - self.width;
+        y: 0;
+        width: 84px;
+        height: parent.height;
+        background: callta.pressed ? #16321f : #10281a;
+        // Left divider between the content and the call button.
+        Rectangle {
+            x: 0;
+            width: 1px;
+            height: parent.height;
+            background: #37c06a4d;
+        }
+        callta := TouchArea {
+            clicked => {
+                root.call();
             }
-            Icon {
-                x: (parent.width - self.width) / 2;
-                y: (parent.height - self.height) / 2;
-                d: Icons.phone;
-                tint: Palette.green;
-                size: 26px;
-            }
+        }
+        Icon {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            d: Icons.phone;
+            tint: Palette.green;
+            size: 28px;
         }
     }
 }
@@ -3645,6 +3653,8 @@ component RecentsScreen inherits Rectangle {
                 }
             }
         }
+        // A little extra breathing room between the filter and the list.
+        Rectangle { height: 6px; }
         // Empty state: large, centred in the remaining space.
         if root.rows.length == 0: Rectangle {
             vertical-stretch: 1;
@@ -4414,8 +4424,9 @@ component DialerScreen inherits Rectangle {
             }
         }
 
-        // When a number is being typed: the big number readout. When empty: a
-        // prominent Recent calls card fills the space for fast redial + history.
+        // When a number is being typed: the big number readout. When empty: the
+        // Recent calls button sits at the top and "Enter a number" is centred in
+        // the remaining free space.
         Rectangle {
             vertical-stretch: 1;
             if root.number != "": VerticalLayout {
@@ -4431,16 +4442,8 @@ component DialerScreen inherits Rectangle {
                 }
             }
             if root.number == "": VerticalLayout {
-                alignment: center;
-                spacing: 16px;
-                Text {
-                    text: "Enter a number";
-                    color: Palette.faint;
-                    font-size: 22px;
-                    font-weight: 700;
-                    horizontal-alignment: center;
-                }
-                // Big, obvious Recent calls entry (opens the full Recents screen).
+                spacing: 0px;
+                // Recent calls entry, pinned to the top (opens the full Recents).
                 Rectangle {
                     height: 78px;
                     border-radius: 16px;
@@ -4474,7 +4477,6 @@ component DialerScreen inherits Rectangle {
                         }
                         VerticalLayout {
                             alignment: center;
-                            spacing: 3px;
                             horizontal-stretch: 1;
                             Text {
                                 text: "Recent calls";
@@ -4482,17 +4484,24 @@ component DialerScreen inherits Rectangle {
                                 font-size: 20px;
                                 font-weight: 700;
                             }
-                            Text {
-                                text: root.recent-hint == "" ? "Call history and redial" : root.recent-hint;
-                                color: Palette.muted;
-                                font-size: 14px;
-                                overflow: elide;
-                            }
                         }
                         VerticalLayout {
                             alignment: center;
                             Icon { d: Icons.chevron; tint: Palette.faint; size: 22px; }
                         }
+                    }
+                }
+                // "Enter a number" centred in the space below the button.
+                Rectangle {
+                    vertical-stretch: 1;
+                    Text {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        text: "Enter a number";
+                        color: Palette.faint;
+                        font-size: 22px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
                     }
                 }
             }
