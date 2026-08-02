@@ -1071,9 +1071,10 @@ component AlertOverlay inherits Rectangle {
     callback dismiss;
     width: 100%;
     height: 100%;
-    background: #03070cc7;
+    background: #03070ce0;
 
     property <color> tint: root.kind == 1 ? Palette.red : (root.kind == 2 ? Palette.green : Palette.amber);
+    property <color> tint-soft: root.kind == 1 ? #f0555a29 : (root.kind == 2 ? #37c06a29 : #e7a72b29);
     property <string> glyph: root.kind == 1 ? Icons.alert : (root.kind == 2 ? Icons.check : Icons.info);
 
     TouchArea {
@@ -1083,53 +1084,58 @@ component AlertOverlay inherits Rectangle {
     }
 
     Rectangle {
-        width: Math.min(parent.width - 44px, 400px);
+        width: Math.min(parent.width - 32px, 480px);
         height: card.preferred-height;
-        background: #131c26;
-        border-radius: 20px;
-        border-width: 1px;
-        border-color: Palette.line2;
+        background: #16212e;
+        border-radius: 24px;
+        border-width: 2px;
+        border-color: root.tint;
+        drop-shadow-blur: 40px;
+        drop-shadow-color: #000000b0;
+        // Swallow taps on the card so they don't dismiss via the scrim.
+        TouchArea { }
         card := VerticalLayout {
-            padding: 30px;
-            spacing: 16px;
+            padding: 34px;
+            spacing: 22px;
             alignment: start;
             HorizontalLayout {
                 alignment: center;
                 Rectangle {
-                    width: 68px;
-                    height: 68px;
-                    border-radius: 34px;
-                    background: root.kind == 1 ? #f0555a29 : (root.kind == 2 ? #37c06a29 : #e7a72b29);
+                    width: 92px;
+                    height: 92px;
+                    border-radius: 46px;
+                    background: root.tint-soft;
+                    border-width: 2px;
+                    border-color: root.tint;
                     Icon {
                         x: (parent.width - self.width) / 2;
                         y: (parent.height - self.height) / 2;
                         d: root.glyph;
                         tint: root.tint;
-                        size: 34px;
+                        size: 46px;
                     }
                 }
             }
             Text {
                 text: root.title;
                 color: #ffffff;
-                font-size: 22px;
-                font-weight: 700;
+                font-size: 28px;
+                font-weight: 800;
                 horizontal-alignment: center;
                 wrap: word-wrap;
             }
             if root.message != "": Text {
                 text: root.message;
-                color: Palette.muted;
-                font-size: 16px;
+                color: #d7e2ec;
+                font-size: 22px;
+                font-weight: 500;
                 horizontal-alignment: center;
                 wrap: word-wrap;
             }
             Rectangle {
-                height: 54px;
-                border-radius: 14px;
-                border-width: 1px;
-                border-color: Palette.line;
-                background: okt.pressed ? #1b2836 : transparent;
+                height: 64px;
+                border-radius: 16px;
+                background: okt.pressed ? root.tint.darker(15%) : root.tint;
                 okt := TouchArea {
                     clicked => {
                         root.dismiss();
@@ -1137,9 +1143,9 @@ component AlertOverlay inherits Rectangle {
                 }
                 Text {
                     text: "OK";
-                    color: #6ab0ff;
-                    font-size: 18px;
-                    font-weight: 700;
+                    color: #0b131c;
+                    font-size: 22px;
+                    font-weight: 800;
                     horizontal-alignment: center;
                     vertical-alignment: center;
                 }
