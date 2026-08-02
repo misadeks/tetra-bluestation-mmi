@@ -2471,6 +2471,7 @@ component MsgThreadScreen inherits Rectangle {
     property <bool> confirm-visible: false;
     property <int> pending-id;
     property <string> pending-text;
+    in property <int> scroll-tick;
     background: transparent;
     // Deferred one-shot: scroll to the newest message after layout settles, so
     // viewport-height reflects the updated message list.
@@ -2482,11 +2483,9 @@ component MsgThreadScreen inherits Rectangle {
             flick.viewport-y = Math.min(0px, flick.height - flick.viewport-height);
         }
     }
-    // Re-pin to the bottom whenever the thread is opened or a message is added.
-    init => {
-        scroll-timer.running = true;
-    }
-    changed messages => {
+    // Pin to the bottom only when opening the thread or sending (Rust bumps the
+    // tick), not on every keystroke or inbound message.
+    changed scroll-tick => {
         scroll-timer.running = true;
     }
     VerticalLayout {
@@ -3427,6 +3426,7 @@ export component MainWindow inherits Window {
     in property <bool> msg-shift;
     in property <string> msg-new-issi;
     in property <int> msg-unread;
+    in property <int> msg-scroll-tick;
     in property <[DialTarget]> dial-targets: [{ label: "Private", max-len: 8 }];
     // Contact detail page.
     in property <int> detail-index: -1;
@@ -3843,6 +3843,7 @@ export component MainWindow inherits Window {
         if root.device-input == DeviceInput.Touch && root.screen == Screen.MsgThread: MsgThreadScreen {
             vertical-stretch: 1;
             messages: root.msg-thread;
+            scroll-tick: root.msg-scroll-tick;
             draft: root.msg-draft;
             shift: root.msg-shift;
             key(c) => {

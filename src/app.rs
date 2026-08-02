@@ -199,6 +199,9 @@ struct AppState {
     msg_shift: bool,
     /// ISSI entered on the "new conversation" screen.
     msg_new_issi: String,
+    /// Bumped when the open thread should scroll to the newest message
+    /// (on open + on send only, not on every update).
+    msg_scroll_tick: u32,
 }
 
 /// Which field of the contact editor the on-screen keyboard is editing.
@@ -460,6 +463,7 @@ pub fn run(
         msg_draft: String::new(),
         msg_shift: false,
         msg_new_issi: String::new(),
+        msg_scroll_tick: 0,
     };
 
     for event in rx.iter() {
@@ -2451,6 +2455,7 @@ fn open_thread(app: &mut AppState, weak: &slint::Weak<MainWindow>, ssi: u32, is_
     app.msg_thread_peer = Some((ssi, is_group));
     app.msg_draft.clear();
     app.msg_shift = false;
+    app.msg_scroll_tick = app.msg_scroll_tick.wrapping_add(1);
     if mark_peer_read(app, ssi, is_group) {
         app.messages.save();
     }
@@ -2494,6 +2499,7 @@ fn send_message(app: &mut AppState, weak: &slint::Weak<MainWindow>) {
     app.messages.save();
     app.msg_draft.clear();
     app.msg_shift = false;
+    app.msg_scroll_tick = app.msg_scroll_tick.wrapping_add(1);
     push_thread(app, weak);
     push_conversations(app, weak);
 }
@@ -2641,11 +2647,13 @@ fn push_thread(app: &AppState, weak: &slint::Weak<MainWindow>) {
     }
     let draft = app.msg_draft.clone();
     let shift = app.msg_shift;
+    let scroll_tick = app.msg_scroll_tick as i32;
     let _ = weak.upgrade_in_event_loop(move |w| {
         w.set_msg_thread(ModelRc::new(VecModel::from(rows)));
         w.set_msg_thread_title(title.into());
         w.set_msg_draft(draft.into());
         w.set_msg_shift(shift);
+        w.set_msg_scroll_tick(scroll_tick);
     });
 }
 
