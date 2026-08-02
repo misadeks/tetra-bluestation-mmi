@@ -2506,6 +2506,14 @@ fn send_message(app: &mut AppState, weak: &slint::Weak<MainWindow>) {
 
 /// Store an inbound text message and surface it.
 fn handle_sds_message_in(app: &mut AppState, payload: &Value, weak: &slint::Weak<MainWindow>) {
+    // Only Text Messaging (SDS-TL, protocol_id 0x82) is a "message". Other
+    // protocol IDs (proprietary/other SDS-TL services) aren't shown in the
+    // messages app.
+    let protocol_id = payload.get("protocol_id").and_then(Value::as_u64).unwrap_or(0) as u32;
+    if protocol_id != protocol::SDS_TEXT_PROTOCOL_ID {
+        tracing::info!(protocol_id, "SDS message with non-text protocol id ignored");
+        return;
+    }
     let ssi = payload.get("calling_party_ssi").and_then(Value::as_u64).unwrap_or(0) as u32;
     let is_group = payload
         .get("called_party_is_group")
