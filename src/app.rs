@@ -518,7 +518,15 @@ pub fn run(
                     "clear" => {
                         app.dial_number.clear();
                     }
-                    d if app.dial_number.chars().count() < 24 => {
+                    m if m.starts_with("max") => {
+                        // Trim to the cap for the current call type (see DialerScreen).
+                        if let Ok(max) = m[3..].parse::<usize>() {
+                            while app.dial_number.chars().count() > max {
+                                app.dial_number.pop();
+                            }
+                        }
+                    }
+                    d if app.dial_number.chars().count() < 20 => {
                         app.dial_number.push_str(d);
                     }
                     _ => {}

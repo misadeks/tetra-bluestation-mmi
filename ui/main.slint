@@ -1850,6 +1850,9 @@ component DialerScreen inherits Rectangle {
     in property <string> number;
     // 0 = Private (ISSI), 1 = PSTN, 2 = PABX.
     property <int> call-type: 0;
+    // Max digits: ISSI is 24 bits (8 digits); external PSTN/PABX numbers are
+    // E.164 (up to 20 digits per the TETRA CMCE external-subscriber-number IE).
+    property <int> max-len: root.call-type == 0 ? 8 : 20;
     callback key(string);
     // place-call(call-type, duplex)
     callback place-call(int, bool);
@@ -1871,6 +1874,8 @@ component DialerScreen inherits Rectangle {
                 TouchArea {
                     clicked => {
                         root.call-type = i;
+                        // Trim an over-long number when switching to a tighter cap.
+                        root.key(i == 0 ? "max8" : "max20");
                     }
                 }
                 Text {
@@ -1910,7 +1915,9 @@ component DialerScreen inherits Rectangle {
                 text: d;
                 horizontal-stretch: 1;
                 clicked => {
-                    root.key(d);
+                    if root.number.character-count < root.max-len {
+                        root.key(d);
+                    }
                 }
             }
         }
