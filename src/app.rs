@@ -2646,6 +2646,13 @@ fn push_recents(app: &AppState, weak: &slint::Weak<MainWindow>) {
         });
     }
     let badge = app.call_log.missed_unread as i32;
+    // Dialer hint: the most recent call, for the Recent-calls card.
+    let dial_hint = app
+        .call_log
+        .entries
+        .last()
+        .map(|e| format!("{}  -  {}", recent_title(app, e), rel_time(e.at_ms)))
+        .unwrap_or_default();
     let detail = app
         .recent_detail
         .and_then(|id| app.call_log.entries.iter().find(|e| e.id == id));
@@ -2671,6 +2678,7 @@ fn push_recents(app: &AppState, weak: &slint::Weak<MainWindow>) {
         w.set_recents(ModelRc::new(VecModel::from(rows)));
         w.set_recents_missed_only(missed_only);
         w.set_missed_calls(badge);
+        w.set_dial_recent_hint(dial_hint.into());
         w.set_recent_detail_title(d_title.into());
         w.set_recent_detail_sub(d_sub.into());
         w.set_recent_detail_time(d_time.into());

@@ -3569,9 +3569,12 @@ component RecentRowView inherits Rectangle {
             Text { text: root.time; color: Palette.faint; font-size: 13px; }
         }
         if root.can-call: Rectangle {
-            width: 52px;
-            border-radius: 13px;
-            background: callta.pressed ? #16321f : transparent;
+            width: 64px;
+            height: 64px;
+            border-radius: 16px;
+            border-width: 1px;
+            border-color: #37c06a4d;
+            background: callta.pressed ? #16321f : #10281a;
             callta := TouchArea {
                 clicked => {
                     root.call();
@@ -3582,7 +3585,7 @@ component RecentRowView inherits Rectangle {
                 y: (parent.height - self.height) / 2;
                 d: Icons.phone;
                 tint: Palette.green;
-                size: 24px;
+                size: 26px;
             }
         }
     }
@@ -3604,56 +3607,63 @@ component RecentsScreen inherits Rectangle {
     VerticalLayout {
         padding: 16px;
         spacing: 10px;
-        // Filter chips.
+        // Filter chips (same size as the dialer's target selectors).
         HorizontalLayout {
             spacing: 8px;
             Rectangle {
                 horizontal-stretch: 1;
-                height: 42px;
+                height: 54px;
                 border-radius: 12px;
                 border-width: 1px;
                 border-color: !root.missed-only ? Palette.accent : Palette.line2;
-                background: !root.missed-only ? #33a7dd1f : Palette.surface;
+                background: !root.missed-only ? #33a7dd29 : Palette.surface;
                 TouchArea { clicked => { root.set-filter(false); } }
                 Text {
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
                     text: "All";
-                    color: !root.missed-only ? #9fd3ef : Palette.txt;
-                    font-size: 15px;
-                    font-weight: !root.missed-only ? 800 : 600;
+                    color: !root.missed-only ? #9fd3ef : Palette.muted;
+                    font-size: 16px;
+                    font-weight: 700;
                 }
             }
             Rectangle {
                 horizontal-stretch: 1;
-                height: 42px;
+                height: 54px;
                 border-radius: 12px;
                 border-width: 1px;
                 border-color: root.missed-only ? Palette.red : Palette.line2;
-                background: root.missed-only ? #f0555a1f : Palette.surface;
+                background: root.missed-only ? #f0555a29 : Palette.surface;
                 TouchArea { clicked => { root.set-filter(true); } }
                 Text {
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
                     text: "Missed";
-                    color: root.missed-only ? #ff9a9d : Palette.txt;
-                    font-size: 15px;
-                    font-weight: root.missed-only ? 800 : 600;
+                    color: root.missed-only ? #ff9a9d : Palette.muted;
+                    font-size: 16px;
+                    font-weight: 700;
                 }
             }
         }
-        Flickable {
+        // Empty state: large, centred in the remaining space.
+        if root.rows.length == 0: Rectangle {
+            vertical-stretch: 1;
+            Text {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                text: root.missed-only ? "No missed calls" : "No recent calls";
+                color: Palette.muted;
+                font-size: 22px;
+                font-weight: 600;
+                horizontal-alignment: center;
+            }
+        }
+        if root.rows.length > 0: Flickable {
             vertical-stretch: 1;
             viewport-height: rccol.preferred-height;
             rccol := VerticalLayout {
                 spacing: 10px;
                 alignment: start;
-                if root.rows.length == 0: Text {
-                    text: root.missed-only ? "No missed calls" : "No recent calls";
-                    color: Palette.muted;
-                    font-size: 16px;
-                    horizontal-alignment: center;
-                }
                 for r in root.rows: RecentRowView {
                     title: r.title;
                     sub: r.sub;
@@ -4335,6 +4345,7 @@ component DialKey inherits Rectangle {
 
 component DialerScreen inherits Rectangle {
     in property <string> number;
+    in property <string> recent-hint;
     // Selectable targets: index 0 = Private (ISSI), then one per codeplug gateway.
     in property <[DialTarget]> targets: [{ label: "Private", max-len: 8 }];
     // Currently selected target index.
@@ -4403,48 +4414,85 @@ component DialerScreen inherits Rectangle {
             }
         }
 
-        // Number readout, vertically centered in the space between the selector
-        // and the keypad. The stretch region keeps the keypad anchored, so a
-        // changing font never shifts it.
+        // When a number is being typed: the big number readout. When empty: a
+        // prominent Recent calls card fills the space for fast redial + history.
         Rectangle {
             vertical-stretch: 1;
-            VerticalLayout {
+            if root.number != "": VerticalLayout {
                 alignment: center;
                 Text {
-                    text: root.number == "" ? "Enter number" : root.number;
-                    color: root.number == "" ? Palette.faint : #ffffff;
-                    font-size: root.number == "" ? 26px : 44px;
+                    text: root.number;
+                    color: #ffffff;
+                    font-size: 44px;
                     font-weight: 800;
                     letter-spacing: 2px;
                     horizontal-alignment: center;
                     overflow: elide;
                 }
             }
-            // Quick access to Recents for redial.
-            Rectangle {
-                x: parent.width - self.width;
-                y: 0;
-                width: 108px;
-                height: 40px;
-                border-radius: 12px;
-                border-width: 1px;
-                border-color: Palette.line2;
-                background: rec-ta.pressed ? #1b2836 : Palette.surface;
-                rec-ta := TouchArea {
-                    clicked => {
-                        root.open-recents();
-                    }
+            if root.number == "": VerticalLayout {
+                alignment: center;
+                spacing: 16px;
+                Text {
+                    text: "Enter a number";
+                    color: Palette.faint;
+                    font-size: 22px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
                 }
-                HorizontalLayout {
-                    alignment: center;
-                    spacing: 6px;
-                    VerticalLayout {
-                        alignment: center;
-                        Icon { d: Icons.phone; tint: Palette.accent; size: 18px; }
+                // Big, obvious Recent calls entry (opens the full Recents screen).
+                Rectangle {
+                    height: 78px;
+                    border-radius: 16px;
+                    border-width: 1px;
+                    border-color: Palette.line2;
+                    background: rec-ta.pressed ? #16202b : Palette.surface;
+                    rec-ta := TouchArea {
+                        clicked => {
+                            root.open-recents();
+                        }
                     }
-                    VerticalLayout {
-                        alignment: center;
-                        Text { text: "Recents"; color: Palette.txt; font-size: 14px; font-weight: 600; }
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        spacing: 14px;
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 50px;
+                                height: 50px;
+                                border-radius: 14px;
+                                background: #33a7dd1f;
+                                Icon {
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                    d: Icons.phone;
+                                    tint: Palette.accent;
+                                    size: 24px;
+                                }
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 3px;
+                            horizontal-stretch: 1;
+                            Text {
+                                text: "Recent calls";
+                                color: Palette.txt;
+                                font-size: 20px;
+                                font-weight: 700;
+                            }
+                            Text {
+                                text: root.recent-hint == "" ? "Call history and redial" : root.recent-hint;
+                                color: Palette.muted;
+                                font-size: 14px;
+                                overflow: elide;
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Icon { d: Icons.chevron; tint: Palette.faint; size: 22px; }
+                        }
                     }
                 }
             }
@@ -4688,6 +4736,7 @@ export component MainWindow inherits Window {
     in property <[RecentRow]> recents;
     in property <bool> recents-missed-only;
     in property <int> missed-calls;
+    in property <string> dial-recent-hint;
     in property <string> recent-detail-title;
     in property <string> recent-detail-sub;
     in property <string> recent-detail-time;
@@ -5519,6 +5568,7 @@ export component MainWindow inherits Window {
         if root.device-input == DeviceInput.Touch && root.screen == Screen.Dialer: DialerScreen {
             vertical-stretch: 1;
             number: root.dial-number;
+            recent-hint: root.dial-recent-hint;
             targets: root.dial-targets;
             key(k) => {
                 root.dial-key(k);
