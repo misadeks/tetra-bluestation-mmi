@@ -1678,17 +1678,21 @@ component ContactDetailScreen inherits Rectangle {
 }
 
 // One key on the on-screen keyboard.
+// A single key styled exactly like the dialer's DialKey, so the on-screen
+// keyboard, the editor numeric pad and the in-call DTMF pad all match the dialer.
 component KeyCap inherits Rectangle {
     in property <string> label;
     in property <string> icon;
     in property <bool> active;
     callback tapped;
-    height: 50px;
+    height: 76px;
     horizontal-stretch: 1;
-    border-radius: 8px;
+    border-radius: 16px;
     border-width: 1px;
     border-color: root.active ? Palette.accent : Palette.line2;
-    background: kt.pressed ? #24313f : (root.active ? #33a7dd29 : Palette.surface);
+    background: kt.pressed
+        ? #1b2836
+        : (root.active ? #33a7dd29 : @linear-gradient(180deg, #17222f 0%, #0f1822 100%));
     kt := TouchArea {
         clicked => {
             root.tapped();
@@ -1698,15 +1702,15 @@ component KeyCap inherits Rectangle {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
         d: root.icon;
-        tint: Palette.txt;
-        size: 22px;
+        tint: #e8f0f6;
+        size: 26px;
     }
     if root.icon == "": Text {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
         text: root.label;
-        color: Palette.txt;
-        font-size: 19px;
+        color: #e8f0f6;
+        font-size: 26px;
         font-weight: 600;
     }
 }
