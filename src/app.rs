@@ -2455,11 +2455,26 @@ fn record_call(
     } else {
         crate::store::now_ms()
     };
+    // For external calls the peer ISSI is the gateway; resolve its codeplug name
+    // (works for both outgoing and inbound gateway calls).
+    let gateway_name = if c.is_external {
+        c.peer_ssi.and_then(|ssi| {
+            app.codeplug.as_ref().and_then(|cp| {
+                cp.gateways
+                    .iter()
+                    .find(|g| g.gateway_issi == ssi)
+                    .map(|g| g.name.clone())
+            })
+        })
+    } else {
+        None
+    };
     app.call_log.add(crate::calllog::CallLogEntry {
         id: 0,
         peer_ssi: c.peer_ssi.unwrap_or(0),
         peer_label,
         external_number: c.external_number.clone(),
+        gateway_name,
         outgoing: !incoming,
         outcome,
         simplex: c.simplex,
@@ -2539,39 +2554,44 @@ fn outcome_word(o: u8) -> &'static str {
 
 /// Primary display label for a call-log entry (contact name, number, or ISSI).
 fn recent_title(app: &AppState, e: &crate::calllog::CallLogEntry) -> String {
+    if e.is_external {
+        // Show the external (dialled or caller) number, not the gateway name.
+        if let Some(n) = e.external_number.as_ref().filter(|s| !s.is_empty()) {
+            return n.clone();
+        }
+        if let Some(g) = e.gateway_name.as_ref().filter(|s| !s.is_empty()) {
+            return g.clone();
+        }
+        return format!("Gateway {}", e.peer_ssi);
+    }
     if let Some(l) = &e.peer_label {
         if !l.is_empty() {
             return l.clone();
         }
     }
-    if !e.is_external {
-        if let Some(id) = contact_ident(app, e.peer_ssi) {
-            return id;
-        }
+    if let Some(id) = contact_ident(app, e.peer_ssi) {
+        return id;
     }
-    if e.is_external {
-        e.external_number
-            .clone()
-            .unwrap_or_else(|| format!("Gateway {}", e.peer_ssi))
-    } else {
-        format!("ISSI {}", e.peer_ssi)
-    }
+    format!("ISSI {}", e.peer_ssi)
 }
 
 /// Compact sub-line for a recents row.
 fn recent_sub(e: &crate::calllog::CallLogEntry) -> String {
     let mode = if e.is_external {
-        "Gateway"
+        e.gateway_name
+            .clone()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "Gateway".to_string())
     } else if e.simplex {
-        "PTT"
+        "PTT".to_string()
     } else {
-        "Duplex"
+        "Duplex".to_string()
     };
     let word = outcome_word(e.outcome);
     if e.outcome == crate::calllog::outcome::ANSWERED {
         format!("{mode}  -  {}", fmt_dur_secs(e.duration_s))
     } else if word.is_empty() {
-        mode.to_string()
+        mode
     } else {
         format!("{word}  -  {mode}")
     }
@@ -2581,11 +2601,14 @@ fn recent_sub(e: &crate::calllog::CallLogEntry) -> String {
 fn recent_detail_sub(e: &crate::calllog::CallLogEntry) -> String {
     let dir = if e.outgoing { "Outgoing" } else { "Incoming" };
     let mode = if e.is_external {
-        "gateway"
+        e.gateway_name
+            .clone()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "gateway".to_string())
     } else if e.simplex {
-        "PTT"
+        "PTT".to_string()
     } else {
-        "duplex"
+        "duplex".to_string()
     };
     let word = outcome_word(e.outcome);
     let base = if word.is_empty() {

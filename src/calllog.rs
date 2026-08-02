@@ -34,6 +34,9 @@ pub struct CallLogEntry {
     /// For an external (gateway) call, the external subscriber number.
     #[serde(default)]
     pub external_number: Option<String>,
+    /// For an external (gateway) call, the gateway's display name (from the codeplug).
+    #[serde(default)]
+    pub gateway_name: Option<String>,
     /// true = we placed it (outgoing); false = it came to us (incoming).
     pub outgoing: bool,
     /// See the `outcome` module.
