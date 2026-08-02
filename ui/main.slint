@@ -811,31 +811,36 @@ component HomeScreen inherits Rectangle {
 
         // Home-mode display: operator banner pushed by the network, shown above
         // the selected talkgroup. Only present when the network has sent text.
-        if root.home-display != "": Rectangle {
-            height: hd-row.preferred-height + 24px;
-            border-radius: 14px;
-            border-width: 1px;
-            border-color: #33a7dd3d;
-            background: #12212e;
-            hd-row := HorizontalLayout {
-                padding-left: 16px;
-                padding-right: 16px;
-                padding-top: 12px;
-                padding-bottom: 12px;
-                spacing: 12px;
-                alignment: center;
-                VerticalLayout {
+        // The card hugs the text width (centred) rather than spanning the screen.
+        if root.home-display != "": HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: min(parent.width, hd-row.preferred-width);
+                height: hd-row.preferred-height;
+                border-radius: 14px;
+                border-width: 1px;
+                border-color: #33a7dd3d;
+                background: #12212e;
+                hd-row := HorizontalLayout {
+                    padding-left: 18px;
+                    padding-right: 18px;
+                    padding-top: 12px;
+                    padding-bottom: 12px;
+                    spacing: 12px;
                     alignment: center;
-                    Icon { d: Icons.info; tint: Palette.accent; size: 22px; }
-                }
-                Text {
-                    text: root.home-display;
-                    color: #dbeafc;
-                    font-size: 20px;
-                    font-weight: 600;
-                    vertical-alignment: center;
-                    horizontal-alignment: center;
-                    wrap: word-wrap;
+                    VerticalLayout {
+                        alignment: center;
+                        Icon { d: Icons.info; tint: Palette.accent; size: 22px; }
+                    }
+                    Text {
+                        text: root.home-display;
+                        color: #dbeafc;
+                        font-size: 20px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
                 }
             }
         }
