@@ -14,7 +14,7 @@ import "fonts/Inter-Bold.ttf";
 import "fonts/Inter-ExtraBold.ttf";
 
 export enum DeviceInput { Touch, Keypad }
-export enum Screen { Home, Menu, Info, Folders, Dialer, Logs, LogDetail, Groups, Config, Survey, InCall, Contacts, ContactDetail, ContactEdit, Messages, MsgThread, MsgNew, Program, ProgramList, ProgramEdit, Tree, Ringtones, Settings, Network }
+export enum Screen { Home, Menu, Info, Folders, Dialer, Logs, LogDetail, Groups, Config, Survey, InCall, Contacts, ContactDetail, ContactEdit, Messages, MsgThread, MsgNew, Program, ProgramList, ProgramEdit, Tree, Ringtones, Settings, Network, Recents, RecentDetail }
 
 export struct FolderRow {
     name: string,
@@ -46,6 +46,18 @@ export struct ContactRow {
     name: string,
     sub: string,
     kind: int, // 0 individual (ISSI), 1 external phone (via gateway)
+}
+
+// A row in the recents / call log.
+export struct RecentRow {
+    id: int,
+    title: string,
+    sub: string,
+    time: string,
+    // outcome: 0 answered, 1 missed, 2 rejected, 3 no-answer, 4 failed
+    kind: int,
+    outgoing: bool,
+    can-call: bool,
 }
 
 // A row in a codeplug-section list (networks, folders, talkgroups, ...).
@@ -159,6 +171,8 @@ global Icons {
     out property <string> chevron-down: "M6 9L12 15L18 9";
     out property <string> chevron-up: "M6 15L12 9L18 15";
     out property <string> bell: "M6 9a6 6 0 0 1 12 0c0 5 2 6 2 7H4c0-1 2-2 2-7M10 20a2 2 0 0 0 4 0";
+    out property <string> call-in: "M7 17L17 7M17 7H9M17 7V15";
+    out property <string> call-out: "M7 7L17 17M17 17V9M17 17H9";
     out property <string> info: "M12 3a9 9 0 1 0 0.001 0M12 11L12 16.5";
     out property <string> folder: "M3 7.5a2 2 0 0 1 2-2h3.6l2 2H19a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z";
     out property <string> check: "M4 12L10 18L20 6";
@@ -948,12 +962,14 @@ component MenuScreen inherits Rectangle {
     in property <bool> registered;
     in property <int> unread;
     in property <int> unread-messages;
+    in property <int> missed-calls;
     in property <bool> show-event-log: true;
     callback open-info;
     callback open-logs;
     callback open-groups;
     callback open-contacts;
     callback open-messages;
+    callback open-recents;
     callback open-config;
     callback open-program;
     callback open-settings;
@@ -972,6 +988,15 @@ component MenuScreen inherits Rectangle {
             icon: Icons.message;
             clicked => {
                 root.open-messages();
+            }
+        }
+        ListRow {
+            title: "Recents";
+            subtitle: root.missed-calls > 0 ? root.missed-calls + " missed calls" : "Call history and redial";
+            icon: Icons.phone;
+            trailing-text: root.missed-calls > 0 ? root.missed-calls : "";
+            clicked => {
+                root.open-recents();
             }
         }
         ListRow {
@@ -3456,6 +3481,354 @@ component SettingsScreen inherits Rectangle {
     }
 }
 
+// One recents row: outcome-tinted direction icon, name/number, time, sub, and a
+// quick-call button. Tap the body to open detail; long-press to delete.
+component RecentRowView inherits Rectangle {
+    in property <string> title;
+    in property <string> sub;
+    in property <string> time;
+    in property <int> kind; // 0 answered,1 missed,2 rejected,3 no-answer,4 failed
+    in property <bool> outgoing;
+    in property <bool> can-call;
+    callback open;
+    callback call;
+    callback long-press;
+    property <bool> held: false;
+    property <bool> missed: root.kind == 1;
+    height: 82px;
+    border-radius: 16px;
+    border-width: 1px;
+    border-color: Palette.line;
+    background: touch.pressed ? #16202b : Palette.surface;
+    hold-timer := Timer {
+        interval: 500ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            root.held = true;
+            root.long-press();
+        }
+    }
+    touch := TouchArea {
+        pointer-event(ev) => {
+            if (ev.kind == PointerEventKind.down) {
+                root.held = false;
+                hold-timer.running = true;
+            }
+            if (ev.kind == PointerEventKind.up) {
+                hold-timer.running = false;
+                if (!root.held) {
+                    root.open();
+                }
+            }
+            if (ev.kind == PointerEventKind.cancel) {
+                hold-timer.running = false;
+            }
+        }
+    }
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 10px;
+        spacing: 14px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 46px;
+                height: 46px;
+                border-radius: 13px;
+                background: root.missed ? #f0555a1f : #33a7dd1f;
+                Icon {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    d: root.outgoing ? Icons.call-out : Icons.call-in;
+                    tint: root.missed ? Palette.red : (root.outgoing ? #7fe0a6 : Palette.accent);
+                    size: 24px;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            Text {
+                text: root.title;
+                color: root.missed ? #ff9a9d : Palette.txt;
+                font-size: 20px;
+                font-weight: root.missed ? 800 : 600;
+                overflow: elide;
+            }
+            Text {
+                text: root.sub;
+                color: Palette.muted;
+                font-size: 14px;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text { text: root.time; color: Palette.faint; font-size: 13px; }
+        }
+        if root.can-call: Rectangle {
+            width: 52px;
+            border-radius: 13px;
+            background: callta.pressed ? #16321f : transparent;
+            callta := TouchArea {
+                clicked => {
+                    root.call();
+                }
+            }
+            Icon {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                d: Icons.phone;
+                tint: Palette.green;
+                size: 24px;
+            }
+        }
+    }
+}
+
+component RecentsScreen inherits Rectangle {
+    in property <[RecentRow]> rows;
+    in property <bool> missed-only;
+    callback open(int);
+    callback call(int);
+    callback delete(int);
+    callback set-filter(bool);
+    callback clear-all;
+    property <bool> confirm-clear: false;
+    property <bool> confirm-del: false;
+    property <int> pending-id;
+    property <string> pending-title;
+    background: transparent;
+    VerticalLayout {
+        padding: 16px;
+        spacing: 10px;
+        // Filter chips.
+        HorizontalLayout {
+            spacing: 8px;
+            Rectangle {
+                horizontal-stretch: 1;
+                height: 42px;
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: !root.missed-only ? Palette.accent : Palette.line2;
+                background: !root.missed-only ? #33a7dd1f : Palette.surface;
+                TouchArea { clicked => { root.set-filter(false); } }
+                Text {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    text: "All";
+                    color: !root.missed-only ? #9fd3ef : Palette.txt;
+                    font-size: 15px;
+                    font-weight: !root.missed-only ? 800 : 600;
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+                height: 42px;
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: root.missed-only ? Palette.red : Palette.line2;
+                background: root.missed-only ? #f0555a1f : Palette.surface;
+                TouchArea { clicked => { root.set-filter(true); } }
+                Text {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    text: "Missed";
+                    color: root.missed-only ? #ff9a9d : Palette.txt;
+                    font-size: 15px;
+                    font-weight: root.missed-only ? 800 : 600;
+                }
+            }
+        }
+        Flickable {
+            vertical-stretch: 1;
+            viewport-height: rccol.preferred-height;
+            rccol := VerticalLayout {
+                spacing: 10px;
+                alignment: start;
+                if root.rows.length == 0: Text {
+                    text: root.missed-only ? "No missed calls" : "No recent calls";
+                    color: Palette.muted;
+                    font-size: 16px;
+                    horizontal-alignment: center;
+                }
+                for r in root.rows: RecentRowView {
+                    title: r.title;
+                    sub: r.sub;
+                    time: r.time;
+                    kind: r.kind;
+                    outgoing: r.outgoing;
+                    can-call: r.can-call;
+                    open => {
+                        root.open(r.id);
+                    }
+                    call => {
+                        root.call(r.id);
+                    }
+                    long-press => {
+                        root.pending-id = r.id;
+                        root.pending-title = r.title;
+                        root.confirm-del = true;
+                    }
+                }
+            }
+        }
+        if root.rows.length > 0: SecondaryButton {
+            text: "Clear all";
+            icon: Icons.trash;
+            danger: true;
+            clicked => {
+                root.confirm-clear = true;
+            }
+        }
+    }
+    if root.confirm-del: ConfirmOverlay {
+        title: "Delete call";
+        message: "Remove this entry from Recents?";
+        confirm-label: "Delete";
+        confirm => {
+            root.confirm-del = false;
+            root.delete(root.pending-id);
+        }
+        cancel => {
+            root.confirm-del = false;
+        }
+    }
+    if root.confirm-clear: ConfirmOverlay {
+        title: "Clear Recents";
+        message: "Delete the entire call log? This cannot be undone.";
+        confirm-label: "Clear all";
+        confirm => {
+            root.confirm-clear = false;
+            root.clear-all();
+        }
+        cancel => {
+            root.confirm-clear = false;
+        }
+    }
+}
+
+component RecentDetailScreen inherits Rectangle {
+    in property <string> title;
+    in property <string> sub;
+    in property <string> time;
+    in property <int> kind;
+    in property <bool> outgoing;
+    in property <bool> can-call;
+    in property <bool> can-ptt;
+    in property <bool> can-message;
+    in property <bool> can-add;
+    callback call-duplex;
+    callback call-ptt;
+    callback message;
+    callback add-contact;
+    callback delete;
+    property <bool> confirm-del: false;
+    property <bool> missed: root.kind == 1;
+    background: transparent;
+    VerticalLayout {
+        padding: 18px;
+        spacing: 14px;
+        Rectangle {
+            height: 168px;
+            border-radius: 18px;
+            border-width: 1px;
+            border-color: Palette.line;
+            background: Palette.surface;
+            VerticalLayout {
+                alignment: center;
+                spacing: 6px;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 66px;
+                        height: 66px;
+                        border-radius: 20px;
+                        background: root.missed ? #f0555a1f : #33a7dd1f;
+                        Icon {
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            d: root.outgoing ? Icons.call-out : Icons.call-in;
+                            tint: root.missed ? Palette.red : (root.outgoing ? #7fe0a6 : Palette.accent);
+                            size: 30px;
+                        }
+                    }
+                }
+                Text {
+                    text: root.title;
+                    color: Palette.txt;
+                    font-size: 26px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    overflow: elide;
+                }
+                Text {
+                    text: root.sub;
+                    color: Palette.muted;
+                    font-size: 15px;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: root.time;
+                    color: Palette.faint;
+                    font-size: 13px;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+        if root.can-call: PrimaryButton {
+            text: "Call (duplex)";
+            icon: Icons.phone;
+            clicked => {
+                root.call-duplex();
+            }
+        }
+        if root.can-ptt: SecondaryButton {
+            text: "Call (PTT)";
+            icon: Icons.mic;
+            clicked => {
+                root.call-ptt();
+            }
+        }
+        if root.can-message: SecondaryButton {
+            text: "Message";
+            icon: Icons.message;
+            clicked => {
+                root.message();
+            }
+        }
+        if root.can-add: SecondaryButton {
+            text: "Add to contacts";
+            icon: Icons.plus;
+            clicked => {
+                root.add-contact();
+            }
+        }
+        Rectangle { vertical-stretch: 1; }
+        DangerButton {
+            text: "Delete";
+            icon: Icons.trash;
+            clicked => {
+                root.confirm-del = true;
+            }
+        }
+    }
+    if root.confirm-del: ConfirmOverlay {
+        title: "Delete call";
+        message: "Remove this entry from Recents?";
+        confirm-label: "Delete";
+        confirm => {
+            root.confirm-del = false;
+            root.delete();
+        }
+        cancel => {
+            root.confirm-del = false;
+        }
+    }
+}
+
 component ConfigScreen inherits Rectangle {
     in property <string> toml;
     callback apply;
@@ -3972,6 +4345,7 @@ component DialerScreen inherits Rectangle {
     callback key(string);
     // place-call(target-index, duplex)
     callback place-call(int, bool);
+    callback open-recents;
     background: transparent;
     VerticalLayout {
         padding: 18px;
@@ -4044,6 +4418,34 @@ component DialerScreen inherits Rectangle {
                     letter-spacing: 2px;
                     horizontal-alignment: center;
                     overflow: elide;
+                }
+            }
+            // Quick access to Recents for redial.
+            Rectangle {
+                x: parent.width - self.width;
+                y: 0;
+                width: 108px;
+                height: 40px;
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: Palette.line2;
+                background: rec-ta.pressed ? #1b2836 : Palette.surface;
+                rec-ta := TouchArea {
+                    clicked => {
+                        root.open-recents();
+                    }
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 6px;
+                    VerticalLayout {
+                        alignment: center;
+                        Icon { d: Icons.phone; tint: Palette.accent; size: 18px; }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Text { text: "Recents"; color: Palette.txt; font-size: 14px; font-weight: 600; }
+                    }
                 }
             }
         }
@@ -4282,6 +4684,19 @@ export component MainWindow inherits Window {
     in property <int> ringtone-sel;
     in property <int> ring-category;
     in property <bool> ring-enabled;
+    // Recents / call log.
+    in property <[RecentRow]> recents;
+    in property <bool> recents-missed-only;
+    in property <int> missed-calls;
+    in property <string> recent-detail-title;
+    in property <string> recent-detail-sub;
+    in property <string> recent-detail-time;
+    in property <int> recent-detail-kind;
+    in property <bool> recent-detail-outgoing;
+    in property <bool> recent-detail-can-call;
+    in property <bool> recent-detail-can-ptt;
+    in property <bool> recent-detail-can-message;
+    in property <bool> recent-detail-can-add;
     in property <[DialTarget]> dial-targets: [{ label: "Private", max-len: 8 }];
     // Contact detail page.
     in property <int> detail-index: -1;
@@ -4403,6 +4818,17 @@ export component MainWindow inherits Window {
     callback ring-select(int);
     callback ring-toggle;
     callback ring-pick-category(int);
+    callback open-recents;
+    callback recents-open(int);
+    callback recents-call(int);
+    callback recents-delete(int);
+    callback recents-filter(bool);
+    callback recents-clear;
+    callback recent-call-duplex;
+    callback recent-call-ptt;
+    callback recent-message;
+    callback recent-add-contact;
+    callback recent-delete;
     callback open-logs;
     callback alert-dismiss;
     callback group-select(int, int);
@@ -4470,6 +4896,12 @@ export component MainWindow inherits Window {
         if (root.screen == Screen.Settings) {
             return "Settings";
         }
+        if (root.screen == Screen.Recents) {
+            return "Recents";
+        }
+        if (root.screen == Screen.RecentDetail) {
+            return root.recent-detail-title == "" ? "Call" : root.recent-detail-title;
+        }
         if (root.screen == Screen.ProgramList) {
             return root.prog-title;
         }
@@ -4531,6 +4963,12 @@ export component MainWindow inherits Window {
         }
         if (root.screen == Screen.Settings) {
             return Screen.Menu;
+        }
+        if (root.screen == Screen.Recents) {
+            return Screen.Menu;
+        }
+        if (root.screen == Screen.RecentDetail) {
+            return Screen.Recents;
         }
         if (root.screen == Screen.Tree) {
             return Screen.Program;
@@ -4614,6 +5052,7 @@ export component MainWindow inherits Window {
             registered: root.registered;
             unread: root.unread;
             unread-messages: root.msg-unread;
+            missed-calls: root.missed-calls;
             show-event-log: root.show-event-log;
             open-info => {
                 root.screen = Screen.Info;
@@ -4621,6 +5060,10 @@ export component MainWindow inherits Window {
             open-messages => {
                 root.open-messages();
                 root.screen = Screen.Messages;
+            }
+            open-recents => {
+                root.open-recents();
+                root.screen = Screen.Recents;
             }
             open-groups => {
                 root.screen = Screen.Groups;
@@ -4790,6 +5233,56 @@ export component MainWindow inherits Window {
             vertical-stretch: 1;
             open-ringtones => {
                 root.open-ringtones();
+            }
+        }
+
+        if root.device-input == DeviceInput.Touch && root.screen == Screen.Recents: RecentsScreen {
+            vertical-stretch: 1;
+            rows: root.recents;
+            missed-only: root.recents-missed-only;
+            open(id) => {
+                root.recents-open(id);
+                root.screen = Screen.RecentDetail;
+            }
+            call(id) => {
+                root.recents-call(id);
+            }
+            delete(id) => {
+                root.recents-delete(id);
+            }
+            set-filter(m) => {
+                root.recents-filter(m);
+            }
+            clear-all => {
+                root.recents-clear();
+            }
+        }
+
+        if root.device-input == DeviceInput.Touch && root.screen == Screen.RecentDetail: RecentDetailScreen {
+            vertical-stretch: 1;
+            title: root.recent-detail-title;
+            sub: root.recent-detail-sub;
+            time: root.recent-detail-time;
+            kind: root.recent-detail-kind;
+            outgoing: root.recent-detail-outgoing;
+            can-call: root.recent-detail-can-call;
+            can-ptt: root.recent-detail-can-ptt;
+            can-message: root.recent-detail-can-message;
+            can-add: root.recent-detail-can-add;
+            call-duplex => {
+                root.recent-call-duplex();
+            }
+            call-ptt => {
+                root.recent-call-ptt();
+            }
+            message => {
+                root.recent-message();
+            }
+            add-contact => {
+                root.recent-add-contact();
+            }
+            delete => {
+                root.recent-delete();
             }
         }
 
@@ -5032,6 +5525,10 @@ export component MainWindow inherits Window {
             }
             place-call(t, d) => {
                 root.dial-call(t, d);
+            }
+            open-recents => {
+                root.open-recents();
+                root.screen = Screen.Recents;
             }
         }
         if root.device-input == DeviceInput.Keypad: KeypadHome {

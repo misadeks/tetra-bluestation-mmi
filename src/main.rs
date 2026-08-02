@@ -12,6 +12,7 @@
 
 mod app;
 mod audio;
+mod calllog;
 mod codeplug;
 mod config;
 mod net;
@@ -478,6 +479,72 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let tx = events_tx.clone();
         window.on_open_ringtones(move || {
             let _ = tx.send(app::AppEvent::UiOpenRingtones);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_open_recents(move || {
+            let _ = tx.send(app::AppEvent::UiOpenRecents);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_recents_filter(move |m| {
+            let _ = tx.send(app::AppEvent::UiRecentsFilter(m));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_recents_open(move |id| {
+            let _ = tx.send(app::AppEvent::UiRecentsOpen(id));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_recents_call(move |id| {
+            let _ = tx.send(app::AppEvent::UiRecentsCall(id));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_recents_delete(move |id| {
+            let _ = tx.send(app::AppEvent::UiRecentsDelete(id));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_recents_clear(move || {
+            let _ = tx.send(app::AppEvent::UiRecentsClear);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_recent_call_duplex(move || {
+            let _ = tx.send(app::AppEvent::UiRecentCallDuplex);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_recent_call_ptt(move || {
+            let _ = tx.send(app::AppEvent::UiRecentCallPtt);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_recent_message(move || {
+            let _ = tx.send(app::AppEvent::UiRecentMessage);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_recent_add_contact(move || {
+            let _ = tx.send(app::AppEvent::UiRecentAddContact);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_recent_delete(move || {
+            let _ = tx.send(app::AppEvent::UiRecentDelete);
         });
     }
     {

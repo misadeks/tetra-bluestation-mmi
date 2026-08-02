@@ -14,7 +14,7 @@ use slint::{ModelRc, VecModel};
 
 use crate::codeplug::Codeplug;
 use crate::protocol::{self, MsRuntimeState, ServiceStatus};
-use crate::{ContactRow, ConvRow, DialTarget, EntityRow, FolderRow, FormField, GroupRow, LogRow, MainWindow, MsgRow, ScanRow, Screen, SurveyRow, TreeRow};
+use crate::{ContactRow, ConvRow, DialTarget, EntityRow, FolderRow, FormField, GroupRow, LogRow, MainWindow, MsgRow, RecentRow, ScanRow, Screen, SurveyRow, TreeRow};
 
 /// Events fed into the app loop from net threads, timers, and the UI.
 pub enum AppEvent {
@@ -175,6 +175,24 @@ pub enum AppEvent {
     UiRingToggle,
     /// Auto-stop a ringtone preview (guarded by a generation counter).
     UiRingStopPreview(u32),
+    /// Open the recents / call-log screen (clears the missed badge).
+    UiOpenRecents,
+    /// Toggle the recents filter (true = missed only).
+    UiRecentsFilter(bool),
+    /// Open the detail page for a call-log entry id.
+    UiRecentsOpen(i32),
+    /// Call back a call-log entry id (uses its original mode).
+    UiRecentsCall(i32),
+    /// Delete a call-log entry id.
+    UiRecentsDelete(i32),
+    /// Clear the whole call log.
+    UiRecentsClear,
+    /// Detail actions on the currently-open entry.
+    UiRecentCallDuplex,
+    UiRecentCallPtt,
+    UiRecentMessage,
+    UiRecentAddContact,
+    UiRecentDelete,
 }
 
 struct AppState {
@@ -267,6 +285,12 @@ struct AppState {
     ring_preview_gen: u32,
     /// Which call category the ringtone settings screen is currently editing.
     ring_category: crate::prefs::RingCategory,
+    /// Persistent call log ("Recents").
+    call_log: crate::calllog::CallLog,
+    /// Recents filter: show only missed calls.
+    recents_missed_only: bool,
+    /// The call-log entry id open on the recents detail screen.
+    recent_detail: Option<u64>,
 }
 
 /// Which field of the contact editor the on-screen keyboard is editing.
@@ -433,6 +457,10 @@ struct Call {
     peer_sub: Option<String>,
     /// True when this individual call is an external (gateway) call.
     is_external: bool,
+    /// For an external call, the external subscriber number (dialled or caller).
+    external_number: Option<String>,
+    /// Wall-clock time (unix ms) the call was first seen, for the call log.
+    started_ms: u64,
     /// Hook-signalling incoming call: we sent the ringing U-ALERT
     /// (TnccSetupResponse) once, so we don't repeat it on re-sent indications.
     alerted: bool,
@@ -450,6 +478,9 @@ struct Dialing {
     peer_label: Option<String>,
     /// Display override for the sub-line (e.g. the dialled external number).
     peer_sub: Option<String>,
+    /// External (gateway) call, and the dialled external number.
+    is_external: bool,
+    external_number: Option<String>,
 }
 
 #[derive(Clone)]
@@ -626,6 +657,9 @@ pub fn run(
         prefs: crate::prefs::UiPrefs::load(&storage_dir),
         ring_preview_gen: 0,
         ring_category: crate::prefs::RingCategory::Simplex,
+        call_log: crate::calllog::CallLog::load(&storage_dir),
+        recents_missed_only: false,
+        recent_detail: None,
     };
 
     for event in rx.iter() {
@@ -867,7 +901,7 @@ pub fn run(
                     app.dtmf_echo.clear();
                     let h = app.next_handle();
                     app.send(protocol::tncc_setup(h, ssi, false, duplex));
-                    app.dialing = Some(Dialing { peer_ssi: ssi, group: false, simplex: !duplex, peer_label: None, peer_sub: None });
+                    app.dialing = Some(Dialing { peer_ssi: ssi, group: false, simplex: !duplex, peer_label: None, peer_sub: None, is_external: false, external_number: None });
                     push_calls(&app, &weak);
                     continue;
                 }
@@ -901,7 +935,9 @@ pub fn run(
                     group: false,
                     simplex: false,
                     peer_label: Some(gw.name.clone()),
-                    peer_sub: Some(digits),
+                    peer_sub: Some(digits.clone()),
+                    is_external: true,
+                    external_number: Some(digits),
                 });
                 push_calls(&app, &weak);
             }
@@ -932,16 +968,16 @@ pub fn run(
                 app.dtmf_echo.clear();
                 let h = app.next_handle();
                 // External (phone) calls are always duplex; ISSI honors the flag.
-                let (peer_ssi, sub, simplex) = match target {
+                let (peer_ssi, sub, simplex, is_external, ext_num) = match target {
                     crate::codeplug::CallTarget::Individual(ssi) => {
                         tracing::info!(name = %contact.name, ssi, duplex, "UI: call contact (individual)");
                         app.send(protocol::tncc_setup(h, ssi, false, duplex));
-                        (ssi, ssi.to_string(), !duplex)
+                        (ssi, ssi.to_string(), !duplex, false, None)
                     }
                     crate::codeplug::CallTarget::External { gateway_ssi, digits } => {
                         tracing::info!(name = %contact.name, gateway_ssi, %digits, "UI: call contact (external)");
                         app.send(protocol::tncc_setup_external(h, gateway_ssi, &digits, true));
-                        (gateway_ssi, digits, false)
+                        (gateway_ssi, digits.clone(), false, true, Some(digits))
                     }
                 };
                 app.dialing = Some(Dialing {
@@ -950,6 +986,8 @@ pub fn run(
                     simplex,
                     peer_label: Some(label),
                     peer_sub: Some(sub),
+                    is_external,
+                    external_number: ext_num,
                 });
                 push_calls(&app, &weak);
             }
@@ -1175,7 +1213,7 @@ pub fn run(
                 if app.grp_call.is_none() && existing.is_none() {
                     // Idle -> start the group call; TnccSetup demands the floor.
                     app.grp_call = Some(GrpCall { gssi: sel, cid: None, talking: true });
-                    app.dialing = Some(Dialing { peer_ssi: sel, group: true, simplex: true, peer_label: None, peer_sub: None });
+                    app.dialing = Some(Dialing { peer_ssi: sel, group: true, simplex: true, peer_label: None, peer_sub: None, is_external: false, external_number: None });
                     let h = app.next_handle();
                     app.send(protocol::tncc_setup(h, sel, true, false));
                 } else {
@@ -1238,7 +1276,9 @@ pub fn run(
                     let h = app.next_handle();
                     app.send(protocol::tncc_release(h, cid, true));
                     app.local_end.insert(cid);
-                    app.calls.remove(&cid);
+                    if let Some(c) = app.calls.remove(&cid) {
+                        record_call(&mut app, &c, true, false, &weak);
+                    }
                     push_calls(&app, &weak);
                 }
             }
@@ -1248,7 +1288,9 @@ pub fn run(
                     app.ptt_held = None;
                     let h = app.next_handle();
                     app.send(protocol::tncc_release(h, cid, false));
-                    app.calls.remove(&cid);
+                    if let Some(c) = app.calls.remove(&cid) {
+                        record_call(&mut app, &c, true, false, &weak);
+                    }
                 }
                 app.dialing = None;
                 sync_uplink(&app, audio.as_ref());
@@ -1709,6 +1751,91 @@ pub fn run(
                     }
                 }
             }
+            AppEvent::UiOpenRecents => {
+                app.recents_missed_only = false;
+                if app.call_log.missed_unread != 0 {
+                    app.call_log.clear_missed();
+                    app.call_log.save();
+                }
+                push_recents(&app, &weak);
+            }
+            AppEvent::UiRecentsFilter(missed) => {
+                app.recents_missed_only = missed;
+                push_recents(&app, &weak);
+            }
+            AppEvent::UiRecentsOpen(id) => {
+                app.recent_detail = Some(id as u64);
+                push_recents(&app, &weak);
+            }
+            AppEvent::UiRecentsCall(id) => {
+                call_back_recent(&mut app, &weak, id as u64, true);
+            }
+            AppEvent::UiRecentsDelete(id) => {
+                let id = id as u64;
+                let before = app.call_log.entries.len();
+                app.call_log.entries.retain(|e| e.id != id);
+                if app.call_log.entries.len() != before {
+                    app.call_log.save();
+                    push_recents(&app, &weak);
+                }
+            }
+            AppEvent::UiRecentsClear => {
+                app.call_log.entries.clear();
+                app.call_log.clear_missed();
+                app.call_log.save();
+                push_recents(&app, &weak);
+            }
+            AppEvent::UiRecentCallDuplex => {
+                if let Some(id) = app.recent_detail {
+                    call_back_recent(&mut app, &weak, id, true);
+                }
+            }
+            AppEvent::UiRecentCallPtt => {
+                if let Some(id) = app.recent_detail {
+                    call_back_recent(&mut app, &weak, id, false);
+                }
+            }
+            AppEvent::UiRecentMessage => {
+                if let Some(ssi) = app
+                    .recent_detail
+                    .and_then(|id| app.call_log.entries.iter().find(|e| e.id == id))
+                    .filter(|e| !e.is_external && e.peer_ssi > 0)
+                    .map(|e| e.peer_ssi)
+                {
+                    open_thread(&mut app, &weak, ssi, false);
+                    let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::MsgThread));
+                }
+            }
+            AppEvent::UiRecentAddContact => {
+                if let Some(ssi) = app
+                    .recent_detail
+                    .and_then(|id| app.call_log.entries.iter().find(|e| e.id == id))
+                    .filter(|e| !e.is_external && e.peer_ssi > 0)
+                    .map(|e| e.peer_ssi)
+                {
+                    app.contact_draft = Some(ContactDraft {
+                        key_name: None,
+                        name: String::new(),
+                        callsign: String::new(),
+                        is_phone: false,
+                        issi: ssi.to_string(),
+                        number: String::new(),
+                        gateway_id: String::new(),
+                        focus: EditField::Name,
+                        shift: true,
+                    });
+                    push_contact_editor(&app, &weak);
+                    let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::ContactEdit));
+                }
+            }
+            AppEvent::UiRecentDelete => {
+                if let Some(id) = app.recent_detail.take() {
+                    app.call_log.entries.retain(|e| e.id != id);
+                    app.call_log.save();
+                    push_recents(&app, &weak);
+                    let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::Recents));
+                }
+            }
         }
     }
 }
@@ -2051,6 +2178,16 @@ fn apply_call_event(
                     .unwrap_or_else(|| "The call was released.".to_string());
                 app.notify(weak, "Call ended", &cause, 0);
             }
+            // Log the call (remote-driven end). A non-normal disconnect cause on a
+            // call that never connected is a failure.
+            let failed = !c.answered
+                && c.active_since.is_none()
+                && body
+                    .get("disconnect_cause")
+                    .and_then(Value::as_str)
+                    .map(is_failure_cause)
+                    .unwrap_or(false);
+            record_call(app, &c, local, failed, weak);
         }
         return;
     }
@@ -2078,6 +2215,7 @@ fn apply_call_event(
         cid,
         can_request_tx: true,
         simplex: true,
+        started_ms: crate::store::now_ms(),
         ..Call::default()
     });
 
@@ -2100,6 +2238,7 @@ fn apply_call_event(
                 // which gateway it arrived through) instead of the gateway ISSI.
                 if let Some(ext) = ext_calling {
                     c.is_external = true;
+                    c.external_number = Some(ext.clone());
                     c.peer_label = Some(ext);
                     c.peer_sub = Some(match ext_gw_name {
                         Some(name) => format!("via {name}"),
@@ -2200,6 +2339,12 @@ fn bind_dialing(app: &mut AppState, cid: u32) {
             c.group = true;
         }
         c.simplex = d.simplex;
+        if d.is_external {
+            c.is_external = true;
+        }
+        if c.external_number.is_none() {
+            c.external_number = d.external_number.clone();
+        }
     }
     if d.group {
         if let Some(g) = app.grp_call.as_mut() {
@@ -2208,6 +2353,28 @@ fn bind_dialing(app: &mut AppState, cid: u32) {
             }
         }
     }
+}
+
+/// True when a disconnect cause indicates a setup failure rather than a normal
+/// hangup or an unanswered call (used to label a call-log entry as "failed").
+fn is_failure_cause(cause: &str) -> bool {
+    const FAIL: &[&str] = &[
+        "Busy",
+        "NotReachable",
+        "NotRegistered",
+        "NotAllowed",
+        "Congestion",
+        "Barred",
+        "Incompatible",
+        "NoResources",
+        "ResourcesNotAvailable",
+        "NotAvailable",
+        "Rejected",
+        "Failure",
+        "Expired",
+        "Unknown",
+    ];
+    FAIL.iter().any(|k| cause.contains(k))
 }
 
 fn pretty_cause(cause: &str) -> String {
@@ -2242,6 +2409,278 @@ fn emit_ringing_alerts(app: &mut AppState) {
         }
         tracing::info!(cid, "call: sent ringing alert (U-ALERT)");
     }
+}
+
+/// Record a finished individual call into the persistent call log ("Recents").
+/// Group calls are skipped. `ended_local` = we hung up/rejected; `failed` = the
+/// setup failed rather than a normal disconnect.
+fn record_call(
+    app: &mut AppState,
+    c: &Call,
+    ended_local: bool,
+    failed: bool,
+    weak: &slint::Weak<MainWindow>,
+) {
+    if c.group {
+        return;
+    }
+    let incoming = c.direction == Some("mt");
+    let connected = c.answered || c.active_since.is_some();
+    let outcome = if failed {
+        crate::calllog::outcome::FAILED
+    } else if connected {
+        crate::calllog::outcome::ANSWERED
+    } else if incoming {
+        if ended_local {
+            crate::calllog::outcome::REJECTED
+        } else {
+            crate::calllog::outcome::MISSED
+        }
+    } else {
+        crate::calllog::outcome::NO_ANSWER
+    };
+    let duration_s = c.active_since.map(|t| t.elapsed().as_secs()).unwrap_or(0);
+    // Snapshot a display label (contact name/callsign) if we can resolve one.
+    let peer_label = c
+        .peer_label
+        .clone()
+        .or_else(|| c.peer_ssi.and_then(|s| contact_ident(app, s)));
+    let at_ms = if c.started_ms != 0 {
+        c.started_ms
+    } else {
+        crate::store::now_ms()
+    };
+    app.call_log.add(crate::calllog::CallLogEntry {
+        id: 0,
+        peer_ssi: c.peer_ssi.unwrap_or(0),
+        peer_label,
+        external_number: c.external_number.clone(),
+        outgoing: !incoming,
+        outcome,
+        simplex: c.simplex,
+        is_external: c.is_external,
+        duration_s,
+        at_ms,
+    });
+    app.call_log.save();
+    push_recents(app, weak);
+}
+
+/// Place a call back to a call-log entry (individual ISSI or external gateway).
+fn call_back_recent(app: &mut AppState, weak: &slint::Weak<MainWindow>, id: u64, duplex: bool) {
+    let Some(e) = app.call_log.entries.iter().find(|e| e.id == id).cloned() else {
+        return;
+    };
+    if e.peer_ssi == 0 {
+        return;
+    }
+    if !app.require_online(weak) {
+        return;
+    }
+    if app.state.registration_state != protocol::RegistrationState::Registered {
+        app.notify(weak, "Not registered", "Register the radio before placing a call.", 0);
+        return;
+    }
+    app.mic_muted = false;
+    app.dtmf_echo.clear();
+    let label = e.peer_label.clone().or_else(|| contact_ident(app, e.peer_ssi));
+    let h = app.next_handle();
+    if e.is_external {
+        let Some(number) = e.external_number.clone() else {
+            app.notify(weak, "Cannot redial", "No number stored for this external call.", 0);
+            return;
+        };
+        app.send(protocol::tncc_setup_external(h, e.peer_ssi, &number, true));
+        app.dialing = Some(Dialing {
+            peer_ssi: e.peer_ssi,
+            group: false,
+            simplex: false,
+            peer_label: label,
+            peer_sub: Some(number.clone()),
+            is_external: true,
+            external_number: Some(number),
+        });
+    } else {
+        app.send(protocol::tncc_setup(h, e.peer_ssi, false, duplex));
+        app.dialing = Some(Dialing {
+            peer_ssi: e.peer_ssi,
+            group: false,
+            simplex: !duplex,
+            peer_label: label,
+            peer_sub: None,
+            is_external: false,
+            external_number: None,
+        });
+    }
+    // push_calls sets call_live; the UI then auto-opens the in-call screen.
+    push_calls(app, weak);
+}
+
+/// Format a whole-seconds duration as M:SS.
+fn fmt_dur_secs(s: u64) -> String {
+    format!("{}:{:02}", s / 60, s % 60)
+}
+
+fn outcome_word(o: u8) -> &'static str {
+    use crate::calllog::outcome::*;
+    match o {
+        MISSED => "Missed",
+        REJECTED => "Rejected",
+        NO_ANSWER => "No answer",
+        FAILED => "Failed",
+        _ => "", // answered
+    }
+}
+
+/// Primary display label for a call-log entry (contact name, number, or ISSI).
+fn recent_title(app: &AppState, e: &crate::calllog::CallLogEntry) -> String {
+    if let Some(l) = &e.peer_label {
+        if !l.is_empty() {
+            return l.clone();
+        }
+    }
+    if !e.is_external {
+        if let Some(id) = contact_ident(app, e.peer_ssi) {
+            return id;
+        }
+    }
+    if e.is_external {
+        e.external_number
+            .clone()
+            .unwrap_or_else(|| format!("Gateway {}", e.peer_ssi))
+    } else {
+        format!("ISSI {}", e.peer_ssi)
+    }
+}
+
+/// Compact sub-line for a recents row.
+fn recent_sub(e: &crate::calllog::CallLogEntry) -> String {
+    let mode = if e.is_external {
+        "Gateway"
+    } else if e.simplex {
+        "PTT"
+    } else {
+        "Duplex"
+    };
+    let word = outcome_word(e.outcome);
+    if e.outcome == crate::calllog::outcome::ANSWERED {
+        format!("{mode}  -  {}", fmt_dur_secs(e.duration_s))
+    } else if word.is_empty() {
+        mode.to_string()
+    } else {
+        format!("{word}  -  {mode}")
+    }
+}
+
+/// Longer sub-line for the recents detail page.
+fn recent_detail_sub(e: &crate::calllog::CallLogEntry) -> String {
+    let dir = if e.outgoing { "Outgoing" } else { "Incoming" };
+    let mode = if e.is_external {
+        "gateway"
+    } else if e.simplex {
+        "PTT"
+    } else {
+        "duplex"
+    };
+    let word = outcome_word(e.outcome);
+    let base = if word.is_empty() {
+        format!("{dir} {mode} call")
+    } else {
+        format!("{dir}  -  {word}")
+    };
+    if e.outcome == crate::calllog::outcome::ANSWERED && e.duration_s > 0 {
+        format!("{base}  -  {}", fmt_dur_secs(e.duration_s))
+    } else {
+        base
+    }
+}
+
+/// Relative time for a recents row ("just now", "5m ago", "14:03", "Mon 14:03").
+fn rel_time(at_ms: u64) -> String {
+    let now = crate::store::now_ms();
+    let delta = now.saturating_sub(at_ms) / 1000; // seconds
+    if delta < 60 {
+        return "just now".to_string();
+    }
+    if delta < 3600 {
+        return format!("{}m ago", delta / 60);
+    }
+    let Some(t) = chrono::DateTime::from_timestamp_millis(at_ms as i64) else {
+        return String::new();
+    };
+    let t = t.with_timezone(&chrono::Local);
+    let now_t = chrono::Local::now();
+    if t.date_naive() == now_t.date_naive() {
+        t.format("%H:%M").to_string()
+    } else if delta < 7 * 86400 {
+        t.format("%a %H:%M").to_string()
+    } else {
+        t.format("%d %b").to_string()
+    }
+}
+
+/// Full timestamp for the recents detail page.
+fn rel_time_full(at_ms: u64) -> String {
+    chrono::DateTime::from_timestamp_millis(at_ms as i64)
+        .map(|t| t.with_timezone(&chrono::Local).format("%a %d %b  %H:%M").to_string())
+        .unwrap_or_default()
+}
+
+/// Push the recents list (newest first, honoring the filter), the missed badge,
+/// and the open detail entry's fields.
+fn push_recents(app: &AppState, weak: &slint::Weak<MainWindow>) {
+    let missed_only = app.recents_missed_only;
+    let mut rows: Vec<RecentRow> = Vec::new();
+    for e in app.call_log.entries.iter().rev() {
+        if missed_only && e.outcome != crate::calllog::outcome::MISSED {
+            continue;
+        }
+        rows.push(RecentRow {
+            id: e.id as i32,
+            title: recent_title(app, e).into(),
+            sub: recent_sub(e).into(),
+            time: rel_time(e.at_ms).into(),
+            kind: e.outcome as i32,
+            outgoing: e.outgoing,
+            can_call: e.peer_ssi > 0 && (!e.is_external || e.external_number.is_some()),
+        });
+    }
+    let badge = app.call_log.missed_unread as i32;
+    let detail = app
+        .recent_detail
+        .and_then(|id| app.call_log.entries.iter().find(|e| e.id == id));
+    let (d_title, d_sub, d_time, d_kind, d_out, d_call, d_ptt, d_msg, d_add) = match detail {
+        Some(e) => {
+            let can_call = e.peer_ssi > 0 && (!e.is_external || e.external_number.is_some());
+            let known = !e.is_external && contact_ident(app, e.peer_ssi).is_some();
+            (
+                recent_title(app, e),
+                recent_detail_sub(e),
+                rel_time_full(e.at_ms),
+                e.outcome as i32,
+                e.outgoing,
+                can_call,
+                can_call && !e.is_external,
+                !e.is_external && e.peer_ssi > 0,
+                !e.is_external && e.peer_ssi > 0 && !known,
+            )
+        }
+        None => (String::new(), String::new(), String::new(), 0, false, false, false, false, false),
+    };
+    let _ = weak.upgrade_in_event_loop(move |w| {
+        w.set_recents(ModelRc::new(VecModel::from(rows)));
+        w.set_recents_missed_only(missed_only);
+        w.set_missed_calls(badge);
+        w.set_recent_detail_title(d_title.into());
+        w.set_recent_detail_sub(d_sub.into());
+        w.set_recent_detail_time(d_time.into());
+        w.set_recent_detail_kind(d_kind);
+        w.set_recent_detail_outgoing(d_out);
+        w.set_recent_detail_can_call(d_call);
+        w.set_recent_detail_can_ptt(d_ptt);
+        w.set_recent_detail_can_message(d_msg);
+        w.set_recent_detail_can_add(d_add);
+    });
 }
 
 /// First call in a live state, preferring a non-group individual call.
@@ -2783,6 +3222,7 @@ fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
     push_dial_targets(app, weak);
     push_conversations(app, weak);
     push_thread(app, weak);
+    push_recents(app, weak);
 }
 
 /// Build the dialer target selector: "Private" (ISSI) plus one entry per
