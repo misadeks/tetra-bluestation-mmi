@@ -2472,21 +2472,36 @@ component MsgThreadScreen inherits Rectangle {
     property <int> pending-id;
     property <string> pending-text;
     in property <int> scroll-tick;
+    // Mirror of the message-list height so we can scroll once it actually grows.
+    property <length> content-h: col.preferred-height;
+    // Set when an open/send asked to scroll; cleared once we've pinned to bottom.
+    property <bool> want-bottom: false;
     background: transparent;
-    // Deferred one-shot: scroll to the newest message after layout settles, so
-    // viewport-height reflects the updated message list.
-    scroll-timer := Timer {
-        interval: 1ms;
-        running: false;
-        triggered => {
-            self.running = false;
-            flick.viewport-y = Math.min(0px, flick.height - flick.viewport-height);
-        }
-    }
     // Pin to the bottom only when opening the thread or sending (Rust bumps the
     // tick), not on every keystroke or inbound message.
     changed scroll-tick => {
-        scroll-timer.running = true;
+        root.want-bottom = true;
+        settle-timer.running = true;
+    }
+    // The new message changes the list height: scroll the moment it appears.
+    changed content-h => {
+        if (root.want-bottom) {
+            flick.viewport-y = Math.min(0px, flick.height - root.content-h);
+            root.want-bottom = false;
+        }
+    }
+    // Fallback for when the height doesn't change (e.g. re-opening a thread whose
+    // content already fills the view): scroll after layout settles.
+    settle-timer := Timer {
+        interval: 16ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            if (root.want-bottom) {
+                flick.viewport-y = Math.min(0px, flick.height - flick.viewport-height);
+                root.want-bottom = false;
+            }
+        }
     }
     VerticalLayout {
         padding: 12px;
