@@ -2964,15 +2964,9 @@ fn section_from_code(s: i32) -> Option<ProgSection> {
     }
 }
 
-/// Open a codeplug section from the hub: contacts reuse the existing screen,
-/// settings jump straight to the form, others show the generic list.
+/// Open a codeplug section from the hub: settings jumps straight to the form,
+/// others show the generic list.
 fn prog_open_section(app: &mut AppState, weak: &slint::Weak<MainWindow>, s: i32) {
-    if s == 5 {
-        app.contact_query.clear();
-        push_contacts(app, weak);
-        let _ = weak.upgrade_in_event_loop(|w| w.set_screen(Screen::Contacts));
-        return;
-    }
     let Some(section) = section_from_code(s) else { return };
     app.prog_section = section;
     if section == ProgSection::Settings {
