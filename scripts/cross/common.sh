@@ -102,7 +102,15 @@ pi_sysroot_libc() {
 pi_sysroot_is_usable() {
   [[ -d "${PI_SYSROOT}" ]] || return 1
   normalize_pi_sysroot_links
-  pi_sysroot_libc >/dev/null
+  pi_sysroot_libc >/dev/null || return 1
+  # Also require dev pkg-config metadata. A sysroot synced BEFORE the -dev
+  # packages were installed on the Pi has libc + runtime .so files but no .pc
+  # files, which otherwise fails the build confusingly deep in a build script.
+  # libdrm.pc is always needed (drm-sys), so use it as the "dev is present"
+  # marker; a stale runtime-only sysroot then triggers an automatic re-sync.
+  local pkg_arch
+  pkg_arch="$(target_pkgconfig_arch)"
+  [[ -z "${pkg_arch}" || -e "${PI_SYSROOT}/usr/lib/${pkg_arch}/pkgconfig/libdrm.pc" ]]
 }
 
 max_glibc_version_from_file() {
