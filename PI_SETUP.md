@@ -206,6 +206,26 @@ The unit runs the binary as root with `SLINT_BACKEND=linuxkms` and
 
 ---
 
+## 9. Performance (CPU pinning, throttling)
+
+On a Pi shared with the TETRA radio/stack, keep the UI off the radio's cores:
+
+- The installed service pins the UI with `CPUAffinity=0 1`; keep the radio on
+  cores 2-3 (its own `CPUAffinity` or kernel `isolcpus`). Tune via `CPU_AFFINITY`
+  in `scripts/cross/pi.env`.
+- For a manual run: `sudo SLINT_BACKEND=linuxkms taskset -c 0-1 ./tetra-tn-ui`.
+- Check for under-voltage/thermal throttling (a common cause of a sluggish UI):
+
+  ```bash
+  vcgencmd get_throttled     # 0x0 = healthy; non-zero = check PSU/cooling
+  ```
+
+- To offload drawing to the GPU, switch the aarch64 build from `renderer-software`
+  to `renderer-femtovg` (see README "Performance" - needs `libgles2-mesa-dev
+  libegl-dev` on the Pi + a sysroot re-sync).
+
+---
+
 ## Quick copy-paste (steps 1-5, fresh Pi)
 
 ```bash

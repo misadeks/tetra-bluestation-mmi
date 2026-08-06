@@ -173,6 +173,29 @@ sudo systemctl enable --now tetra-tn-ui.service
 journalctl -u tetra-tn-ui -f
 ```
 
+### Performance: CPU pinning and renderer
+
+On a shared Pi where the TETRA radio/stack also runs, keep the UI off the radio's
+cores:
+
+- **Service:** the unit sets `CPUAffinity=0 1` (UI on cores 0-1; keep the radio on
+  2-3, e.g. via its own `CPUAffinity`/`isolcpus`). Tune with `CPU_AFFINITY` in
+  `scripts/cross/pi.env` (empty disables).
+- **Ad-hoc runs:** the scripts prefix `taskset -c 0-1` (tune with `TASKSET_CPUS`).
+  Manually: `sudo SLINT_BACKEND=linuxkms taskset -c 0-1 ./tetra-tn-ui`.
+
+Cut CPU further:
+
+- The first-bring-up build uses the **software renderer**. To offload drawing to
+  the GPU, switch to the FemtoVG/GLES renderer: in `Cargo.toml` replace
+  `renderer-software` with `renderer-femtovg` for the aarch64 target, and add the
+  GL/EGL dev packages on the Pi (`libgles2-mesa-dev libegl-dev`, then re-run
+  `sync-sysroot.sh`). The linuxkms backend renders straight to KMS via EGL/GBM;
+  no desktop needed.
+- Avoid continuous full-frame animations (they force full redraws each frame).
+- If the UI is sluggish, rule out hardware throttling: `vcgencmd get_throttled`
+  (non-zero = under-voltage/thermal throttling - check PSU/cooling).
+
 ### Cross-compile from Windows via WSL (faster than building on the Pi)
 
 You can cross-compile for the Pi from WSL instead of building on-device, mirroring

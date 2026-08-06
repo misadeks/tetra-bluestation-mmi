@@ -65,6 +65,7 @@ WorkingDirectory=${REMOTE_DIR}
 Environment=SLINT_BACKEND=linuxkms
 Environment=RUST_LOG=${RUST_LOG}
 ExecStart=${REMOTE_DIR}/${BINARY_NAME}
+${CPU_AFFINITY:+CPUAffinity=${CPU_AFFINITY}}
 Restart=always
 RestartSec=2
 StartLimitIntervalSec=60

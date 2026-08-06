@@ -29,6 +29,10 @@ WorkingDirectory=/home/pi/tetra-tn-ui
 Environment=SLINT_BACKEND=linuxkms
 Environment=RUST_LOG=info
 ExecStart=/home/pi/tetra-tn-ui/target/release/tetra-tn-ui
+# Pin the UI to cores 0-1 so it stays off the cores the TETRA radio/stack uses
+# (keep the radio on 2-3, e.g. via its own CPUAffinity / isolcpus). Adjust or
+# remove for a board with a different core count.
+CPUAffinity=0 1
 Restart=always
 RestartSec=2
 # Give the DRM/input devices time to appear on cold boot before restart storms.

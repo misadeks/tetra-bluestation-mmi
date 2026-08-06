@@ -76,11 +76,14 @@ if [[ -d "${REPO_ROOT}/native" ]]; then
   rsync -az "${REPO_ROOT}/native/" "${REMOTE}:${REMOTE_DIR}/native/"
 fi
 
+# Pin the UI off the radio's cores (empty TASKSET_CPUS disables it).
+TASKSET="${TASKSET_CPUS:+taskset -c ${TASKSET_CPUS} }"
+
 if [[ "${RUN}" == "0" ]]; then
   echo "Deployed. Run it on the Pi with:"
-  echo "  cd ${REMOTE_DIR} && sudo SLINT_BACKEND=linuxkms RUST_LOG=${RUST_LOG} ./${BINARY_NAME}"
+  echo "  cd ${REMOTE_DIR} && sudo SLINT_BACKEND=linuxkms RUST_LOG=${RUST_LOG} ${TASKSET}./${BINARY_NAME}"
   exit 0
 fi
 
 echo "Running on ${REMOTE} (SLINT_BACKEND=linuxkms)..."
-ssh -t "${REMOTE}" "cd ${REMOTE_DIR} && sudo SLINT_BACKEND=linuxkms RUST_LOG=${RUST_LOG} ./${BINARY_NAME}"
+ssh -t "${REMOTE}" "cd ${REMOTE_DIR} && sudo SLINT_BACKEND=linuxkms RUST_LOG=${RUST_LOG} ${TASKSET}./${BINARY_NAME}"

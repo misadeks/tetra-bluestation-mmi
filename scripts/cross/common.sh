@@ -26,6 +26,11 @@ fi
 : "${BINARY_NAME:=tetra-tn-ui}"
 : "${CONFIG_FILE:=config.toml}"
 : "${SERVICE_NAME:=tetra-tn-ui.service}"
+# Pin the UI to these CPU cores so it stays off the ones the radio/stack uses.
+# systemd CPUAffinity syntax (space/'-' separated); empty disables pinning.
+: "${CPU_AFFINITY:=0 1}"
+# taskset cpu-list for ad-hoc (non-service) runs; empty disables pinning.
+: "${TASKSET_CPUS:=0-1}"
 : "${RUST_LOG:=info}"
 : "${PI_SYSROOT:=${REPO_ROOT}/.pi-sysroot/${PI_TARGET}}"
 
