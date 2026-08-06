@@ -10,8 +10,9 @@
     README.md). Uses ssh/scp (bundled with Windows OpenSSH). rsync is used if it
     is on PATH, otherwise it falls back to scp.
 
-    Prereqs on the Pi (see README.md): build-essential libasound2-dev libdrm-dev
-    pkg-config, the Rust toolchain (rustup), and the DSI panel enabled via the
+    Prereqs on the Pi (see README.md): build-essential pkg-config libasound2-dev
+    libdrm-dev libgbm-dev libinput-dev libudev-dev libxkbcommon-dev, the Rust
+    toolchain (rustup), and the DSI panel enabled via the
     vc4-kms-dsi-waveshare-panel-v2 overlay so /dev/dri/card* exists.
 
 .EXAMPLE

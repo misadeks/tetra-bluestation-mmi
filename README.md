@@ -89,12 +89,15 @@ Slint **linuxkms** backend - no compositor involved.
 
 ```bash
 sudo apt update
-sudo apt install build-essential libasound2-dev libdrm-dev pkg-config
+sudo apt install build-essential pkg-config \
+  libasound2-dev libdrm-dev libgbm-dev libinput-dev libudev-dev libxkbcommon-dev
 ```
 
-- `build-essential` - C toolchain/linker cargo shells out to.
+- `build-essential` + `pkg-config` - C toolchain/linker and lib discovery.
 - `libasound2-dev` - ALSA headers for the `cpal` audio dependency.
-- `libdrm-dev` + `pkg-config` - DRM/KMS bindings for the linuxkms backend.
+- `libdrm-dev` / `libgbm-dev` - DRM/KMS output for the linuxkms backend.
+- `libinput-dev` / `libudev-dev` - touch/keyboard input via libinput + udev.
+- `libxkbcommon-dev` - keymap handling for the linuxkms backend.
 
 Install Rust with [rustup](https://rustup.rs) (>= 1.95).
 

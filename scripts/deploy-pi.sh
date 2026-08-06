@@ -17,8 +17,8 @@
 #   PI_DIR    remote checkout dir      (default: ~/tetra-tn-ui)
 #   NO_RUN    if set to 1, sync+build only, don't run
 #
-# Prereqs on the Pi (see README.md): build-essential libasound2-dev libdrm-dev
-# pkg-config, plus the Rust toolchain (rustup) and the DSI panel enabled via the
+# Prereqs on the Pi (see README.md): build-essential pkg-config libasound2-dev
+# libdrm-dev libgbm-dev libinput-dev libudev-dev libxkbcommon-dev, plus the Rust toolchain (rustup) and the DSI panel enabled via the
 # vc4-kms-dsi-waveshare-panel-v2 overlay so /dev/dri/card* exists.
 set -euo pipefail
 
