@@ -44,6 +44,8 @@ src/protocol.rs   serde mirror of the interface-2 wire types + command builders
 src/net.rs        the two WebSocket servers (control + telemetry)
 src/app.rs        central app state + the single UI-writer event loop
 config.toml       runtime config (BlueStation MS listen ports, devices, [ui])
+scripts/          deploy-pi.sh / deploy-pi.ps1 (sync + build + run on the Pi)
+deploy/           tetra-tn-ui.service (systemd kiosk autostart)
 DECISIONS.md      running log of decisions and deviations
 ```
 
@@ -52,10 +54,11 @@ DECISIONS.md      running log of decisions and deviations
 - **Rust 1.95** or later (`cargo` / `rustc` on PATH).
 - On Windows: the **MSVC** toolchain (Visual Studio 2022 Build Tools, C++ workload).
 - For Pi cross-builds: the `aarch64-unknown-linux-gnu` target plus a cross linker, or
-  build on the Pi directly.
+  build on the Pi directly (the supported path - see *Build and run - Raspberry Pi*).
 
-No external native dependency setup is needed for the M1 spike; Slint fetches and builds
-its renderer stack through cargo.
+No external native dependency setup is needed for Windows dev; Slint fetches and builds
+its renderer stack through cargo. The Pi (linuxkms) build needs a few apt packages -
+see the Raspberry Pi section below.
 
 ## Build and run - Windows (RustRover)
 
@@ -73,18 +76,98 @@ Run the unit tests with:
 cargo test
 ```
 
-## Build and run - Raspberry Pi (aarch64 Linux)
+## Build and run - Raspberry Pi (aarch64 Linux, DRM/KMS kiosk)
 
-Add the target and build (on the Pi, or cross-compile with a linker configured):
+The Pi is a **Raspberry Pi 4** running **Raspberry Pi OS Lite** (no desktop / X /
+Wayland) driving a **Waveshare 5" DSI panel** (5-DSI-TOUCH-A, native portrait
+720x1280). The panel is enabled in `/boot/firmware/config.txt` via
+`dtoverlay=vc4-kms-dsi-waveshare-panel-v2`, so the Pi exposes it as a DRM/KMS
+device (`/dev/dri/card*`). The app renders **straight to DRM/KMS** using the
+Slint **linuxkms** backend - no compositor involved.
+
+### apt prerequisites (on the Pi)
+
+```bash
+sudo apt update
+sudo apt install build-essential libasound2-dev libdrm-dev pkg-config
+```
+
+- `build-essential` - C toolchain/linker cargo shells out to.
+- `libasound2-dev` - ALSA headers for the `cpal` audio dependency.
+- `libdrm-dev` + `pkg-config` - DRM/KMS bindings for the linuxkms backend.
+
+Install Rust with [rustup](https://rustup.rs) (>= 1.95).
+
+### The linuxkms backend
+
+The Pi build is target-scoped in `Cargo.toml`: for `aarch64` Linux, Slint is
+pulled in with `default-features = false` plus `backend-linuxkms-noseat` and
+`renderer-software`, so the winit backend is dropped and the binary renders to
+DRM/KMS. `-noseat` skips libseat/logind so it runs from a plain systemd service
+or `sudo` with no seat manager. The software renderer is used for a reliable
+first bring-up; FemtoVG/Skia GPU rendering can be enabled later (swap
+`renderer-software` for `renderer-femtovg` and add the matching GL/EGL packages).
+Windows/x86 dev is unaffected and keeps the default winit backend.
+
+### Build and run on the Pi
+
+Build natively on the Pi (the primary path - see cross-compiling below):
+
+```bash
+cargo build --release
+sudo SLINT_BACKEND=linuxkms RUST_LOG=info ./target/release/tetra-tn-ui
+```
+
+`sudo` is used so the process can become DRM master and open `/dev/dri/card*`
+and `/dev/input/*`. Alternatively add your user to the `render`, `video`, and
+`input` groups. Run from the checkout so it finds `config.toml` (which already
+selects `model = "pi-720x1280"`).
+
+### Deploy from your dev box
+
+`scripts/deploy-pi.sh` (bash) and `scripts/deploy-pi.ps1` (PowerShell, for
+RustRover on Windows) sync the source to the Pi, run `cargo build --release`
+there, and launch it with `SLINT_BACKEND=linuxkms`. Host/user are parameterized:
+
+```bash
+PI_HOST=raspberrypi.local PI_USER=pi ./scripts/deploy-pi.sh
+```
+
+```powershell
+./scripts/deploy-pi.ps1 -PiHost raspberrypi.local -PiUser pi
+```
+
+RustRover ships two shared run configs under `.idea/runConfigurations/`:
+**Run (Windows dev)** (local `cargo run`, winit) and **Deploy + run on Pi
+(linuxkms)** (invokes the PowerShell deploy script).
+
+### Kiosk autostart (systemd)
+
+`deploy/tetra-tn-ui.service` autostarts the kiosk on boot with
+`SLINT_BACKEND=linuxkms` and `Restart=always`:
+
+```bash
+sudo cp deploy/tetra-tn-ui.service /etc/systemd/system/tetra-tn-ui.service
+# edit WorkingDirectory/ExecStart if your checkout isn't /home/pi/tetra-tn-ui
+sudo systemctl daemon-reload
+sudo systemctl enable --now tetra-tn-ui.service
+journalctl -u tetra-tn-ui -f
+```
+
+### Optional: cross-compile from Windows/x86
+
+Building on the Pi is the supported path. To cross-compile instead you need the
+aarch64 target plus a cross-linker and a Pi sysroot for `libasound`/`libdrm`
+(e.g. via [`cross`](https://github.com/cross-rs/cross) or a configured
+`aarch64-linux-gnu-gcc` linker in `.cargo/config.toml`):
 
 ```bash
 rustup target add aarch64-unknown-linux-gnu
 cargo build --release --target aarch64-unknown-linux-gnu
 ```
 
-The Pi kiosk will use the Slint **linuxkms** (DRM/KMS) backend; that wiring and the
-systemd autostart land in a later milestone. For dev on the Pi you can also run under
-X/Wayland with the default winit backend.
+For dev on a Pi that *does* run X/Wayland you can also run under the default
+winit backend by not setting `SLINT_BACKEND`.
 
 ## Developing with no radio hardware
 

@@ -7,7 +7,6 @@ description = "Native Rust + Slint TETRA TN UI, a variant serving the server sid
 license = "MIT"
 
 [dependencies]
-slint = "1.17"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 toml_edit = "0.22"
@@ -20,6 +19,35 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 base64 = "0.23.0"
 cpal = "0.15"
 libloading = "0.8"
+
+# Slint backend selection is target-scoped so the Windows/x86 dev build and the
+# Raspberry Pi (aarch64 Linux) kiosk build get different renderer/backend stacks
+# from the SAME source, without a feature union pulling both in on either side.
+#
+# The two cfgs below are mutually exclusive, so exactly one slint dependency entry
+# is active per target. Cargo unifies features across duplicate dependency entries,
+# so keeping them mutually exclusive (rather than a base entry + an additive
+# aarch64 entry) is what lets the Pi build DROP the winit backend entirely instead
+# of building winit + linuxkms together.
+
+# Everything that is NOT aarch64 Linux (Windows/MSVC dev in RustRover, x86 Linux,
+# macOS, ...): default Slint features -> the winit backend. Unchanged from before.
+[target.'cfg(not(all(target_os = "linux", target_arch = "aarch64")))'.dependencies]
+slint = "1.17"
+
+# Raspberry Pi 4 kiosk (aarch64 Linux, Raspberry Pi OS Lite, no X/Wayland): render
+# straight to DRM/KMS via the linuxkms backend. `-noseat` skips libseat/logind so
+# the binary can run from a plain systemd service (or `sudo`) without a seat
+# manager. The software renderer is the most reliable first bring-up; FemtoVG/Skia
+# GPU rendering can be enabled later by swapping `renderer-software` for
+# `renderer-femtovg` (add the matching GL/EGL apt packages on the Pi).
+# `default-features = false` drops winit; `compat-1-2` keeps 1.2+ API compatibility.
+[target.'cfg(all(target_os = "linux", target_arch = "aarch64"))'.dependencies]
+slint = { version = "1.17", default-features = false, features = [
+    "compat-1-2",
+    "backend-linuxkms-noseat",
+    "renderer-software",
+] }
 
 [build-dependencies]
 slint-build = "1.17"

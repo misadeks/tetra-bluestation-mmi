@@ -1,0 +1,39 @@
+# TETRA TN UI - Raspberry Pi kiosk (Slint linuxkms / DRM-KMS).
+#
+# Renders straight to the Waveshare 5" DSI panel via DRM/KMS - no X/Wayland.
+# Runs as root so it can become DRM master and open /dev/dri/card* and
+# /dev/input/*. To run as a non-root user instead, add that user to the
+# `render`, `video`, and `input` groups and drop `User=root` below; DRM master
+# on a seatless system generally still wants root, hence the default.
+#
+# Install (on the Pi):
+#   sudo cp deploy/tetra-tn-ui.service /etc/systemd/system/tetra-tn-ui.service
+#   # edit WorkingDirectory/ExecStart below if your checkout isn't /home/pi/tetra-tn-ui
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now tetra-tn-ui.service
+#   journalctl -u tetra-tn-ui -f      # follow logs
+#
+# The binary is built with `cargo build --release` in the checkout (see
+# scripts/deploy-pi.sh). WorkingDirectory must be the checkout so the app finds
+# config.toml (and the `native/` codec libs) next to the binary.
+
+[Unit]
+Description=TETRA TN UI kiosk (Slint linuxkms / DRM-KMS)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/pi/tetra-tn-ui
+Environment=SLINT_BACKEND=linuxkms
+Environment=RUST_LOG=info
+ExecStart=/home/pi/tetra-tn-ui/target/release/tetra-tn-ui
+Restart=always
+RestartSec=2
+# Give the DRM/input devices time to appear on cold boot before restart storms.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Install]
+WantedBy=multi-user.target

@@ -4,7 +4,10 @@
 
 # Backup and editor files
 *~
-.idea/
+# JetBrains IDE: ignore local IDE state, but track shared run configurations so
+# the Windows-dev + deploy-to-Pi run configs are reproducible for everyone.
+.idea/*
+!.idea/runConfigurations/
 .vscode/
 
 # Local TLS material (never commit certs/keys)
