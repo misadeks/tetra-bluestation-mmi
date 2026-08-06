@@ -11,7 +11,8 @@
     is on PATH, otherwise it falls back to scp.
 
     Prereqs on the Pi (see README.md): build-essential pkg-config libasound2-dev
-    libdrm-dev libgbm-dev libinput-dev libudev-dev libxkbcommon-dev, the Rust
+    libdrm-dev libgbm-dev libinput-dev libudev-dev libxkbcommon-dev
+    libfontconfig1-dev fonts-dejavu-core, the Rust
     toolchain (rustup), and the DSI panel enabled via the
     vc4-kms-dsi-waveshare-panel-v2 overlay so /dev/dri/card* exists.
 

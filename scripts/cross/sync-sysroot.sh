@@ -6,7 +6,8 @@
 # Run this once (and again whenever you apt-install new -dev packages on the Pi).
 # The Pi must already have the build prerequisites installed - see README.md
 # (build-essential pkg-config libasound2-dev libdrm-dev libgbm-dev libinput-dev
-# libudev-dev libxkbcommon-dev) so their headers + .pc files come across.
+# libudev-dev libxkbcommon-dev libfontconfig1-dev) so their headers + .pc files
+# come across. Re-run this after installing any new -dev package on the Pi.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"

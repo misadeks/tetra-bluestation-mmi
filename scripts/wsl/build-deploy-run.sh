@@ -29,11 +29,12 @@ fi
 # Sync the sysroot if the WSL copy doesn't have a usable one yet. Sourcing
 # common.sh gives us pi_sysroot_is_usable (checks for libc + fixes symlinks),
 # so a previous partial sync that still has the libs we need won't force a
-# re-sync, and a genuinely missing/broken one will.
+# re-sync, and a genuinely missing/broken one will. Set FORCE_SYNC=1 to re-pull
+# after installing new -dev packages on the Pi (e.g. libfontconfig1-dev).
 # shellcheck source=../cross/common.sh
 source scripts/cross/common.sh
-if ! pi_sysroot_is_usable; then
-  echo "No usable Pi sysroot in the WSL copy; syncing it from the Pi..."
+if [[ "${FORCE_SYNC:-0}" == "1" ]] || ! pi_sysroot_is_usable; then
+  echo "Syncing the Pi sysroot into the WSL copy..."
   bash scripts/cross/sync-sysroot.sh
 fi
 

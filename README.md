@@ -90,7 +90,8 @@ Slint **linuxkms** backend - no compositor involved.
 ```bash
 sudo apt update
 sudo apt install build-essential pkg-config \
-  libasound2-dev libdrm-dev libgbm-dev libinput-dev libudev-dev libxkbcommon-dev
+  libasound2-dev libdrm-dev libgbm-dev libinput-dev libudev-dev libxkbcommon-dev \
+  libfontconfig1-dev fonts-dejavu-core
 ```
 
 - `build-essential` + `pkg-config` - C toolchain/linker and lib discovery.
@@ -98,6 +99,9 @@ sudo apt install build-essential pkg-config \
 - `libdrm-dev` / `libgbm-dev` - DRM/KMS output for the linuxkms backend.
 - `libinput-dev` / `libudev-dev` - touch/keyboard input via libinput + udev.
 - `libxkbcommon-dev` - keymap handling for the linuxkms backend.
+- `libfontconfig1-dev` - font discovery (Slint links fontconfig on Linux).
+- `fonts-dejavu-core` - a real font so text renders on Pi OS Lite (which ships
+  none); any TTF font package works.
 
 Install Rust with [rustup](https://rustup.rs) (>= 1.95).
 
@@ -184,6 +188,9 @@ bash scripts/wsl/build-deploy-run.sh        # sync -> cross-build -> deploy -> r
 ```
 
 `scripts/cross/build-cross.sh` also works standalone (`--deploy` / `--run`).
+The WSL wrapper reuses an existing sysroot; after you `apt install` a new `-dev`
+package on the Pi, re-pull it with `FORCE_SYNC=1 bash scripts/wsl/build-deploy-run.sh`
+(or delete `.pi-sysroot/`).
 `sync-sysroot.sh` requires the Pi to already have the apt prerequisites above so
 their headers + pkg-config files come across. The build guards against linking a
 binary that needs a newer glibc than the Pi provides.
