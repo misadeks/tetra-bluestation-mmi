@@ -26,9 +26,14 @@ if [[ ! -f scripts/cross/pi.env && -f scripts/cross/pi.env.example ]]; then
   echo "Created ${WSL_REPO_DIR}/scripts/cross/pi.env from example - edit if your Pi differs."
 fi
 
-# Sync the sysroot into the WSL copy if it isn't there yet.
-if [[ ! -d .pi-sysroot ]]; then
-  echo "No sysroot in the WSL copy; syncing it from the Pi..."
+# Sync the sysroot if the WSL copy doesn't have a usable one yet. Sourcing
+# common.sh gives us pi_sysroot_is_usable (checks for libc + fixes symlinks),
+# so a previous partial sync that still has the libs we need won't force a
+# re-sync, and a genuinely missing/broken one will.
+# shellcheck source=../cross/common.sh
+source scripts/cross/common.sh
+if ! pi_sysroot_is_usable; then
+  echo "No usable Pi sysroot in the WSL copy; syncing it from the Pi..."
   bash scripts/cross/sync-sysroot.sh
 fi
 

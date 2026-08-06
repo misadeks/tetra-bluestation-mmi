@@ -16,15 +16,27 @@ source "${SCRIPT_DIR}/common.sh"
 require_cmd rsync
 require_cmd ssh
 
+# The Pi's filesystem has dangling symlinks we don't care about (e.g. Qt's
+# qtchooser default.conf). With --copy-unsafe-links those make rsync exit 23/24
+# ("partial transfer due to vanished/unreadable files") and print "IO error
+# encountered -- skipping file deletion". That's harmless for our sysroot - the
+# .so symlinks we actually link against still come across - so accept 23/24.
+rsync_sysroot() {
+  local rc=0
+  rsync -az --delete --safe-links --copy-unsafe-links "$@" || rc=$?
+  if [[ ${rc} -ne 0 && ${rc} -ne 23 && ${rc} -ne 24 ]]; then
+    echo "rsync failed (exit ${rc})" >&2
+    return "${rc}"
+  fi
+  return 0
+}
+
 echo "Syncing Pi sysroot from ${REMOTE} to ${PI_SYSROOT}..."
 mkdir -p "${PI_SYSROOT}/usr" "${PI_SYSROOT}/lib"
 
-rsync -az --delete --safe-links --copy-unsafe-links \
-  "${REMOTE}:/usr/include/" "${PI_SYSROOT}/usr/include/"
-rsync -az --delete --safe-links --copy-unsafe-links \
-  "${REMOTE}:/usr/lib/" "${PI_SYSROOT}/usr/lib/"
-rsync -az --delete --safe-links --copy-unsafe-links \
-  "${REMOTE}:/lib/" "${PI_SYSROOT}/lib/"
+rsync_sysroot "${REMOTE}:/usr/include/" "${PI_SYSROOT}/usr/include/"
+rsync_sysroot "${REMOTE}:/usr/lib/" "${PI_SYSROOT}/usr/lib/"
+rsync_sysroot "${REMOTE}:/lib/" "${PI_SYSROOT}/lib/"
 
 normalize_pi_sysroot_links
 
