@@ -14,8 +14,9 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 
 if [[ -f "${SCRIPT_DIR}/pi.env" ]]; then
-  # shellcheck source=/dev/null
-  source "${SCRIPT_DIR}/pi.env"
+  # Tolerate CRLF (e.g. pi.env edited/created on Windows) by stripping trailing
+  # CRs before evaluating, so `$'\r': command not found` can't happen.
+  eval "$(sed 's/\r$//' "${SCRIPT_DIR}/pi.env")"
 fi
 
 : "${PI_USER:=pi}"

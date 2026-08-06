@@ -4,3 +4,7 @@
 
 # Systemd unit files are Linux-only; keep LF.
 *.service text eol=lf
+
+# Env files are sourced by bash on the Pi / in WSL; keep LF.
+*.env text eol=lf
+pi.env.example text eol=lf
