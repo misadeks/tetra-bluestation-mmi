@@ -294,18 +294,8 @@ component StatusBar inherits Rectangle {
     in property <bool> telemetry-on;
     // Green only when attached AND in service; red otherwise.
     property <bool> ok: root.registered && root.in-service;
-    // Blink phase toggled by a timer while the radio is registering.
-    property <bool> blink-on: false;
     height: 70px;
     background: @linear-gradient(180deg, #0e1822 0%, #0b131b 100%);
-
-    blink-timer := Timer {
-        interval: 450ms;
-        running: root.registering;
-        triggered => {
-            root.blink-on = !root.blink-on;
-        }
-    }
 
     HorizontalLayout {
         padding-left: 18px;
@@ -318,9 +308,11 @@ component StatusBar inherits Rectangle {
                 d: Icons.antenna;
                 size: 30px;
                 weight: 2.2;
-                // Registering: blink red on/off. Otherwise green when OK, red when not.
+                // Registering: steady amber. Otherwise green when OK, red when
+                // not. No blink: a periodic repaint would keep presenting to the
+                // DSI panel and steal DMA bandwidth from the SDR's I2S capture.
                 tint: root.registering
-                    ? (root.blink-on ? Palette.red : #4a1417)
+                    ? #e6a23c
                     : (root.ok ? #55d98a : Palette.red);
             }
         }

@@ -210,6 +210,9 @@ struct AppState {
     reg_type: String,
     state: MsRuntimeState,
     logged_state: bool,
+    /// Last signal-bar count shown, for RSSI-to-bars hysteresis (avoids repaints
+    /// from a jittering RSSI). Cell so `push_ui(&app, ..)` can update it.
+    ui_bars: std::cell::Cell<i32>,
     codeplug: Option<Codeplug>,
     /// Index of the selected folder in the codeplug tree.
     sel_folder: usize,
@@ -633,6 +636,7 @@ pub fn run(
         reg_type,
         state: MsRuntimeState::default(),
         logged_state: false,
+        ui_bars: std::cell::Cell::new(0),
         codeplug: None,
         sel_folder: 0,
         cycle_gssi: None,
@@ -3182,7 +3186,8 @@ fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
     let in_service = s.service_status.in_service();
     let registered = s.registration_state == protocol::RegistrationState::Registered;
     let registering = s.registration_state == protocol::RegistrationState::Registering;
-    let signal_bars = protocol::rssi_to_bars(s.rssi_dbfs);
+    let signal_bars = protocol::rssi_to_bars_hyst(s.rssi_dbfs, app.ui_bars.get());
+    app.ui_bars.set(signal_bars);
     let rssi = match s.rssi_dbfs {
         Some(v) => format!("{v:.0} dBFS"),
         None => "--".to_string(),

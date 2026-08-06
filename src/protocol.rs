@@ -503,6 +503,28 @@ pub fn rssi_to_bars(rssi_dbfs: Option<f32>) -> i32 {
     }
 }
 
+/// Like [`rssi_to_bars`] but with hysteresis around the thresholds so an RSSI
+/// that jitters across a boundary (e.g. -59/-61 dBFS at the 3/4 edge) does not
+/// flap the bar count. Flapping is not just cosmetic here: every bar change
+/// repaints the always-visible status bar, and on the Pi each present to the DSI
+/// panel steals memory/DMA bandwidth from the co-located SDR's I2S capture. Pass
+/// the currently displayed bar count as `current`; the result only steps down
+/// once the level drops a margin below the threshold it climbed in at.
+pub fn rssi_to_bars_hyst(rssi_dbfs: Option<f32>, current: i32) -> i32 {
+    // Threshold (dBFS) to *reach* bars 1..=5.
+    const UP: [f32; 5] = [-105.0, -90.0, -75.0, -60.0, -45.0];
+    const MARGIN: f32 = 4.0;
+    let Some(v) = rssi_dbfs else { return 0 };
+    let mut bars = current.clamp(0, 5);
+    while bars < 5 && v >= UP[bars as usize] {
+        bars += 1;
+    }
+    while bars > 0 && v < UP[(bars - 1) as usize] - MARGIN {
+        bars -= 1;
+    }
+    bars
+}
+
 /// Telemetry variants after which MsRuntimeState is expected to have changed, so
 /// we pull a fresh GetState immediately (mirrors app/stack_servers.py).
 pub fn is_state_changing_event(variant: &str) -> bool {
@@ -671,6 +693,22 @@ mod tests {
         assert_eq!(state.own_issi, 1000001);
         assert_eq!(state.attached_groups, vec![100, 200]);
         assert_eq!(rssi_to_bars(state.rssi_dbfs), 4);
+    }
+
+    #[test]
+    fn rssi_bars_hysteresis_does_not_flap() {
+        // Cold start climbs to the right bar.
+        assert_eq!(rssi_to_bars_hyst(Some(-57.0), 0), 4);
+        // Jitter across the -60 boundary from bar 4 must stay at 4.
+        assert_eq!(rssi_to_bars_hyst(Some(-61.0), 4), 4);
+        assert_eq!(rssi_to_bars_hyst(Some(-63.0), 4), 4);
+        // Only drop once we fall a margin below the threshold.
+        assert_eq!(rssi_to_bars_hyst(Some(-65.0), 4), 3);
+        // And to climb back to 4 we must reach the -60 threshold, not -64.
+        assert_eq!(rssi_to_bars_hyst(Some(-62.0), 3), 3);
+        assert_eq!(rssi_to_bars_hyst(Some(-59.0), 3), 4);
+        // No measurement is always zero bars.
+        assert_eq!(rssi_to_bars_hyst(None, 4), 0);
     }
 
     #[test]
