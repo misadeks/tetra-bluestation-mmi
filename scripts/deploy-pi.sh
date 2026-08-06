@@ -8,11 +8,11 @@
 # sysroot; see README.md for the optional cross-compile route.
 #
 # Usage:
-#   PI_HOST=raspberrypi.local PI_USER=pi ./scripts/deploy-pi.sh
+#   PI_HOST=tetra-ms.local PI_USER=pi ./scripts/deploy-pi.sh
 #   ./scripts/deploy-pi.sh --host 192.168.1.42 --user pi
 #
 # Config (env vars, overridable by flags):
-#   PI_HOST   Pi hostname/IP           (default: raspberrypi.local)
+#   PI_HOST   Pi hostname/IP           (default: tetra-ms.local)
 #   PI_USER   SSH user on the Pi       (default: pi)
 #   PI_DIR    remote checkout dir      (default: ~/tetra-tn-ui)
 #   NO_RUN    if set to 1, sync+build only, don't run
@@ -22,7 +22,7 @@
 # vc4-kms-dsi-waveshare-panel-v2 overlay so /dev/dri/card* exists.
 set -euo pipefail
 
-PI_HOST="${PI_HOST:-raspberrypi.local}"
+PI_HOST="${PI_HOST:-tetra-ms.local}"
 PI_USER="${PI_USER:-pi}"
 PI_DIR="${PI_DIR:-~/tetra-tn-ui}"
 NO_RUN="${NO_RUN:-0}"

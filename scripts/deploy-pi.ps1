@@ -18,11 +18,11 @@
     ./scripts/deploy-pi.ps1 -PiHost 192.168.1.42 -PiUser pi
 
 .EXAMPLE
-    $env:PI_HOST = "raspberrypi.local"; ./scripts/deploy-pi.ps1
+    $env:PI_HOST = "tetra-ms.local"; ./scripts/deploy-pi.ps1
 #>
 [CmdletBinding()]
 param(
-    [string]$PiHost = $(if ($env:PI_HOST) { $env:PI_HOST } else { "raspberrypi.local" }),
+    [string]$PiHost = $(if ($env:PI_HOST) { $env:PI_HOST } else { "tetra-ms.local" }),
     [string]$PiUser = $(if ($env:PI_USER) { $env:PI_USER } else { "pi" }),
     [string]$PiDir  = $(if ($env:PI_DIR)  { $env:PI_DIR }  else { "~/tetra-tn-ui" }),
     [switch]$NoRun

@@ -130,11 +130,11 @@ RustRover on Windows) sync the source to the Pi, run `cargo build --release`
 there, and launch it with `SLINT_BACKEND=linuxkms`. Host/user are parameterized:
 
 ```bash
-PI_HOST=raspberrypi.local PI_USER=pi ./scripts/deploy-pi.sh
+PI_HOST=tetra-ms.local PI_USER=pi ./scripts/deploy-pi.sh
 ```
 
 ```powershell
-./scripts/deploy-pi.ps1 -PiHost raspberrypi.local -PiUser pi
+./scripts/deploy-pi.ps1 -PiHost tetra-ms.local -PiUser pi
 ```
 
 RustRover ships two shared run configs under `.idea/runConfigurations/`:
