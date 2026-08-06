@@ -153,8 +153,17 @@ RustRover ships two shared run configs under `.idea/runConfigurations/`:
 
 ### Kiosk autostart (systemd)
 
-`deploy/tetra-tn-ui.service` autostarts the kiosk on boot with
-`SLINT_BACKEND=linuxkms` and `Restart=always`:
+Scripted (from your dev box / RustRover) - cross-builds if needed, deploys, and
+installs + enables + starts the service:
+
+```powershell
+./scripts/wsl/install-service.ps1        # add -Sync after new Pi -dev packages
+```
+
+or in WSL: `bash scripts/wsl/install-service.sh` (use `NO_START=1` to install +
+enable without starting immediately).
+
+Manual equivalent, once a release binary is on the Pi:
 
 ```bash
 sudo cp deploy/tetra-tn-ui.service /etc/systemd/system/tetra-tn-ui.service

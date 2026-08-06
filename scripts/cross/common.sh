@@ -25,6 +25,7 @@ fi
 : "${REMOTE_DIR:=/home/${PI_USER}/tetra-tn-ui}"
 : "${BINARY_NAME:=tetra-tn-ui}"
 : "${CONFIG_FILE:=config.toml}"
+: "${SERVICE_NAME:=tetra-tn-ui.service}"
 : "${RUST_LOG:=info}"
 : "${PI_SYSROOT:=${REPO_ROOT}/.pi-sysroot/${PI_TARGET}}"
 

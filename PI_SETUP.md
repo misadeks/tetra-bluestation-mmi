@@ -181,7 +181,17 @@ checkout / deploy directory.
 
 ## 8. Kiosk autostart (systemd)
 
-Once a release binary is on the Pi (default deploy dir `/home/pi/tetra-tn-ui`):
+**Easiest (from your dev box):** the install script cross-builds if needed,
+deploys the binary + `config.toml`, and installs + enables + starts the service:
+
+```powershell
+./scripts/wsl/install-service.ps1        # RustRover/Windows (add -Sync after new Pi -dev pkgs)
+```
+```bash
+bash scripts/wsl/install-service.sh      # from WSL; NO_START=1 to not start now
+```
+
+**Manual**, once a release binary is on the Pi (default dir `/home/pi/tetra-tn-ui`):
 
 ```bash
 sudo cp deploy/tetra-tn-ui.service /etc/systemd/system/tetra-tn-ui.service

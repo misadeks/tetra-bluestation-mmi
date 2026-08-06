@@ -1,0 +1,20 @@
+<component name="ProjectRunConfigurationManager">
+  <!-- Cross-build (if needed), deploy, and install the systemd kiosk service on
+       the Pi so it autostarts on boot. Runs scripts/wsl/install-service.ps1,
+       which drives WSL. Configure the Pi target in scripts/cross/pi.env. -->
+  <configuration default="false" name="Install kiosk service on Pi" type="ShConfigurationType">
+    <option name="SCRIPT_TEXT" value="" />
+    <option name="INDEPENDENT_SCRIPT_PATH" value="true" />
+    <option name="SCRIPT_PATH" value="$PROJECT_DIR$/scripts/wsl/install-service.ps1" />
+    <option name="SCRIPT_OPTIONS" value="" />
+    <option name="INDEPENDENT_SCRIPT_WORKING_DIRECTORY" value="true" />
+    <option name="SCRIPT_WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <option name="INDEPENDENT_INTERPRETER_PATH" value="true" />
+    <option name="INTERPRETER_PATH" value="powershell.exe" />
+    <option name="INTERPRETER_OPTIONS" value="-ExecutionPolicy Bypass -File" />
+    <option name="EXECUTE_IN_TERMINAL" value="true" />
+    <option name="EXECUTE_SCRIPT_FILE" value="true" />
+    <envs />
+    <method v="2" />
+  </configuration>
+</component>
