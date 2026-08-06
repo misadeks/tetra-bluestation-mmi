@@ -231,6 +231,9 @@ struct AppState {
     timeout_notified: bool,
     /// Last service status seen (to detect transitions to OutOfService).
     last_service: ServiceStatus,
+    /// When the last "No service" alert was shown, to throttle it while the
+    /// service status flaps in and out of coverage.
+    last_oos_alert: Option<Instant>,
     /// Rolling telemetry event log (newest last).
     events: VecDeque<LogEntry>,
     /// Unread event count since the log was last opened.
@@ -641,6 +644,7 @@ pub fn run(
         pending: HashMap::new(),
         timeout_notified: false,
         last_service: ServiceStatus::OutOfService,
+        last_oos_alert: None,
         events: VecDeque::new(),
         unread: 0,
         last_config_toml: String::new(),
@@ -2066,12 +2070,22 @@ fn handle_telemetry(
             {
                 if now == ServiceStatus::OutOfService && app.last_service != ServiceStatus::OutOfService
                 {
-                    app.notify(
-                        weak,
-                        "No service",
-                        "Downlink lost - the radio has left coverage.",
-                        1,
-                    );
+                    // Throttle: while coverage flaps in and out, show this at most
+                    // once a minute instead of on every transition.
+                    let t = Instant::now();
+                    let recent = app
+                        .last_oos_alert
+                        .map(|p| t.duration_since(p) < Duration::from_secs(60))
+                        .unwrap_or(false);
+                    if !recent {
+                        app.last_oos_alert = Some(t);
+                        app.notify(
+                            weak,
+                            "No service",
+                            "Downlink lost - the radio has left coverage.",
+                            1,
+                        );
+                    }
                 }
                 app.last_service = now;
             }
