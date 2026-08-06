@@ -85,6 +85,9 @@ Wayland) driving a **Waveshare 5" DSI panel** (5-DSI-TOUCH-A, native portrait
 device (`/dev/dri/card*`). The app renders **straight to DRM/KMS** using the
 Slint **linuxkms** backend - no compositor involved.
 
+> For a start-to-finish, copy-paste checklist of everything to run **on the Pi**
+> (panel overlay, packages, Rust, DRM access, systemd), see **[PI_SETUP.md](PI_SETUP.md)**.
+
 ### apt prerequisites (on the Pi)
 
 ```bash
@@ -189,8 +192,10 @@ bash scripts/wsl/build-deploy-run.sh        # sync -> cross-build -> deploy -> r
 
 `scripts/cross/build-cross.sh` also works standalone (`--deploy` / `--run`).
 The WSL wrapper reuses an existing sysroot; after you `apt install` a new `-dev`
-package on the Pi, re-pull it with `FORCE_SYNC=1 bash scripts/wsl/build-deploy-run.sh`
-(or delete `.pi-sysroot/`).
+package on the Pi, re-pull it with `-Sync` from RustRover/PowerShell
+(`scripts/wsl/build-deploy-run.ps1 -Sync`) or `FORCE_SYNC=1 bash
+scripts/wsl/build-deploy-run.sh` in WSL (or just delete `.pi-sysroot/`). Note a
+Windows `$env:FORCE_SYNC` does **not** reach WSL - use `-Sync`.
 `sync-sysroot.sh` requires the Pi to already have the apt prerequisites above so
 their headers + pkg-config files come across. The build guards against linking a
 binary that needs a newer glibc than the Pi provides.
