@@ -1,0 +1,13 @@
+# Cross-compilation linkers for the Raspberry Pi targets.
+#
+# These only take effect when you explicitly build for one of these targets
+# (e.g. `cargo build --target aarch64-unknown-linux-gnu` in WSL). Normal host
+# builds on Windows/MSVC are unaffected. The cross scripts under scripts/cross
+# additionally point the linker at a synced Pi sysroot via RUSTFLAGS so the C
+# libraries the linuxkms backend needs (libdrm, libinput, libxkbcommon, libudev,
+# libasound) resolve at link time.
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-gcc"
+
+[target.armv7-unknown-linux-gnueabihf]
+linker = "arm-linux-gnueabihf-gcc"

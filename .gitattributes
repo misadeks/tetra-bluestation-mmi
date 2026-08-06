@@ -1,0 +1,6 @@
+# Shell scripts must use LF so they run under bash on the Pi and in WSL, even
+# when checked out on Windows.
+*.sh text eol=lf
+
+# Systemd unit files are Linux-only; keep LF.
+*.service text eol=lf

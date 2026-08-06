@@ -44,7 +44,7 @@ src/protocol.rs   serde mirror of the interface-2 wire types + command builders
 src/net.rs        the two WebSocket servers (control + telemetry)
 src/app.rs        central app state + the single UI-writer event loop
 config.toml       runtime config (BlueStation MS listen ports, devices, [ui])
-scripts/          deploy-pi.sh / deploy-pi.ps1 (sync + build + run on the Pi)
+scripts/          deploy-pi.sh / deploy-pi.ps1 (build on Pi); cross/ + wsl/ (WSL cross-compile)
 deploy/           tetra-tn-ui.service (systemd kiosk autostart)
 DECISIONS.md      running log of decisions and deviations
 ```
@@ -157,17 +157,44 @@ sudo systemctl enable --now tetra-tn-ui.service
 journalctl -u tetra-tn-ui -f
 ```
 
-### Optional: cross-compile from Windows/x86
+### Cross-compile from Windows via WSL (faster than building on the Pi)
 
-Building on the Pi is the supported path. To cross-compile instead you need the
-aarch64 target plus a cross-linker and a Pi sysroot for `libasound`/`libdrm`
-(e.g. via [`cross`](https://github.com/cross-rs/cross) or a configured
-`aarch64-linux-gnu-gcc` linker in `.cargo/config.toml`):
+You can cross-compile for the Pi from WSL instead of building on-device, mirroring
+the tetra-bluestation setup. The build runs on x86 with the `aarch64` cross-linker
+(`.cargo/config.toml`), linking against a **sysroot rsynced from the Pi** so the
+linuxkms/audio C libraries (libdrm, libinput, libxkbcommon, libudev, libasound)
+resolve at link time. The sysroot is mandatory here - a bare cross-linker can't
+find those libs.
+
+One-time WSL setup (Debian/Ubuntu):
 
 ```bash
+sudo apt update
+sudo apt install -y build-essential pkg-config rsync openssh-client gcc-aarch64-linux-gnu
 rustup target add aarch64-unknown-linux-gnu
-cargo build --release --target aarch64-unknown-linux-gnu
 ```
+
+Then, from the Windows checkout inside WSL:
+
+```bash
+cd /mnt/c/Users/<you>/RustroverProjects/tetra-tn-ui
+cp scripts/cross/pi.env.example scripts/cross/pi.env   # edit PI_HOST/PI_USER
+bash scripts/cross/sync-sysroot.sh          # once, and after apt-installing new -dev pkgs on the Pi
+bash scripts/wsl/build-deploy-run.sh        # sync -> cross-build -> deploy -> run
+```
+
+`scripts/cross/build-cross.sh` also works standalone (`--deploy` / `--run`).
+`sync-sysroot.sh` requires the Pi to already have the apt prerequisites above so
+their headers + pkg-config files come across. The build guards against linking a
+binary that needs a newer glibc than the Pi provides.
+
+From RustRover on Windows use the **WSL cross-build + run on Pi** run config
+(`scripts/wsl/build-deploy-run.ps1`, which calls into WSL).
+
+The plain [`cross`](https://github.com/cross-rs/cross) (Docker) route also works
+but needs a custom image that adds the `arm64` dpkg architecture and installs the
+`*-dev:arm64` packages - more setup than the sysroot path, so it isn't wired up
+here.
 
 For dev on a Pi that *does* run X/Wayland you can also run under the default
 winit backend by not setting `SLINT_BACKEND`.

@@ -1,0 +1,22 @@
+<component name="ProjectRunConfigurationManager">
+  <!-- WSL cross-compile + deploy + run on the Pi. Builds aarch64 inside WSL
+       against a synced Pi sysroot (fast, no on-Pi compile), then runs the kiosk
+       with SLINT_BACKEND=linuxkms. Requires WSL with the aarch64 cross-toolchain
+       and a synced sysroot (scripts/cross/sync-sysroot.sh, done automatically on
+       first run). Configure the Pi target in scripts/cross/pi.env. -->
+  <configuration default="false" name="WSL cross-build + run on Pi" type="ShConfigurationType">
+    <option name="SCRIPT_TEXT" value="" />
+    <option name="INDEPENDENT_SCRIPT_PATH" value="true" />
+    <option name="SCRIPT_PATH" value="$PROJECT_DIR$/scripts/wsl/build-deploy-run.ps1" />
+    <option name="SCRIPT_OPTIONS" value="" />
+    <option name="INDEPENDENT_SCRIPT_WORKING_DIRECTORY" value="true" />
+    <option name="SCRIPT_WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <option name="INDEPENDENT_INTERPRETER_PATH" value="true" />
+    <option name="INTERPRETER_PATH" value="powershell.exe" />
+    <option name="INTERPRETER_OPTIONS" value="-ExecutionPolicy Bypass -File" />
+    <option name="EXECUTE_IN_TERMINAL" value="true" />
+    <option name="EXECUTE_SCRIPT_FILE" value="true" />
+    <envs />
+    <method v="2" />
+  </configuration>
+</component>

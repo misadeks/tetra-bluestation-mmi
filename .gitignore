@@ -20,6 +20,12 @@ Thumbs.db
 # Runtime logs
 *.log
 
+# Synced Raspberry Pi sysroot for WSL cross-compiling (large; device-specific)
+/.pi-sysroot/
+
+# Per-developer Pi deploy settings (copied from pi.env.example)
+/scripts/cross/pi.env
+
 # Local message store (SDS history persisted at runtime)
 /data/
 
