@@ -6,6 +6,10 @@
 # `render`, `video`, and `input` groups and drop `User=root` below; DRM master
 # on a seatless system generally still wants root, hence the default.
 #
+# The seatless linuxkms backend must own a VT to acquire DRM master, so the unit
+# takes over tty1 (TTYPath + Conflicts=getty@tty1). Without this the app starts
+# but fails at "Error presenting framebuffer on screen: Permission denied".
+#
 # Install (on the Pi):
 #   sudo cp deploy/tetra-tn-ui.service /etc/systemd/system/tetra-tn-ui.service
 #   # edit WorkingDirectory/ExecStart below if your checkout isn't /home/pi/tetra-tn-ui
@@ -16,11 +20,16 @@
 # The binary is built with `cargo build --release` in the checkout (see
 # scripts/deploy-pi.sh). WorkingDirectory must be the checkout so the app finds
 # config.toml (and the `native/` codec libs) next to the binary.
+#
+# NOTE: don't run an ad-hoc instance (e.g. build-cross.sh --run) while this
+# service is active - they fight over the DRM master and the 9101/9102 ports.
 
 [Unit]
 Description=TETRA TN UI kiosk (Slint linuxkms / DRM-KMS)
-After=network-online.target
+After=network-online.target systemd-user-sessions.service getty@tty1.service
 Wants=network-online.target
+# Stop the text console getty on tty1 so we can own that VT (DRM master).
+Conflicts=getty@tty1.service
 
 [Service]
 Type=simple
@@ -29,6 +38,13 @@ WorkingDirectory=/home/pi/tetra-tn-ui
 Environment=SLINT_BACKEND=linuxkms
 Environment=RUST_LOG=info
 ExecStart=/home/pi/tetra-tn-ui/target/release/tetra-tn-ui
+# Own tty1 so the seatless linuxkms backend can become DRM master.
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
 # Pin the UI to cores 0-1 so it stays off the cores the TETRA radio/stack uses
 # (keep the radio on 2-3, e.g. via its own CPUAffinity / isolcpus). Adjust or
 # remove for a board with a different core count.

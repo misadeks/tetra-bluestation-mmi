@@ -173,6 +173,13 @@ sudo systemctl enable --now tetra-tn-ui.service
 journalctl -u tetra-tn-ui -f
 ```
 
+The unit **takes over tty1** (`Conflicts=getty@tty1.service`, `TTYPath=/dev/tty1`)
+so the seatless linuxkms backend can acquire the DRM master - without a VT the app
+starts but dies with "presenting framebuffer: Permission denied". The text login
+console on tty1 is replaced by the kiosk. Don't run an ad-hoc `build-cross.sh
+--run` instance while the service is active; they fight over the DRM master and
+the 9101/9102 ports (install-service kills strays first).
+
 ### Performance: CPU pinning and renderer
 
 On a shared Pi where the TETRA radio/stack also runs, keep the UI off the radio's

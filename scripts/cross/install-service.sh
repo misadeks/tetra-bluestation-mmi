@@ -55,8 +55,9 @@ echo "Installing ${SERVICE_NAME}..."
 UNIT_CONTENT="$(cat <<EOF
 [Unit]
 Description=TETRA TN UI kiosk (Slint linuxkms / DRM-KMS)
-After=network-online.target
+After=network-online.target systemd-user-sessions.service getty@tty1.service
 Wants=network-online.target
+Conflicts=getty@tty1.service
 
 [Service]
 Type=simple
@@ -65,6 +66,12 @@ WorkingDirectory=${REMOTE_DIR}
 Environment=SLINT_BACKEND=linuxkms
 Environment=RUST_LOG=${RUST_LOG}
 ExecStart=${REMOTE_DIR}/${BINARY_NAME}
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
 ${CPU_AFFINITY:+CPUAffinity=${CPU_AFFINITY}}
 Restart=always
 RestartSec=2
@@ -77,6 +84,10 @@ EOF
 )"
 printf '%s\n' "${UNIT_CONTENT}" | ssh "${REMOTE}" "sudo tee '${SERVICE_PATH}' >/dev/null"
 
+# Kill any stray non-service instance (e.g. left by build-cross.sh --run) so it
+# doesn't keep the DRM master or the 9101/9102 ports from the service.
+ssh "${REMOTE}" "sudo pkill -x '${BINARY_NAME}' >/dev/null 2>&1 || true"
+
 if [[ "${NO_START:-0}" == "1" ]]; then
   ssh "${REMOTE}" "sudo systemctl daemon-reload && sudo systemctl enable '${SERVICE_NAME}'"
   echo "Installed and enabled ${SERVICE_NAME} (not started; NO_START=1)."
@@ -87,6 +98,7 @@ else
     sudo systemctl daemon-reload
     sudo systemctl enable '${SERVICE_NAME}'
     sudo systemctl restart '${SERVICE_NAME}'
+    sleep 3
     sudo systemctl --no-pager --full status '${SERVICE_NAME}' || true
   "
 fi
