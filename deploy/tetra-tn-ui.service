@@ -36,6 +36,11 @@ Type=simple
 User=root
 WorkingDirectory=/home/pi/tetra-tn-ui
 Environment=SLINT_BACKEND=linuxkms
+# Render single-buffered in place (fbdev) instead of the double-buffered dumb
+# buffer that DRM-pageflips on every present. On this Pi each pageflip stalls the
+# co-located SDR's I2S DMA (MLE-BREAK / registration failures); the single-buffer
+# path behaves like the text console and keeps the radio stable.
+Environment=SLINT_BACKEND_LINUXFB=1
 Environment=RUST_LOG=info
 ExecStart=/home/pi/tetra-tn-ui/target/release/tetra-tn-ui
 # Own tty1 so the seatless linuxkms backend can become DRM master.
