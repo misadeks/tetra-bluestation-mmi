@@ -213,6 +213,12 @@ struct AppState {
     /// Last signal-bar count shown, for RSSI-to-bars hysteresis (avoids repaints
     /// from a jittering RSSI). Cell so `push_ui(&app, ..)` can update it.
     ui_bars: std::cell::Cell<i32>,
+    /// Repaint throttle: rapid service/registration churn otherwise refreshes
+    /// the UI ~1x/s, and on the Pi each framebuffer write contends with the
+    /// co-located SDR's I2S DMA (corrupting TDMA bursts / blocking registration).
+    /// Telemetry-driven refreshes are coalesced to at most one per interval.
+    last_ui_push: std::time::Instant,
+    ui_push_pending: bool,
     codeplug: Option<Codeplug>,
     /// Index of the selected folder in the codeplug tree.
     sel_folder: usize,
@@ -637,6 +643,8 @@ pub fn run(
         state: MsRuntimeState::default(),
         logged_state: false,
         ui_bars: std::cell::Cell::new(0),
+        last_ui_push: std::time::Instant::now(),
+        ui_push_pending: false,
         codeplug: None,
         sel_folder: 0,
         cycle_gssi: None,
@@ -771,6 +779,9 @@ pub fn run(
                 if !app.calls.is_empty() {
                     push_calls(&app, &weak);
                 }
+                // Apply any telemetry refresh we deferred to keep the
+                // framebuffer (and thus the SDR's I2S DMA) quiet.
+                flush_ui_push(&mut app, &weak);
             }
             AppEvent::UiRegister => {
                 if !app.require_online(&weak) {
@@ -1936,7 +1947,7 @@ fn handle_control(app: &mut AppState, message: &Value, weak: &slint::Weak<MainWi
                         }
                         app.state = state;
                         reconcile_home_view(app);
-                        push_ui(app, weak);
+                        push_ui_throttled(app, weak);
                         push_survey(app, weak);
                     }
                     Err(e) => tracing::warn!(error = %e, "failed to parse MsRuntimeState"),
@@ -3175,6 +3186,29 @@ fn reconcile_home_view(app: &mut AppState) {
 fn push_home_display(app: &AppState, weak: &slint::Weak<MainWindow>) {
     let text = app.home_display_text.clone().unwrap_or_default();
     let _ = weak.upgrade_in_event_loop(move |w| w.set_home_display(text.into()));
+}
+
+/// Coalesce frequent telemetry-driven UI refreshes. Repaints are the UI's main
+/// cost on the Pi: each framebuffer write steals memory/DMA bandwidth from the
+/// co-located SDR's I2S capture, so rapid service/registration churn is
+/// rate-limited to at most one refresh per interval. The pending refresh is
+/// flushed from the 1 Hz clock tick so the UI never lags more than ~1 interval.
+fn push_ui_throttled(app: &mut AppState, weak: &slint::Weak<MainWindow>) {
+    const MIN_INTERVAL: std::time::Duration = std::time::Duration::from_millis(1500);
+    if app.last_ui_push.elapsed() >= MIN_INTERVAL {
+        push_ui(app, weak);
+        app.last_ui_push = std::time::Instant::now();
+        app.ui_push_pending = false;
+    } else {
+        app.ui_push_pending = true;
+    }
+}
+
+/// Apply a deferred throttled refresh once the interval has elapsed.
+fn flush_ui_push(app: &mut AppState, weak: &slint::Weak<MainWindow>) {
+    if app.ui_push_pending {
+        push_ui_throttled(app, weak);
+    }
 }
 
 fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
