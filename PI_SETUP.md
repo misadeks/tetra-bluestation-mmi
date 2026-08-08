@@ -233,10 +233,11 @@ app isn't running yet, so the splash is drawn at the framebuffer level with
 `vc4-kms-v3d` exposes) and stays up until the kiosk's DRM modeset scans out its
 own frame over it - an automatic handoff.
 
-The `install-service` scripts do this for you: they install `fbi`, copy
-`deploy/splash.png` to the Pi, and enable `splash.service`. Replace
-`deploy/splash.png` (native panel size, 720x1280 portrait) with your own logo
-and re-run the install to update it.
+The `install-service` scripts handle the wiring: they install `fbi` and enable
+`splash.service`, and deploy `deploy/splash.png` **if it exists locally**. The
+image itself is not committed (PNGs are gitignored) - drop your own logo at
+`deploy/splash.png` (native panel size, 720x1280 portrait) before deploying,
+or the splash step is simply skipped.
 
 **Silence the boot console** so the panel is clean behind the splash (not
 scrolling logs). Append to the single line in `/boot/firmware/cmdline.txt`:

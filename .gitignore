@@ -31,8 +31,6 @@ Thumbs.db
 
 # Local screenshots
 *.png
-# ...but the kiosk boot splash is a tracked asset.
-!deploy/splash.png
 
 # ETSI-copyrighted ACELP codec libraries (loaded at runtime, never committed)
 *.dll
