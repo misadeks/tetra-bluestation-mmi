@@ -45,17 +45,23 @@ struct Shared {
 }
 
 pub struct RingtonePlayer {
-    shared: Arc<Shared>,
+    device: cpal::Device,
+    config: cpal::StreamConfig,
+    sample_format: cpal::SampleFormat,
     rate: u32,
+    channels: usize,
+    shared: Arc<Shared>,
     /// Id of the tone currently loaded, so repeated `play` calls don't restart it.
     current: Mutex<Option<String>>,
-    // Keep the stream alive for the player's lifetime.
-    _stream: cpal::Stream,
+    /// The output stream is opened lazily while ringing and dropped when it stops.
+    /// A continuously-running ALSA/I2S output stream contends with the co-located
+    /// SDR's I2S DMA and blocks the radio, so we never hold it open while idle.
+    stream: Mutex<Option<cpal::Stream>>,
 }
 
 impl RingtonePlayer {
-    /// Open the default output device and start a silent, ready ringtone stream.
-    /// Returns None if no device is available.
+    /// Probe the default output device but DO NOT open a stream yet. Returns None
+    /// if no device is available. The stream is created on demand in `play`.
     pub fn new() -> Option<RingtonePlayer> {
         let host = cpal::default_host();
         let dev = host.default_output_device()?;
@@ -64,51 +70,64 @@ impl RingtonePlayer {
         let channels = cfg.channels() as usize;
         let sample_format = cfg.sample_format();
         let config: cpal::StreamConfig = cfg.into();
+        tracing::info!(rate, channels, "ringtone: ready (stream opens only while ringing)");
+        Some(RingtonePlayer {
+            device: dev,
+            config,
+            sample_format,
+            rate,
+            channels,
+            shared: Arc::new(Shared {
+                buf: Mutex::new(Arc::new(Vec::new())),
+                active: AtomicBool::new(false),
+                pos: AtomicUsize::new(0),
+            }),
+            current: Mutex::new(None),
+            stream: Mutex::new(None),
+        })
+    }
 
-        let shared = Arc::new(Shared {
-            buf: Mutex::new(Arc::new(Vec::new())),
-            active: AtomicBool::new(false),
-            pos: AtomicUsize::new(0),
-        });
-
+    /// Build and start the output stream (called lazily from `play`).
+    fn open_stream(&self) -> Option<cpal::Stream> {
+        let channels = self.channels;
         let err = |e| tracing::warn!(error = %e, "ringtone: output stream error");
         macro_rules! out {
             ($t:ty, $conv:expr) => {{
-                let shared = shared.clone();
-                dev.build_output_stream(
-                    &config,
-                    move |data: &mut [$t], _| {
-                        let active = shared.active.load(Ordering::Relaxed);
-                        // Snapshot the current waveform (cheap Arc clone).
-                        let wave = if active {
-                            Some(shared.buf.lock().unwrap().clone())
-                        } else {
-                            None
-                        };
-                        let mut pos = shared.pos.load(Ordering::Relaxed);
-                        for frame in data.chunks_mut(channels) {
-                            let s = match &wave {
-                                Some(w) if !w.is_empty() => {
-                                    let v = w[pos % w.len()];
-                                    pos = (pos + 1) % w.len();
-                                    v
-                                }
-                                _ => 0,
+                let shared = self.shared.clone();
+                self.device
+                    .build_output_stream(
+                        &self.config,
+                        move |data: &mut [$t], _| {
+                            let active = shared.active.load(Ordering::Relaxed);
+                            let wave = if active {
+                                Some(shared.buf.lock().unwrap().clone())
+                            } else {
+                                None
                             };
-                            let v = $conv(s);
-                            for slot in frame.iter_mut() {
-                                *slot = v;
+                            let mut pos = shared.pos.load(Ordering::Relaxed);
+                            for frame in data.chunks_mut(channels) {
+                                let s = match &wave {
+                                    Some(w) if !w.is_empty() => {
+                                        let v = w[pos % w.len()];
+                                        pos = (pos + 1) % w.len();
+                                        v
+                                    }
+                                    _ => 0,
+                                };
+                                let v = $conv(s);
+                                for slot in frame.iter_mut() {
+                                    *slot = v;
+                                }
                             }
-                        }
-                        shared.pos.store(pos, Ordering::Relaxed);
-                    },
-                    err,
-                    None,
-                )
-                .ok()
+                            shared.pos.store(pos, Ordering::Relaxed);
+                        },
+                        err,
+                        None,
+                    )
+                    .ok()
             }};
         }
-        let stream = match sample_format {
+        let stream = match self.sample_format {
             cpal::SampleFormat::F32 => out!(f32, |s: i16| s as f32 / 32768.0),
             cpal::SampleFormat::I16 => out!(i16, |s: i16| s),
             cpal::SampleFormat::U16 => out!(u16, |s: i16| (s as i32 + 32768) as u16),
@@ -118,18 +137,11 @@ impl RingtonePlayer {
             }
         }?;
         stream.play().ok()?;
-        tracing::info!(rate, channels, "ringtone: player ready");
-
-        Some(RingtonePlayer {
-            shared,
-            rate,
-            current: Mutex::new(None),
-            _stream: stream,
-        })
+        Some(stream)
     }
 
     /// Start looping `id` (no-op if it is already playing). Unknown ids fall back
-    /// to the default tone.
+    /// to the default tone. Opens the output stream on first play.
     pub fn play(&self, id: &str) {
         let id = if is_valid(id) { id } else { default_id() };
         {
@@ -143,12 +155,20 @@ impl RingtonePlayer {
         self.shared.pos.store(0, Ordering::Relaxed);
         self.shared.active.store(true, Ordering::Relaxed);
         *self.current.lock().unwrap() = Some(id.to_string());
+        // Open the stream lazily so it only exists (and contends with the radio's
+        // I2S DMA) while a ringtone is actually sounding.
+        let mut st = self.stream.lock().unwrap();
+        if st.is_none() {
+            *st = self.open_stream();
+        }
     }
 
-    /// Stop playback (silent until the next `play`).
+    /// Stop playback and close the output stream (silent + no DMA until next play).
     pub fn stop(&self) {
         self.shared.active.store(false, Ordering::Relaxed);
         *self.current.lock().unwrap() = None;
+        // Drop the stream so it stops running and no longer contends with the SDR.
+        *self.stream.lock().unwrap() = None;
     }
 }
 
