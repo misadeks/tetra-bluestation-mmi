@@ -13,6 +13,7 @@
 //   * Uplink: 480-sample (60 ms) frames encode to 274 bits shipped as
 //     `MsUplinkSpeech`, one every 60 ms while we hold the floor.
 
+use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::ffi::c_void;
 use std::path::{Path, PathBuf};
@@ -397,17 +398,47 @@ impl Resampler {
     }
 }
 
-/// The running voice engine. Owns the audio streams (kept alive) and shared
-/// playback/uplink state. Created and dropped on the app loop thread.
+/// The running voice engine. Owns the audio stream *parameters* and shared
+/// playback/uplink state. The cpal streams themselves are opened only while a
+/// call is carrying media (see `set_active`) and dropped when idle: holding
+/// them open continuously runs audio DMA that contends with the co-located
+/// SX1255 I2S uplink and corrupts the timing-critical call-setup random access
+/// (calls otherwise hang in "Connecting"/"Setting up"). Created, used, and
+/// dropped on the app-loop thread only, so the stream cells are single-thread.
 pub struct AudioEngine {
     /// Raw downlink frames to the decoder thread (bounded, drop-oldest).
     dec_tx: Sender<(Vec<u8>, bool)>,
     dec_drop: Receiver<(Vec<u8>, bool)>,
     uplink_active: Arc<AtomicBool>,
     uplink_cid: Arc<AtomicU32>,
-    _out_stream: cpal::Stream,
-    /// Capture stream for uplink; None when no mic is available (downlink-only).
-    _in_stream: Option<cpal::Stream>,
+
+    // Output (playback) stream parameters, kept so the stream can be (re)opened
+    // on demand in `set_active`.
+    out_dev: cpal::Device,
+    out_cfg: cpal::SupportedStreamConfig,
+    out_channels: usize,
+    playback: Arc<Mutex<VecDeque<i16>>>,
+    playing: Arc<AtomicBool>,
+    prebuffer: usize,
+
+    // Input (capture) stream parameters; None when no mic (downlink-only).
+    in_parts: Option<InParts>,
+
+    // Live cpal streams, present only while a call carries media. RefCell/Cell
+    // because the engine is only ever touched from the app-loop thread.
+    out_stream: RefCell<Option<cpal::Stream>>,
+    in_stream: RefCell<Option<cpal::Stream>>,
+    active: Cell<bool>,
+}
+
+/// Capture-side parameters retained to (re)build the input stream on demand.
+struct InParts {
+    dev: cpal::Device,
+    cfg: cpal::SupportedStreamConfig,
+    channels: usize,
+    rate: u32,
+    enc_tx: Sender<Vec<i16>>,
+    enc_drop: Receiver<Vec<i16>>,
 }
 
 impl AudioEngine {
@@ -455,15 +486,14 @@ impl AudioEngine {
         let uplink_active = Arc::new(AtomicBool::new(false));
         let uplink_cid = Arc::new(AtomicU32::new(0));
 
-        let out_stream = build_output_stream(
-            &out_dev,
-            &out_cfg,
-            out_channels,
-            playback.clone(),
-            playing.clone(),
-            prebuffer,
-        )?;
-        out_stream.play().ok()?;
+        // NOTE: the cpal output/input streams are intentionally NOT opened here.
+        // An always-on stream runs continuous audio DMA for the whole app
+        // lifetime, which contends with the co-located SX1255 I2S uplink and
+        // corrupts the timing-critical call-setup random access (calls hang in
+        // "Connecting"/"Setting up"). They are opened lazily in `set_active`
+        // only while a call carries media, keeping the idle->setup window
+        // contention-free. The decoder/encoder worker threads below are cheap
+        // (they block on channels) and run for the whole session.
 
         // Decoder thread: raw downlink bits -> PCM -> playback queue. Runs OFF the
         // app-loop thread so heavy ACELP decode never delays the uplink relay. A
@@ -503,13 +533,11 @@ impl AudioEngine {
         }
 
         // Encoder thread: PCM frames -> ACELP bits -> MsUplinkSpeech via app loop.
-        // The capture->encode queue is bounded (drop-oldest, see build_input_stream)
-        // so if the encoder ever runs below real time the uplink stays current
-        // instead of accumulating unbounded latency (which the far end hears as a
-        // fade to silence).
         // Uplink (capture -> ACELP encode -> MsUplinkSpeech) only when a mic is
         // available; otherwise the engine is downlink-only and still plays voice.
-        let in_stream = if let Some((in_dev, in_cfg)) = in_setup {
+        // The capture stream itself is opened later in `set_active`; here we only
+        // spawn the encoder thread and retain the parameters to build it.
+        let in_parts = if let Some((in_dev, in_cfg)) = in_setup {
             let in_rate = in_cfg.sample_rate().0;
             let in_channels = in_cfg.channels() as usize;
             let (enc_tx, enc_rx) = crossbeam_channel::bounded::<Vec<i16>>(3);
@@ -546,17 +574,14 @@ impl AudioEngine {
                     .ok()?;
             }
 
-            let in_stream = build_input_stream(
-                &in_dev,
-                &in_cfg,
-                in_channels,
-                in_rate,
-                uplink_active.clone(),
+            Some(InParts {
+                dev: in_dev,
+                cfg: in_cfg,
+                channels: in_channels,
+                rate: in_rate,
                 enc_tx,
                 enc_drop,
-            )?;
-            in_stream.play().ok()?;
-            Some(in_stream)
+            })
         } else {
             tracing::warn!("audio: no capture device; downlink-only (uplink disabled)");
             None
@@ -567,9 +592,68 @@ impl AudioEngine {
             dec_drop,
             uplink_active,
             uplink_cid,
-            _out_stream: out_stream,
-            _in_stream: in_stream,
+            out_dev,
+            out_cfg,
+            out_channels,
+            playback,
+            playing,
+            prebuffer,
+            in_parts,
+            out_stream: RefCell::new(None),
+            in_stream: RefCell::new(None),
+            active: Cell::new(false),
         })
+    }
+
+    /// Open the audio streams while a call carries media, or drop them when the
+    /// call ends. Idempotent. Keeping streams closed between calls stops
+    /// continuous audio DMA from starving the radio's I2S uplink during the
+    /// timing-critical call-setup random access, which is what makes calls hang
+    /// in "Connecting"/"Setting up". Only touched from the app-loop thread.
+    pub fn set_active(&self, active: bool) {
+        if active == self.active.get() {
+            return;
+        }
+        if active {
+            match build_output_stream(
+                &self.out_dev,
+                &self.out_cfg,
+                self.out_channels,
+                self.playback.clone(),
+                self.playing.clone(),
+                self.prebuffer,
+            ) {
+                Some(s) if s.play().is_ok() => *self.out_stream.borrow_mut() = Some(s),
+                _ => tracing::warn!("audio: failed to open output stream"),
+            }
+            if let Some(p) = &self.in_parts {
+                match build_input_stream(
+                    &p.dev,
+                    &p.cfg,
+                    p.channels,
+                    p.rate,
+                    self.uplink_active.clone(),
+                    p.enc_tx.clone(),
+                    p.enc_drop.clone(),
+                ) {
+                    Some(s) if s.play().is_ok() => *self.in_stream.borrow_mut() = Some(s),
+                    _ => tracing::warn!("audio: failed to open input stream"),
+                }
+            }
+            self.active.set(true);
+            tracing::info!(has_mic = self.in_parts.is_some(), "audio: streams opened (call active)");
+        } else {
+            // Dropping the cpal streams closes the devices and stops all DMA.
+            self.in_stream.borrow_mut().take();
+            self.out_stream.borrow_mut().take();
+            self.uplink_active.store(false, Ordering::Relaxed);
+            self.playing.store(false, Ordering::Relaxed);
+            if let Ok(mut q) = self.playback.lock() {
+                q.clear();
+            }
+            self.active.set(false);
+            tracing::info!("audio: streams closed (idle)");
+        }
     }
 
     /// Queue a downlink speech frame for decoding on the decoder thread. Cheap:

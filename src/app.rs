@@ -3002,10 +3002,23 @@ fn tx_blocks_playback(app: &AppState, cid: u32) -> bool {
     false
 }
 
+/// True while a call is actually carrying media (established, not merely being
+/// set up). Used to gate the audio streams: they stay closed during the
+/// idle->setup window so the timing-critical call-setup random access isn't
+/// starved by continuous audio DMA on the co-located I2S bus. Deliberately does
+/// NOT key on setup-intent (e.g. `grp_call.talking` before a cid exists), which
+/// happens during the RACH we must keep contention-free.
+fn audio_needed(app: &AppState) -> bool {
+    app.calls.values().any(|c| c.state == CallState::Active) || active_group_call(app).is_some()
+}
+
 /// Reconcile the mic uplink with the current floor: transmit only while we
 /// physically hold the PTT on an active call (individual or group).
 fn sync_uplink(app: &AppState, audio: Option<&crate::audio::AudioEngine>) {
     let Some(a) = audio else { return };
+    // Open the audio devices only while a call carries media; close them when
+    // idle so the next call-setup random access runs contention-free.
+    a.set_active(audio_needed(app));
     // Muted mic: never transmit, whatever the floor state.
     if app.mic_muted {
         a.set_uplink(false, 0);
