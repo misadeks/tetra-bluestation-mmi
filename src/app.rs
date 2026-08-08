@@ -678,7 +678,7 @@ pub fn run(
         picker_expanded: std::collections::HashSet::new(),
         picker_query: String::new(),
         ringtone: if audio_cfg.enabled {
-            crate::ringtone::RingtonePlayer::new()
+            crate::ringtone::RingtonePlayer::new(&audio_cfg.output_device)
         } else {
             None
         },

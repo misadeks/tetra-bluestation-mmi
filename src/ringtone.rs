@@ -12,7 +12,7 @@
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::traits::{DeviceTrait, StreamTrait};
 
 /// The selectable ringtones: (id persisted in prefs, human label). The first is
 /// the default.
@@ -60,11 +60,13 @@ pub struct RingtonePlayer {
 }
 
 impl RingtonePlayer {
-    /// Probe the default output device but DO NOT open a stream yet. Returns None
-    /// if no device is available. The stream is created on demand in `play`.
-    pub fn new() -> Option<RingtonePlayer> {
+    /// Probe the configured output device but DO NOT open a stream yet. Returns
+    /// None if no device is available. The stream is created on demand in `play`.
+    /// `output_device` is a cpal name substring (see `[audio].output_device`);
+    /// "default"/empty uses the host default.
+    pub fn new(output_device: &str) -> Option<RingtonePlayer> {
         let host = cpal::default_host();
-        let dev = host.default_output_device()?;
+        let dev = crate::audio::pick_output_device(&host, output_device)?;
         let cfg = dev.default_output_config().ok()?;
         let rate = cfg.sample_rate().0;
         let channels = cfg.channels() as usize;

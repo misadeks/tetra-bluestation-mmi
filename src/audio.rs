@@ -26,6 +26,70 @@ use libloading::Library;
 use crate::app::AppEvent;
 use crate::config::AudioConfig;
 
+/// Print the cpal output/input device names, one per line, for `--list-audio`.
+/// The printed name is exactly what goes in `[audio].output_device` /
+/// `input_device` (a case-insensitive substring is enough).
+pub fn list_devices() {
+    let host = cpal::default_host();
+    let def_out = host.default_output_device().and_then(|d| d.name().ok());
+    let def_in = host.default_input_device().and_then(|d| d.name().ok());
+    println!("Output devices ([audio].output_device):");
+    if let Ok(devs) = host.output_devices() {
+        for d in devs {
+            let name = d.name().unwrap_or_default();
+            let star = if Some(&name) == def_out.as_ref() { " (default)" } else { "" };
+            println!("  {name}{star}");
+        }
+    }
+    println!("Input devices ([audio].input_device):");
+    if let Ok(devs) = host.input_devices() {
+        for d in devs {
+            let name = d.name().unwrap_or_default();
+            let star = if Some(&name) == def_in.as_ref() { " (default)" } else { "" };
+            println!("  {name}{star}");
+        }
+    }
+}
+
+/// Pick an output device whose cpal name contains `want` (case-insensitive).
+/// "default" or empty selects the host default; falls back to it if not found.
+pub fn pick_output_device(host: &cpal::Host, want: &str) -> Option<cpal::Device> {
+    if want.trim().is_empty() || want.eq_ignore_ascii_case("default") {
+        return host.default_output_device();
+    }
+    let want_l = want.to_lowercase();
+    if let Ok(devs) = host.output_devices() {
+        for d in devs {
+            let name = d.name().unwrap_or_default();
+            if name.to_lowercase().contains(&want_l) {
+                tracing::info!(device = %name, "audio: output device selected");
+                return Some(d);
+            }
+        }
+    }
+    tracing::warn!(want, "audio: output device not found; using default");
+    host.default_output_device()
+}
+
+/// Like [`pick_output_device`] for the capture side.
+pub fn pick_input_device(host: &cpal::Host, want: &str) -> Option<cpal::Device> {
+    if want.trim().is_empty() || want.eq_ignore_ascii_case("default") {
+        return host.default_input_device();
+    }
+    let want_l = want.to_lowercase();
+    if let Ok(devs) = host.input_devices() {
+        for d in devs {
+            let name = d.name().unwrap_or_default();
+            if name.to_lowercase().contains(&want_l) {
+                tracing::info!(device = %name, "audio: input device selected");
+                return Some(d);
+            }
+        }
+    }
+    tracing::warn!(want, "audio: input device not found; using default");
+    host.default_input_device()
+}
+
 const CODEC_RATE: u32 = 8000;
 const SUBFRAME_SAMPLES: usize = 240;
 const FRAME_SAMPLES: usize = 480; // 2 sub-frames, 60 ms
@@ -324,8 +388,8 @@ impl AudioEngine {
         let codec = Arc::new(CodecLib::load(&dir)?);
 
         let host = cpal::default_host();
-        let out_dev = host.default_output_device()?;
-        let in_dev = host.default_input_device()?;
+        let out_dev = pick_output_device(&host, &cfg.output_device)?;
+        let in_dev = pick_input_device(&host, &cfg.input_device)?;
         let out_cfg = out_dev.default_output_config().ok()?;
         let in_cfg = in_dev.default_input_config().ok()?;
         let out_rate = out_cfg.sample_rate().0;

@@ -33,8 +33,13 @@ enabled       = true          # two-way voice (ACELP decode/encode)
 # committed). Windows: tetra_acelp.dll + tetra_acelp_enc.dll; Linux (Pi):
 # libtetra_acelp.so + libtetra_acelp_enc.so. Must match the running arch.
 codec_dir     = 'native'
-output_device = "default"
-input_device  = "default"
+# Audio output/input device (ringtones + two-way voice). A case-insensitive
+# substring of the cpal device name; "default" uses the system default. List the
+# names with `./tetra-tn-ui --list-audio`. Set to a dedicated USB codec on the Pi
+# so the UI's audio can't contend with the SX1255 SDR's I2S DMA. On other hosts
+# (e.g. Windows dev) an unmatched name harmlessly falls back to the default.
+output_device = "plughw:CARD=Device,DEV=0"
+input_device  = "plughw:CARD=Device,DEV=0"
 sample_rate   = 8000
 frame_ms      = 60
 jitter_ms     = 0             # downlink cushion (ms) for bursty delivery; 0 = off

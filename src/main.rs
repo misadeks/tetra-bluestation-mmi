@@ -36,6 +36,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .init();
 
+    // `--list-audio` prints the cpal device names for [audio].output_device /
+    // input_device (e.g. to route the UI's audio to a USB codec), then exits.
+    if std::env::args().any(|a| a == "--list-audio") {
+        audio::list_devices();
+        return Ok(());
+    }
+
     let cfg = Config::load("config.toml")?;
     let ui = cfg.resolve_ui();
     tracing::info!(
