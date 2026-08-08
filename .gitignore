@@ -40,3 +40,7 @@ Thumbs.db
 *.dylib
 tetra_acelp*
 native/etsi/
+
+# Python bytecode cache
+__pycache__/
+*.pyc
