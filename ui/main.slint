@@ -595,10 +595,10 @@ component Ptt inherits Rectangle {
     }
     HorizontalLayout {
         alignment: center;
-        spacing: 12px;
+        spacing: 14px;
         VerticalLayout {
             alignment: center;
-            Icon { d: Icons.mic; tint: root.enabled ? Palette.txt : Palette.muted; size: 34px; }
+            Icon { d: Icons.mic; tint: root.enabled ? Palette.txt : Palette.muted; size: 42px; }
         }
         VerticalLayout {
             alignment: center;
@@ -606,15 +606,15 @@ component Ptt inherits Rectangle {
             Text {
                 text: root.text;
                 color: root.enabled ? Palette.txt : Palette.muted;
-                font-size: 18px;
-                font-weight: 700;
+                font-size: 30px;
+                font-weight: 800;
                 letter-spacing: 0.4px;
                 horizontal-alignment: center;
             }
             if root.sub != "": Text {
                 text: root.sub;
                 color: root.enabled ? #b9ccd8 : Palette.muted;
-                font-size: 13px;
+                font-size: 15px;
                 font-weight: 600;
                 horizontal-alignment: center;
                 overflow: elide;
