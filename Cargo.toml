@@ -38,14 +38,20 @@ slint = "1.17"
 # Raspberry Pi 4 kiosk (aarch64 Linux, Raspberry Pi OS Lite, no X/Wayland): render
 # straight to DRM/KMS via the linuxkms backend. `-noseat` skips libseat/logind so
 # the binary can run from a plain systemd service (or `sudo`) without a seat
-# manager. The software renderer is the most reliable first bring-up; FemtoVG/Skia
-# GPU rendering can be enabled later by swapping `renderer-software` for
-# `renderer-femtovg` (add the matching GL/EGL apt packages on the Pi).
+# manager.
+#
+# Renderer: FemtoVG (OpenGL ES 2 via EGL on GBM) offloads drawing to the Pi's V3D
+# GPU, so the CPU no longer writes every pixel to the framebuffer - that CPU
+# memory traffic was contending with the co-located SDR's I2S DMA. `renderer-
+# software` is kept as an automatic fallback if the GL context can't be created
+# (the backend tries femtovg first, then software). Needs the GL/EGL dev packages
+# on the Pi (libegl-dev libgles-dev + the mesa v3d driver); see README/PI_SETUP.
 # `default-features = false` drops winit; `compat-1-2` keeps 1.2+ API compatibility.
 [target.'cfg(all(target_os = "linux", target_arch = "aarch64"))'.dependencies]
 slint = { version = "1.17", default-features = false, features = [
     "compat-1-2",
     "backend-linuxkms-noseat",
+    "renderer-femtovg",
     "renderer-software",
 ] }
 

@@ -64,7 +64,6 @@ Type=simple
 User=root
 WorkingDirectory=${REMOTE_DIR}
 Environment=SLINT_BACKEND=linuxkms
-Environment=SLINT_BACKEND_LINUXFB=1
 Environment=RUST_LOG=${RUST_LOG}
 ExecStart=${REMOTE_DIR}/${BINARY_NAME}
 TTYPath=/dev/tty1

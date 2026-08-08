@@ -63,4 +63,4 @@ if ($NoRun) {
 
 Write-Host ">> running kiosk on the Pi (SLINT_BACKEND=linuxkms)"
 # -t allocates a TTY so the app can grab DRM master / input and Ctrl-C works.
-ssh -t $remote "cd $PiDir && sudo SLINT_BACKEND=linuxkms SLINT_BACKEND_LINUXFB=1 RUST_LOG=info ./target/release/tetra-tn-ui"
+ssh -t $remote "cd $PiDir && sudo SLINT_BACKEND=linuxkms RUST_LOG=info ./target/release/tetra-tn-ui"

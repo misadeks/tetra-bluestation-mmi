@@ -76,6 +76,7 @@ sudo apt install -y \
   build-essential pkg-config \
   libasound2-dev libdrm-dev libgbm-dev libinput-dev libudev-dev libxkbcommon-dev \
   libfontconfig1-dev fonts-dejavu-core \
+  libegl-dev libgles-dev libgl1-mesa-dri \
   rsync openssh-server
 ```
 

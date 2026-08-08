@@ -94,7 +94,8 @@ Slint **linuxkms** backend - no compositor involved.
 sudo apt update
 sudo apt install build-essential pkg-config \
   libasound2-dev libdrm-dev libgbm-dev libinput-dev libudev-dev libxkbcommon-dev \
-  libfontconfig1-dev fonts-dejavu-core
+  libfontconfig1-dev fonts-dejavu-core \
+  libegl-dev libgles-dev libgl1-mesa-dri
 ```
 
 - `build-essential` + `pkg-config` - C toolchain/linker and lib discovery.
@@ -105,6 +106,8 @@ sudo apt install build-essential pkg-config \
 - `libfontconfig1-dev` - font discovery (Slint links fontconfig on Linux).
 - `fonts-dejavu-core` - a real font so text renders on Pi OS Lite (which ships
   none); any TTF font package works.
+- `libegl-dev` / `libgles-dev` - EGL + OpenGL ES for the FemtoVG GPU renderer.
+- `libgl1-mesa-dri` - mesa's `v3d` driver so the Pi 4 GPU can run GLES headless.
 
 Install Rust with [rustup](https://rustup.rs) (>= 1.95).
 
