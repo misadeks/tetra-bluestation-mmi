@@ -143,6 +143,23 @@ place the aarch64 Linux builds on the Pi next to the binary:
 
 Without them, set `[audio].enabled = false` in `config.toml` (the UI still runs).
 
+### Audio device: use a USB codec, not onboard audio
+
+The UI's audio (ringtones + voice) must not use the Pi's onboard audio, whose DMA
+contends with the SX1255 SDR's I2S and blocks registration. Use a **USB audio
+codec** and route ALSA's `default` to it (full duplex):
+
+```bash
+sudo cp deploy/asound.conf /etc/asound.conf   # routes default -> USB card "Device"
+# keep config.toml [audio].output_device / input_device = "default"
+```
+
+`install-service` does this automatically (if `/etc/asound.conf` doesn't already
+exist). Check names with `aplay -l` / `arecord -l` or `./tetra-tn-ui
+--list-audio`; if your codec's card name isn't `Device`, edit `deploy/asound.conf`.
+Without a mic the engine runs downlink-only (you still hear voice, just can't
+transmit).
+
 ---
 
 ## 7. Build + run

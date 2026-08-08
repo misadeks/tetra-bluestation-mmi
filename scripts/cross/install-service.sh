@@ -51,6 +51,13 @@ if [[ -d "${REPO_ROOT}/native" ]]; then
   rsync -az "${REPO_ROOT}/native/" "${REMOTE}:${REMOTE_DIR}/native/"
 fi
 
+# ALSA routing so "default" is the USB codec (full duplex), keeping the UI's
+# audio off the SX1255 SDR's I2S DMA. Only installs if not already present.
+if [[ -f "${REPO_ROOT}/deploy/asound.conf" ]]; then
+  rsync -az "${REPO_ROOT}/deploy/asound.conf" "${REMOTE}:/tmp/asound.conf"
+  ssh "${REMOTE}" "test -f /etc/asound.conf || sudo cp /tmp/asound.conf /etc/asound.conf"
+fi
+
 echo "Installing ${SERVICE_NAME}..."
 UNIT_CONTENT="$(cat <<EOF
 [Unit]

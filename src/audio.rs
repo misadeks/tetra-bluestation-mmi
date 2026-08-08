@@ -51,24 +51,58 @@ pub fn list_devices() {
     }
 }
 
-/// Pick an output device whose cpal name contains `want` (case-insensitive).
-/// "default" or empty selects the host default; falls back to it if not found.
+/// Extract the `card=<name>` token from a cpal/ALSA name (lowercased), e.g.
+/// "plughw:card=device,dev=0" -> "card=device".
+fn card_token(name: &str) -> Option<String> {
+    let start = name.find("card=")?;
+    let rest = &name[start..];
+    let end = rest.find(',').unwrap_or(rest.len());
+    Some(rest[..end].to_string())
+}
+
+/// Choose a device: prefer an exact case-insensitive substring match of `want`;
+/// otherwise fall back to any device on the same ALSA card (so hw:/plughw:/
+/// default: variants of the same card match). Consumes the iterator.
+fn choose_device(
+    devs: impl Iterator<Item = cpal::Device>,
+    want: &str,
+) -> Option<cpal::Device> {
+    let w = want.to_lowercase();
+    let card = card_token(&w);
+    let mut card_fallback: Option<cpal::Device> = None;
+    for d in devs {
+        let name = d.name().unwrap_or_default().to_lowercase();
+        if name.contains(&w) {
+            return Some(d); // exact substring wins
+        }
+        if card_fallback.is_none() {
+            if let Some(c) = &card {
+                if name.contains(c) {
+                    card_fallback = Some(d);
+                }
+            }
+        }
+    }
+    card_fallback
+}
+
+/// Pick an output device matching `want`. "default"/empty selects the host
+/// default; falls back to it if nothing matches.
 pub fn pick_output_device(host: &cpal::Host, want: &str) -> Option<cpal::Device> {
     if want.trim().is_empty() || want.eq_ignore_ascii_case("default") {
         return host.default_output_device();
     }
-    let want_l = want.to_lowercase();
-    if let Ok(devs) = host.output_devices() {
-        for d in devs {
-            let name = d.name().unwrap_or_default();
-            if name.to_lowercase().contains(&want_l) {
-                tracing::info!(device = %name, "audio: output device selected");
-                return Some(d);
-            }
+    let picked = host.output_devices().ok().and_then(|d| choose_device(d, want));
+    match picked {
+        Some(d) => {
+            tracing::info!(device = %d.name().unwrap_or_default(), "audio: output device selected");
+            Some(d)
+        }
+        None => {
+            tracing::warn!(want, "audio: output device not found; using default");
+            host.default_output_device()
         }
     }
-    tracing::warn!(want, "audio: output device not found; using default");
-    host.default_output_device()
 }
 
 /// Like [`pick_output_device`] for the capture side.
@@ -76,18 +110,17 @@ pub fn pick_input_device(host: &cpal::Host, want: &str) -> Option<cpal::Device> 
     if want.trim().is_empty() || want.eq_ignore_ascii_case("default") {
         return host.default_input_device();
     }
-    let want_l = want.to_lowercase();
-    if let Ok(devs) = host.input_devices() {
-        for d in devs {
-            let name = d.name().unwrap_or_default();
-            if name.to_lowercase().contains(&want_l) {
-                tracing::info!(device = %name, "audio: input device selected");
-                return Some(d);
-            }
+    let picked = host.input_devices().ok().and_then(|d| choose_device(d, want));
+    match picked {
+        Some(d) => {
+            tracing::info!(device = %d.name().unwrap_or_default(), "audio: input device selected");
+            Some(d)
+        }
+        None => {
+            tracing::warn!(want, "audio: input device not found; using default");
+            host.default_input_device()
         }
     }
-    tracing::warn!(want, "audio: input device not found; using default");
-    host.default_input_device()
 }
 
 const CODEC_RATE: u32 = 8000;
@@ -373,7 +406,8 @@ pub struct AudioEngine {
     uplink_active: Arc<AtomicBool>,
     uplink_cid: Arc<AtomicU32>,
     _out_stream: cpal::Stream,
-    _in_stream: cpal::Stream,
+    /// Capture stream for uplink; None when no mic is available (downlink-only).
+    _in_stream: Option<cpal::Stream>,
 }
 
 impl AudioEngine {
@@ -389,14 +423,21 @@ impl AudioEngine {
 
         let host = cpal::default_host();
         let out_dev = pick_output_device(&host, &cfg.output_device)?;
-        let in_dev = pick_input_device(&host, &cfg.input_device)?;
         let out_cfg = out_dev.default_output_config().ok()?;
-        let in_cfg = in_dev.default_input_config().ok()?;
         let out_rate = out_cfg.sample_rate().0;
-        let in_rate = in_cfg.sample_rate().0;
         let out_channels = out_cfg.channels() as usize;
-        let in_channels = in_cfg.channels() as usize;
-        tracing::info!(out_rate, in_rate, out_channels, in_channels, "audio: devices opened");
+
+        // The capture (mic) device is optional: without it we still decode and
+        // play downlink voice, just with no uplink. This keeps voice audible even
+        // when the input device can't be opened.
+        let in_setup = pick_input_device(&host, &cfg.input_device)
+            .and_then(|d| d.default_input_config().ok().map(|c| (d, c)));
+        tracing::info!(
+            out_rate,
+            out_channels,
+            has_mic = in_setup.is_some(),
+            "audio: output opened"
+        );
 
         // Jitter buffer: the stack delivers downlink frames in bursts with gaps
         // (esp. duplex, when both directions load the link), so hold ~jitter_ms of
@@ -466,50 +507,60 @@ impl AudioEngine {
         // so if the encoder ever runs below real time the uplink stays current
         // instead of accumulating unbounded latency (which the far end hears as a
         // fade to silence).
-        let (enc_tx, enc_rx) = crossbeam_channel::bounded::<Vec<i16>>(3);
-        let enc_drop = enc_rx.clone();
-        {
-            let codec = codec.clone();
-            let cid = uplink_cid.clone();
-            std::thread::Builder::new()
-                .name("acelp-enc".into())
-                .spawn(move || {
-                    let Some(encoder) = Encoder::new(codec) else {
-                        tracing::warn!("audio: encoder context init failed");
-                        return;
-                    };
-                    let mut sent: u64 = 0;
-                    for frame in enc_rx.iter() {
-                        if frame.len() != FRAME_SAMPLES {
-                            continue;
-                        }
-                        let mut buf = [0i16; FRAME_SAMPLES];
-                        buf.copy_from_slice(&frame);
-                        if let Some(bits) = encoder.encode(&buf) {
-                            let id = cid.load(Ordering::Relaxed);
-                            if id != 0 {
-                                if sent % 50 == 0 {
-                                    tracing::info!(cid = id, sent, "audio: uplink frames encoded/sent");
+        // Uplink (capture -> ACELP encode -> MsUplinkSpeech) only when a mic is
+        // available; otherwise the engine is downlink-only and still plays voice.
+        let in_stream = if let Some((in_dev, in_cfg)) = in_setup {
+            let in_rate = in_cfg.sample_rate().0;
+            let in_channels = in_cfg.channels() as usize;
+            let (enc_tx, enc_rx) = crossbeam_channel::bounded::<Vec<i16>>(3);
+            let enc_drop = enc_rx.clone();
+            {
+                let codec = codec.clone();
+                let cid = uplink_cid.clone();
+                std::thread::Builder::new()
+                    .name("acelp-enc".into())
+                    .spawn(move || {
+                        let Some(encoder) = Encoder::new(codec) else {
+                            tracing::warn!("audio: encoder context init failed");
+                            return;
+                        };
+                        let mut sent: u64 = 0;
+                        for frame in enc_rx.iter() {
+                            if frame.len() != FRAME_SAMPLES {
+                                continue;
+                            }
+                            let mut buf = [0i16; FRAME_SAMPLES];
+                            buf.copy_from_slice(&frame);
+                            if let Some(bits) = encoder.encode(&buf) {
+                                let id = cid.load(Ordering::Relaxed);
+                                if id != 0 {
+                                    if sent % 50 == 0 {
+                                        tracing::info!(cid = id, sent, "audio: uplink frames encoded/sent");
+                                    }
+                                    sent += 1;
+                                    let _ = app_tx.send(AppEvent::UplinkAudio(id, bits));
                                 }
-                                sent += 1;
-                                let _ = app_tx.send(AppEvent::UplinkAudio(id, bits));
                             }
                         }
-                    }
-                })
-                .ok()?;
-        }
+                    })
+                    .ok()?;
+            }
 
-        let in_stream = build_input_stream(
-            &in_dev,
-            &in_cfg,
-            in_channels,
-            in_rate,
-            uplink_active.clone(),
-            enc_tx,
-            enc_drop,
-        )?;
-        in_stream.play().ok()?;
+            let in_stream = build_input_stream(
+                &in_dev,
+                &in_cfg,
+                in_channels,
+                in_rate,
+                uplink_active.clone(),
+                enc_tx,
+                enc_drop,
+            )?;
+            in_stream.play().ok()?;
+            Some(in_stream)
+        } else {
+            tracing::warn!("audio: no capture device; downlink-only (uplink disabled)");
+            None
+        };
 
         Some(AudioEngine {
             dec_tx,
