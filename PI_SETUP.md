@@ -226,36 +226,52 @@ The unit runs the binary as root with `SLINT_BACKEND=linuxkms` and
 
 ## 8b. Boot splash (optional)
 
-Show a logo on the DSI panel from early boot until the UI's first frame,
-instead of a blank screen or scrolling kernel logs. For most of the wait the
-app isn't running yet, so the splash is drawn at the framebuffer level with
-`fbi`: it paints `deploy/splash.png` onto `/dev/fb0` (the fbdev emulation that
-`vc4-kms-v3d` exposes) and stays up until the kiosk's DRM modeset scans out its
-own frame over it - an automatic handoff.
+Show a logo on the DSI panel from boot until the UI's first frame, instead of a
+blank screen or scrolling kernel logs. For most of the wait the app isn't
+running yet, so the splash is drawn at the framebuffer level.
 
-The `install-service` scripts handle the wiring: they install `fbi` and enable
-`splash.service`, and deploy `deploy/splash.png` **if it exists locally**. The
-image itself is not committed (PNGs are gitignored) - drop your own logo at
-`deploy/splash.png` (native panel size, 720x1280 portrait) before deploying,
-or the splash step is simply skipped.
+We write the image **straight to `/dev/fb0`** (not via `fbi`). `fbi` renders on a
+virtual terminal, so it's only visible when its VT is the foreground console and
+it clears the screen to black when it exits (~1 s after painting, under
+systemd) — which is why an `fbi` splash tends to flash and vanish. A raw
+`/dev/fb0` write shows regardless of the foreground VT and stays in the
+framebuffer until the UI's DRM modeset scans out over it — a clean handoff.
 
-**Silence the boot console** so the panel is clean behind the splash (not
-scrolling logs). Append to the single line in `/boot/firmware/cmdline.txt`:
+`scripts/png_to_fb565.py` (stdlib-only; the Pi has `python3` but no
+Pillow/ImageMagick) converts `deploy/splash.png` to the panel's exact
+framebuffer format (RGB565, read from `/sys/class/graphics/fb0`), producing
+`deploy/splash.raw`. `splash.service` then `dd`s that onto `/dev/fb0`.
+
+The `install-service` scripts handle all of this: they deploy `deploy/splash.png`
+**if it exists locally**, run the converter on the Pi, and install + enable
+`splash.service`. The image is not committed (PNGs are gitignored) — drop your
+own logo at `deploy/splash.png` (native panel size, 720x1280 portrait) before
+deploying, or the splash step is skipped.
+
+**Silence the boot console — REQUIRED.** Keep the panel's console on `tty1` (so
+the panel shows that VT) but suppress its output, otherwise kernel/systemd text
+shows behind the splash. In the single line of `/boot/firmware/cmdline.txt`
+**keep `console=tty1`** and append:
 
 ```
-quiet loglevel=0 logo.nologo vt.global_cursor_default=0 console=tty3
+quiet loglevel=0 logo.nologo vt.global_cursor_default=0 systemd.show_status=0
 ```
 
-`console=tty3` moves kernel/login text to a hidden VT; the kiosk still owns
-tty1. And in `/boot/firmware/config.txt` add `disable_splash=1` to drop the
-rainbow square.
+Then in `/boot/firmware/config.txt` add `disable_splash=1` (drops the rainbow
+square). Reboot to apply — cmdline changes only take effect on boot. (Do **not**
+move the console to `tty3`: the panel would then show a different, empty VT and
+the boot text is already silenced by the flags above.)
+
+The `splash.service` is `oneshot` + `RemainAfterExit` with `Conflicts=getty@tty1`:
+`dd` writes the image and exits, the framebuffer keeps it, and the unit stays
+active (holding tty1 off the login getty) until the UI's modeset takes over.
 
 **Manual install** (if not using the deploy script):
 
 ```bash
-sudo apt install -y fbi
+python3 scripts/png_to_fb565.py deploy/splash.png deploy/splash.raw   # run on the Pi
 sudo cp deploy/splash.service /etc/systemd/system/splash.service
-# edit the splash.png path in the unit if your dir isn't /home/pi/tetra-tn-ui
+# edit the splash.raw path in the unit if your dir isn't /home/pi/tetra-tn-ui
 sudo systemctl daemon-reload
 sudo systemctl enable splash.service      # shows on next boot
 ```

@@ -31,6 +31,8 @@ Thumbs.db
 
 # Local screenshots
 *.png
+# Generated raw framebuffer splash (derived from deploy/splash.png on deploy)
+*.raw
 
 # ETSI-copyrighted ACELP codec libraries (loaded at runtime, never committed)
 *.dll

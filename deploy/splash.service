@@ -1,53 +1,46 @@
 # TETRA TN UI - boot splash on the Waveshare 5" DSI panel (DRM/KMS, no desktop).
 #
-# Paints deploy/splash.png onto the framebuffer early in boot and leaves it up
-# until tetra-tn-ui.service takes DRM master and modesets its first frame over
-# it. This covers the ~15-25 s power-on -> boot -> app window gap during which
-# the app process isn't running yet, so a splash for "until the UI loads" has to
-# be drawn at the OS/framebuffer level (the app can't draw before it exists).
+# Shows deploy/splash.png on the panel from boot until the kiosk UI's first
+# frame. For most of that window the app isn't running yet, so the splash must
+# be drawn at the framebuffer level.
 #
-# How it works: `fbi` writes the image to the KMS fbdev emulation (/dev/fb0)
-# that vc4-kms-v3d exposes. When tetra-tn-ui.service starts it Conflicts the
-# tty1 getty, grabs the VT + DRM master, and its modeset replaces the splash -
-# a clean automatic handoff.
+# WHY A RAW /dev/fb0 WRITE (not fbi): fbi renders on a virtual terminal, so it
+# is only visible when its VT is the foreground console, and it clears the
+# screen to black when it exits (which it does ~1 s after painting under
+# systemd). Writing raw pixels straight to /dev/fb0 shows on the panel
+# regardless of the foreground VT and stays in the framebuffer memory until the
+# UI's DRM modeset scans out over it - a clean, reliable handoff.
 #
-# Prereqs on the Pi:
-#   sudo apt install -y fbi
-# Recommended (silence the boot console so the panel is clean, not scrolling
-# kernel logs) - append to the single line in /boot/firmware/cmdline.txt:
-#   quiet loglevel=0 logo.nologo vt.global_cursor_default=0 console=tty3
-# and in /boot/firmware/config.txt:
-#   disable_splash=1
+# The image is pre-converted to the panel's exact framebuffer format (RGB565 for
+# the Pi KMS default, matching /sys/class/graphics/fb0) by
+# scripts/png_to_fb565.py, producing deploy/splash.raw next to the PNG. The WSL
+# deploy path (scripts/cross/install-service.sh) does this for you.
 #
-# Install (on the Pi):
+# BOOT-TEXT NOTE: keep the panel's console on tty1 but silence it so no
+# kernel/systemd text shows behind the splash. In /boot/firmware/cmdline.txt
+# keep "console=tty1" and add:
+#   quiet loglevel=0 logo.nologo vt.global_cursor_default=0 systemd.show_status=0
+# and in config.txt add "disable_splash=1".
+#
+# Manual install (on the Pi), assuming deploy/splash.raw exists:
 #   sudo cp deploy/splash.service /etc/systemd/system/splash.service
-#   # edit the splash.png path below if your checkout isn't /home/pi/tetra-tn-ui
-#   sudo systemctl daemon-reload
-#   sudo systemctl enable splash.service
-# The WSL deploy path (scripts/cross/install-service.sh) installs this for you.
+#   # edit the splash.raw path below if your dir isn't /home/pi/tetra-tn-ui
+#   sudo systemctl daemon-reload && sudo systemctl enable splash.service
 
 [Unit]
-Description=Boot splash on DSI panel (fbi -> /dev/fb0)
-DefaultDependencies=no
-After=local-fs.target
-# Show the splash before the kiosk UI takes over the panel.
+Description=Boot splash on DSI panel (raw -> /dev/fb0)
+# Paint before the kiosk UI claims the panel, and hold tty1 off the login getty
+# so nothing repaints the framebuffer until the UI's modeset.
 Before=tetra-tn-ui.service
+Conflicts=getty@tty1.service
 
 [Service]
-# Type=simple: fbi stays resident holding the image on the framebuffer. It is
-# NOT oneshot - fbi does not exit after painting, and a resident oneshot would
-# deadlock the Before= ordering. When tetra-tn-ui.service starts, its DRM
-# modeset scans out its own framebuffer and fbi's output is simply no longer
-# visible (fbcon yields DRM master to the new client) - a clean handoff. fbi is
-# stopped normally on shutdown/reboot.
-Type=simple
-StandardInput=tty
-StandardOutput=tty
-TTYPath=/dev/tty1
-TTYReset=yes
-TTYVHangup=yes
-# -a autoscale to the panel, -T 1 on tty1, --noverbose hides the status line.
-ExecStart=/usr/bin/fbi -d /dev/fb0 -T 1 --noverbose -a /home/pi/tetra-tn-ui/deploy/splash.png
+# Oneshot: dd writes the image into the framebuffer and exits; the pixels
+# persist in fb memory until the UI modesets. RemainAfterExit keeps the unit
+# active so getty@tty1 stays conflicted (suppressed) until the UI starts.
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/dd if=/home/pi/tetra-tn-ui/deploy/splash.raw of=/dev/fb0 bs=1843200 count=1 conv=notrunc status=none
 
 [Install]
 WantedBy=multi-user.target

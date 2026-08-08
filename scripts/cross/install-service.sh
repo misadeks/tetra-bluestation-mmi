@@ -58,38 +58,42 @@ if [[ -f "${REPO_ROOT}/deploy/asound.conf" ]]; then
   ssh "${REMOTE}" "sudo cp /tmp/asound.conf /etc/asound.conf"
 fi
 
-# Boot splash: paint deploy/splash.png on the DSI panel via fbi from early boot
-# until the UI's first KMS frame takes over (covers the boot->app-window gap).
+# Boot splash: show deploy/splash.png on the DSI panel from boot until the UI's
+# first frame. We write the image straight to /dev/fb0 (converted to the panel's
+# RGB565 framebuffer format by scripts/png_to_fb565.py, run on the Pi) - fbi is
+# unreliable here because it renders on a VT and clears the screen when it exits.
 # Best-effort: a failure here must not block the kiosk install.
-if [[ -f "${REPO_ROOT}/deploy/splash.png" ]]; then
-  echo "Installing boot splash (fbi)..."
+if [[ -f "${REPO_ROOT}/deploy/splash.png" && -f "${REPO_ROOT}/scripts/png_to_fb565.py" ]]; then
+  echo "Installing boot splash (raw /dev/fb0)..."
   ssh "${REMOTE}" "mkdir -p '${REMOTE_DIR}/deploy'"
   rsync -az "${REPO_ROOT}/deploy/splash.png" "${REMOTE}:${REMOTE_DIR}/deploy/splash.png"
-  # fbi provides framebuffer image display; install if missing.
-  ssh "${REMOTE}" "command -v fbi >/dev/null 2>&1 || sudo apt-get install -y fbi" || \
-    echo "  (warning: could not install fbi; splash will be skipped until it is present)"
-  SPLASH_UNIT="$(cat <<EOF
+  rsync -az "${REPO_ROOT}/scripts/png_to_fb565.py" "${REMOTE}:${REMOTE_DIR}/png_to_fb565.py"
+  # Convert to the panel's framebuffer format on the Pi (reads /sys fb geometry).
+  if ssh "${REMOTE}" "python3 '${REMOTE_DIR}/png_to_fb565.py' '${REMOTE_DIR}/deploy/splash.png' '${REMOTE_DIR}/deploy/splash.raw'"; then
+    SPLASH_UNIT="$(cat <<EOF
 [Unit]
-Description=Boot splash on DSI panel (fbi -> /dev/fb0)
-DefaultDependencies=no
-After=local-fs.target
+Description=Boot splash on DSI panel (raw -> /dev/fb0)
 Before=${SERVICE_NAME}
+Conflicts=getty@tty1.service
 
 [Service]
-Type=simple
-StandardInput=tty
-StandardOutput=tty
-TTYPath=/dev/tty1
-TTYReset=yes
-TTYVHangup=yes
-ExecStart=/usr/bin/fbi -d /dev/fb0 -T 1 --noverbose -a ${REMOTE_DIR}/deploy/splash.png
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/dd if=${REMOTE_DIR}/deploy/splash.raw of=/dev/fb0 bs=1843200 count=1 conv=notrunc status=none
 
 [Install]
 WantedBy=multi-user.target
 EOF
 )"
-  printf '%s\n' "${SPLASH_UNIT}" | ssh "${REMOTE}" "sudo tee /etc/systemd/system/splash.service >/dev/null"
-  ssh "${REMOTE}" "sudo systemctl daemon-reload && sudo systemctl enable splash.service >/dev/null 2>&1 || true"
+    printf '%s\n' "${SPLASH_UNIT}" | ssh "${REMOTE}" "sudo tee /etc/systemd/system/splash.service >/dev/null"
+    ssh "${REMOTE}" "sudo systemctl daemon-reload && sudo systemctl enable splash.service >/dev/null 2>&1 || true"
+    echo "  NOTE: for a clean splash, silence the boot console (keep console=tty1)."
+    echo "  In /boot/firmware/cmdline.txt add: quiet loglevel=0 logo.nologo \\"
+    echo "  vt.global_cursor_default=0 systemd.show_status=0 ; config.txt: disable_splash=1"
+    echo "  (see PI_SETUP.md). cmdline changes need a reboot."
+  else
+    echo "  (warning: splash conversion failed; skipping splash)"
+  fi
 fi
 
 echo "Installing ${SERVICE_NAME}..."
