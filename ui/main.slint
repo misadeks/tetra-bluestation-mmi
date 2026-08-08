@@ -651,13 +651,13 @@ component Softkey inherits Rectangle {
             if root.icon != "": Icon {
                 d: root.icon;
                 tint: root.danger ? #ffffff : Palette.txt;
-                size: 30px;
+                size: 26px;
             }
         }
         Text {
             text: root.text;
             color: root.danger ? #ffffff : Palette.txt;
-            font-size: 23px;
+            font-size: 20px;
             font-weight: 600;
             vertical-alignment: center;
         }
@@ -5955,11 +5955,11 @@ export component MainWindow inherits Window {
         // content, so buttons stay the same size and never shift between screens.
         // Only the button shown inside each slot changes per screen.
         Rectangle {
-            height: 148px;
+            height: 108px;
             background: @linear-gradient(180deg, #0c141d 0%, #0a1017 100%);
             HorizontalLayout {
-                padding-top: 12px;
-                padding-bottom: 16px;
+                padding-top: 14px;
+                padding-bottom: 14px;
                 padding-left: 14px;
                 padding-right: 14px;
                 spacing: 10px;
