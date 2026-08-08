@@ -58,6 +58,40 @@ if [[ -f "${REPO_ROOT}/deploy/asound.conf" ]]; then
   ssh "${REMOTE}" "sudo cp /tmp/asound.conf /etc/asound.conf"
 fi
 
+# Boot splash: paint deploy/splash.png on the DSI panel via fbi from early boot
+# until the UI's first KMS frame takes over (covers the boot->app-window gap).
+# Best-effort: a failure here must not block the kiosk install.
+if [[ -f "${REPO_ROOT}/deploy/splash.png" ]]; then
+  echo "Installing boot splash (fbi)..."
+  ssh "${REMOTE}" "mkdir -p '${REMOTE_DIR}/deploy'"
+  rsync -az "${REPO_ROOT}/deploy/splash.png" "${REMOTE}:${REMOTE_DIR}/deploy/splash.png"
+  # fbi provides framebuffer image display; install if missing.
+  ssh "${REMOTE}" "command -v fbi >/dev/null 2>&1 || sudo apt-get install -y fbi" || \
+    echo "  (warning: could not install fbi; splash will be skipped until it is present)"
+  SPLASH_UNIT="$(cat <<EOF
+[Unit]
+Description=Boot splash on DSI panel (fbi -> /dev/fb0)
+DefaultDependencies=no
+After=local-fs.target
+Before=${SERVICE_NAME}
+
+[Service]
+Type=simple
+StandardInput=tty
+StandardOutput=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+ExecStart=/usr/bin/fbi -d /dev/fb0 -T 1 --noverbose -a ${REMOTE_DIR}/deploy/splash.png
+
+[Install]
+WantedBy=multi-user.target
+EOF
+)"
+  printf '%s\n' "${SPLASH_UNIT}" | ssh "${REMOTE}" "sudo tee /etc/systemd/system/splash.service >/dev/null"
+  ssh "${REMOTE}" "sudo systemctl daemon-reload && sudo systemctl enable splash.service >/dev/null 2>&1 || true"
+fi
+
 echo "Installing ${SERVICE_NAME}..."
 UNIT_CONTENT="$(cat <<EOF
 [Unit]

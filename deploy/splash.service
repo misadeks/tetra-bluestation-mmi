@@ -1,0 +1,53 @@
+# TETRA TN UI - boot splash on the Waveshare 5" DSI panel (DRM/KMS, no desktop).
+#
+# Paints deploy/splash.png onto the framebuffer early in boot and leaves it up
+# until tetra-tn-ui.service takes DRM master and modesets its first frame over
+# it. This covers the ~15-25 s power-on -> boot -> app window gap during which
+# the app process isn't running yet, so a splash for "until the UI loads" has to
+# be drawn at the OS/framebuffer level (the app can't draw before it exists).
+#
+# How it works: `fbi` writes the image to the KMS fbdev emulation (/dev/fb0)
+# that vc4-kms-v3d exposes. When tetra-tn-ui.service starts it Conflicts the
+# tty1 getty, grabs the VT + DRM master, and its modeset replaces the splash -
+# a clean automatic handoff.
+#
+# Prereqs on the Pi:
+#   sudo apt install -y fbi
+# Recommended (silence the boot console so the panel is clean, not scrolling
+# kernel logs) - append to the single line in /boot/firmware/cmdline.txt:
+#   quiet loglevel=0 logo.nologo vt.global_cursor_default=0 console=tty3
+# and in /boot/firmware/config.txt:
+#   disable_splash=1
+#
+# Install (on the Pi):
+#   sudo cp deploy/splash.service /etc/systemd/system/splash.service
+#   # edit the splash.png path below if your checkout isn't /home/pi/tetra-tn-ui
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable splash.service
+# The WSL deploy path (scripts/cross/install-service.sh) installs this for you.
+
+[Unit]
+Description=Boot splash on DSI panel (fbi -> /dev/fb0)
+DefaultDependencies=no
+After=local-fs.target
+# Show the splash before the kiosk UI takes over the panel.
+Before=tetra-tn-ui.service
+
+[Service]
+# Type=simple: fbi stays resident holding the image on the framebuffer. It is
+# NOT oneshot - fbi does not exit after painting, and a resident oneshot would
+# deadlock the Before= ordering. When tetra-tn-ui.service starts, its DRM
+# modeset scans out its own framebuffer and fbi's output is simply no longer
+# visible (fbcon yields DRM master to the new client) - a clean handoff. fbi is
+# stopped normally on shutdown/reboot.
+Type=simple
+StandardInput=tty
+StandardOutput=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+# -a autoscale to the panel, -T 1 on tty1, --noverbose hides the status line.
+ExecStart=/usr/bin/fbi -d /dev/fb0 -T 1 --noverbose -a /home/pi/tetra-tn-ui/deploy/splash.png
+
+[Install]
+WantedBy=multi-user.target

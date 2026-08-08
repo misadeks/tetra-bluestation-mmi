@@ -224,6 +224,43 @@ The unit runs the binary as root with `SLINT_BACKEND=linuxkms` and
 
 ---
 
+## 8b. Boot splash (optional)
+
+Show a logo on the DSI panel from early boot until the UI's first frame,
+instead of a blank screen or scrolling kernel logs. For most of the wait the
+app isn't running yet, so the splash is drawn at the framebuffer level with
+`fbi`: it paints `deploy/splash.png` onto `/dev/fb0` (the fbdev emulation that
+`vc4-kms-v3d` exposes) and stays up until the kiosk's DRM modeset scans out its
+own frame over it - an automatic handoff.
+
+The `install-service` scripts do this for you: they install `fbi`, copy
+`deploy/splash.png` to the Pi, and enable `splash.service`. Replace
+`deploy/splash.png` (native panel size, 720x1280 portrait) with your own logo
+and re-run the install to update it.
+
+**Silence the boot console** so the panel is clean behind the splash (not
+scrolling logs). Append to the single line in `/boot/firmware/cmdline.txt`:
+
+```
+quiet loglevel=0 logo.nologo vt.global_cursor_default=0 console=tty3
+```
+
+`console=tty3` moves kernel/login text to a hidden VT; the kiosk still owns
+tty1. And in `/boot/firmware/config.txt` add `disable_splash=1` to drop the
+rainbow square.
+
+**Manual install** (if not using the deploy script):
+
+```bash
+sudo apt install -y fbi
+sudo cp deploy/splash.service /etc/systemd/system/splash.service
+# edit the splash.png path in the unit if your dir isn't /home/pi/tetra-tn-ui
+sudo systemctl daemon-reload
+sudo systemctl enable splash.service      # shows on next boot
+```
+
+---
+
 ## 9. Performance (CPU pinning, throttling)
 
 On a Pi shared with the TETRA radio/stack, keep the UI off the radio's cores:

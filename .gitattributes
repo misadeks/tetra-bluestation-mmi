@@ -11,3 +11,6 @@ pi.env.example text eol=lf
 
 # ALSA / other Linux config files must be LF.
 *.conf text eol=lf
+
+# Binary assets — never normalize line endings.
+*.png binary
