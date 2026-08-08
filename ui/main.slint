@@ -452,7 +452,7 @@ component PrimaryButton inherits Rectangle {
     in property <bool> enabled: true;
     in property <string> icon: Icons.check;
     callback clicked;
-    height: 64px;
+    height: 74px;
     border-radius: 16px;
     border-width: 1px;
     border-color: root.enabled ? #37c06a80 : Palette.line;
@@ -471,12 +471,12 @@ component PrimaryButton inherits Rectangle {
         spacing: 10px;
         VerticalLayout {
             alignment: center;
-            Icon { d: root.icon; tint: root.enabled ? #8fe6ab : Palette.muted; size: 20px; }
+            Icon { d: root.icon; tint: root.enabled ? #8fe6ab : Palette.muted; size: 22px; }
         }
         Text {
             text: root.text;
             color: root.enabled ? #8fe6ab : Palette.muted;
-            font-size: 18px;
+            font-size: 20px;
             font-weight: 700;
             vertical-alignment: center;
         }
@@ -488,7 +488,7 @@ component DangerButton inherits Rectangle {
     in property <bool> enabled: true;
     in property <string> icon: Icons.trash;
     callback clicked;
-    height: 64px;
+    height: 74px;
     border-radius: 16px;
     border-width: 1px;
     border-color: root.enabled ? #f0555a80 : Palette.line;
@@ -507,12 +507,12 @@ component DangerButton inherits Rectangle {
         spacing: 10px;
         VerticalLayout {
             alignment: center;
-            Icon { d: root.icon; tint: root.enabled ? #ff9a9d : Palette.muted; size: 20px; }
+            Icon { d: root.icon; tint: root.enabled ? #ff9a9d : Palette.muted; size: 22px; }
         }
         Text {
             text: root.text;
             color: root.enabled ? #ff9a9d : Palette.muted;
-            font-size: 18px;
+            font-size: 20px;
             font-weight: 700;
             vertical-alignment: center;
         }
@@ -524,7 +524,7 @@ component SecondaryButton inherits Rectangle {
     in property <string> icon;
     in property <bool> danger: false;
     callback clicked;
-    height: 64px;
+    height: 74px;
     border-radius: 14px;
     border-width: 1px;
     border-color: root.danger ? #f0555a80 : Palette.line2;
@@ -539,12 +539,12 @@ component SecondaryButton inherits Rectangle {
         spacing: 10px;
         VerticalLayout {
             alignment: center;
-            if root.icon != "": Icon { d: root.icon; tint: root.danger ? Palette.red : Palette.txt; size: 20px; }
+            if root.icon != "": Icon { d: root.icon; tint: root.danger ? Palette.red : Palette.txt; size: 22px; }
         }
         Text {
             text: root.text;
             color: root.danger ? #ff9a9d : Palette.txt;
-            font-size: 17px;
+            font-size: 20px;
             font-weight: 600;
             vertical-alignment: center;
         }
@@ -678,18 +678,18 @@ component InfoRow inherits HorizontalLayout {
     in property <string> label;
     in property <string> value;
     in property <color> value-color: Palette.txt;
-    height: 46px;
+    height: 56px;
     Text {
         text: root.label;
         color: Palette.muted;
-        font-size: 17px;
+        font-size: 19px;
         vertical-alignment: center;
     }
     Rectangle { horizontal-stretch: 1; }
     Text {
         text: root.value;
         color: root.value-color;
-        font-size: 17px;
+        font-size: 19px;
         font-weight: 600;
         vertical-alignment: center;
         horizontal-alignment: right;
@@ -707,7 +707,7 @@ component ListRow inherits Rectangle {
     in property <bool> selected;
     in property <bool> show-chevron: true;
     callback clicked;
-    height: 92px;
+    height: 106px;
     border-radius: 16px;
     border-width: 1px;
     border-color: root.selected ? #33a7dd80 : Palette.line;
@@ -724,16 +724,16 @@ component ListRow inherits Rectangle {
         if root.icon != "": VerticalLayout {
             alignment: center;
             Rectangle {
-                width: 54px;
-                height: 54px;
-                border-radius: 15px;
+                width: 58px;
+                height: 58px;
+                border-radius: 16px;
                 background: root.danger ? #f0555a1f : #33a7dd1f;
                 Icon {
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
                     d: root.icon;
                     tint: root.danger ? Palette.red : root.icon-tint;
-                    size: 27px;
+                    size: 29px;
                 }
             }
         }
@@ -744,14 +744,14 @@ component ListRow inherits Rectangle {
             Text {
                 text: root.title;
                 color: root.danger ? #ff9a9d : Palette.txt;
-                font-size: 21px;
+                font-size: 23px;
                 font-weight: 600;
                 overflow: elide;
             }
             if root.subtitle != "": Text {
                 text: root.subtitle;
                 color: Palette.muted;
-                font-size: 15px;
+                font-size: 17px;
                 overflow: elide;
             }
         }
@@ -760,17 +760,17 @@ component ListRow inherits Rectangle {
             Text {
                 text: root.trailing-text;
                 color: Palette.faint;
-                font-size: 15px;
+                font-size: 17px;
                 font-weight: 600;
             }
         }
         if root.selected: VerticalLayout {
             alignment: center;
-            Icon { d: Icons.check; tint: Palette.accent; size: 26px; }
+            Icon { d: Icons.check; tint: Palette.accent; size: 28px; }
         }
         if root.show-chevron && !root.selected && root.trailing-text == "": VerticalLayout {
             alignment: center;
-            Icon { d: Icons.chevron; tint: Palette.faint; size: 22px; }
+            Icon { d: Icons.chevron; tint: Palette.faint; size: 24px; }
         }
     }
 }
@@ -1583,7 +1583,7 @@ component GroupRowView inherits Rectangle {
     callback select;
     callback add;
     callback detach;
-    height: 84px;
+    height: 98px;
     border-radius: 16px;
     border-width: 1px;
     border-color: root.is-tx ? #37c06a55 : Palette.line;
@@ -1608,7 +1608,7 @@ component GroupRowView inherits Rectangle {
                 Text {
                     text: root.name;
                     color: Palette.txt;
-                    font-size: 19px;
+                    font-size: 21px;
                     font-weight: 600;
                     overflow: elide;
                 }
@@ -1618,7 +1618,7 @@ component GroupRowView inherits Rectangle {
             Text {
                 text: root.sub;
                 color: Palette.muted;
-                font-size: 14px;
+                font-size: 16px;
                 overflow: elide;
             }
         }
@@ -1664,7 +1664,7 @@ component ScanRowView inherits Rectangle {
     in property <string> sub;
     in property <bool> active;
     callback toggled(bool);
-    height: 76px;
+    height: 90px;
     border-radius: 16px;
     border-width: 1px;
     border-color: root.active ? #37c06a55 : Palette.line;
@@ -1680,14 +1680,14 @@ component ScanRowView inherits Rectangle {
             Text {
                 text: root.name;
                 color: Palette.txt;
-                font-size: 18px;
+                font-size: 20px;
                 font-weight: 600;
                 overflow: elide;
             }
             if root.sub != "": Text {
                 text: root.sub;
                 color: Palette.muted;
-                font-size: 13px;
+                font-size: 15px;
                 overflow: elide;
             }
         }
@@ -1718,7 +1718,7 @@ component ContactRowView inherits Rectangle {
     in property <int> kind;
     callback open;
     callback call;
-    height: 92px;
+    height: 106px;
     border-radius: 16px;
     border-width: 1px;
     border-color: Palette.line;
@@ -1741,16 +1741,16 @@ component ContactRowView inherits Rectangle {
                 VerticalLayout {
                     alignment: center;
                     Rectangle {
-                        width: 50px;
-                        height: 50px;
-                        border-radius: 14px;
+                        width: 54px;
+                        height: 54px;
+                        border-radius: 15px;
                         background: #33a7dd1f;
                         Icon {
                             x: (parent.width - self.width) / 2;
                             y: (parent.height - self.height) / 2;
                             d: root.kind == 1 ? Icons.phone : Icons.users;
                             tint: Palette.accent;
-                            size: 26px;
+                            size: 28px;
                         }
                     }
                 }
@@ -1761,14 +1761,14 @@ component ContactRowView inherits Rectangle {
                     Text {
                         text: root.title;
                         color: Palette.txt;
-                        font-size: 21px;
+                        font-size: 23px;
                         font-weight: 600;
                         overflow: elide;
                     }
                     Text {
                         text: root.sub;
                         color: Palette.muted;
-                        font-size: 15px;
+                        font-size: 17px;
                         overflow: elide;
                     }
                 }
@@ -1808,7 +1808,7 @@ component TargetSeg inherits Rectangle {
     in property <string> label;
     in property <bool> selected;
     callback clicked;
-    height: 54px;
+    height: 64px;
     min-width: 110px;
     horizontal-stretch: 1;
     border-radius: 12px;
@@ -1825,7 +1825,7 @@ component TargetSeg inherits Rectangle {
         height: 100%;
         text: root.label;
         color: root.selected ? #9fd3ef : Palette.muted;
-        font-size: 16px;
+        font-size: 18px;
         font-weight: 700;
         horizontal-alignment: center;
         vertical-alignment: center;
@@ -1988,7 +1988,7 @@ component KeyCap inherits Rectangle {
     // When true, show the letter uppercase (QWERTY shift is on).
     in property <bool> caps;
     callback tapped;
-    height: 76px;
+    height: 86px;
     horizontal-stretch: 1;
     border-radius: 16px;
     border-width: 1px;
@@ -2008,14 +2008,14 @@ component KeyCap inherits Rectangle {
         y: (parent.height - self.height) / 2;
         d: root.icon;
         tint: #e8f0f6;
-        size: 26px;
+        size: 28px;
     }
     if root.icon == "": Text {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
         text: root.caps ? root.label.to-uppercase() : root.label;
         color: #e8f0f6;
-        font-size: 26px;
+        font-size: 28px;
         font-weight: 600;
     }
 }
@@ -2135,7 +2135,7 @@ component EditFieldRow inherits Rectangle {
     in property <string> placeholder;
     in property <bool> focused;
     callback pick;
-    height: 58px;
+    height: 70px;
     border-radius: 12px;
     border-width: root.focused ? 2px : 1px;
     border-color: root.focused ? Palette.accent : Palette.line2;
@@ -2155,7 +2155,7 @@ component EditFieldRow inherits Rectangle {
                 text: root.label;
                 width: 96px;
                 color: Palette.muted;
-                font-size: 15px;
+                font-size: 17px;
             }
         }
         VerticalLayout {
@@ -2164,7 +2164,7 @@ component EditFieldRow inherits Rectangle {
             Text {
                 text: root.text == "" ? root.placeholder : root.text;
                 color: root.text == "" ? Palette.faint : Palette.txt;
-                font-size: 20px;
+                font-size: 22px;
                 font-weight: 600;
                 overflow: elide;
             }
@@ -2178,7 +2178,7 @@ component SearchBar inherits Rectangle {
     in property <string> placeholder: "Search";
     callback activate;
     callback clear;
-    height: 58px;
+    height: 70px;
     border-radius: 12px;
     border-width: 1px;
     border-color: Palette.line2;
@@ -2194,7 +2194,7 @@ component SearchBar inherits Rectangle {
         spacing: 10px;
         VerticalLayout {
             alignment: center;
-            Icon { d: Icons.search; tint: Palette.muted; size: 22px; }
+            Icon { d: Icons.search; tint: Palette.muted; size: 24px; }
         }
         VerticalLayout {
             alignment: center;
@@ -2202,7 +2202,7 @@ component SearchBar inherits Rectangle {
             Text {
                 text: root.query == "" ? root.placeholder : root.query;
                 color: root.query == "" ? Palette.faint : Palette.txt;
-                font-size: 20px;
+                font-size: 22px;
                 overflow: elide;
             }
         }
@@ -2218,7 +2218,7 @@ component SearchBar inherits Rectangle {
                 y: (parent.height - self.height) / 2;
                 d: Icons.close;
                 tint: Palette.muted;
-                size: 22px;
+                size: 24px;
             }
         }
     }
@@ -2427,7 +2427,7 @@ component ConvRowView inherits Rectangle {
     callback open;
     callback long-press;
     property <bool> held: false;
-    height: 92px;
+    height: 106px;
     border-radius: 16px;
     border-width: 1px;
     border-color: Palette.line;
@@ -2501,14 +2501,14 @@ component ConvRowView inherits Rectangle {
             Text {
                 text: root.name;
                 color: Palette.txt;
-                font-size: 21px;
+                font-size: 23px;
                 font-weight: root.unread > 0 ? 800 : 600;
                 overflow: elide;
             }
             Text {
                 text: root.snippet;
                 color: Palette.muted;
-                font-size: 15px;
+                font-size: 17px;
                 overflow: elide;
             }
         }
@@ -2517,7 +2517,7 @@ component ConvRowView inherits Rectangle {
             Text {
                 text: root.ts;
                 color: Palette.faint;
-                font-size: 13px;
+                font-size: 15px;
             }
         }
     }
@@ -2849,7 +2849,7 @@ component ToggleRow inherits Rectangle {
     in property <string> label;
     in property <bool> on;
     callback toggled;
-    height: 58px;
+    height: 70px;
     border-radius: 12px;
     border-width: 1px;
     border-color: Palette.line2;
@@ -2869,7 +2869,7 @@ component ToggleRow inherits Rectangle {
             Text {
                 text: root.label;
                 color: Palette.txt;
-                font-size: 18px;
+                font-size: 20px;
                 font-weight: 600;
                 overflow: elide;
             }
@@ -2877,14 +2877,14 @@ component ToggleRow inherits Rectangle {
         VerticalLayout {
             alignment: center;
             Rectangle {
-                width: 58px;
-                height: 30px;
-                border-radius: 15px;
+                width: 64px;
+                height: 34px;
+                border-radius: 17px;
                 background: root.on ? Palette.green : #33414f;
                 Rectangle {
-                    width: 24px;
-                    height: 24px;
-                    border-radius: 12px;
+                    width: 28px;
+                    height: 28px;
+                    border-radius: 14px;
                     background: #ffffff;
                     x: root.on ? parent.width - self.width - 3px : 3px;
                     y: 3px;
@@ -3153,7 +3153,7 @@ component TreeFolderHeader inherits Rectangle {
     in property <bool> collapsed;
     callback tapped;
     callback edit;
-    height: 76px;
+    height: 88px;
     border-radius: 12px;
     background: touch.pressed ? #1b2836 : #16202b;
     border-width: 1px;
@@ -3181,7 +3181,7 @@ component TreeFolderHeader inherits Rectangle {
             Text {
                 text: root.title;
                 color: Palette.txt;
-                font-size: 20px;
+                font-size: 22px;
                 font-weight: 800;
                 overflow: elide;
             }
@@ -3231,7 +3231,7 @@ component TreeGroupRow inherits Rectangle {
     callback tapped;
     callback move-up;
     callback move-down;
-    height: 62px;
+    height: 76px;
     border-radius: 12px;
     background: touch.pressed ? #16202b : Palette.surface;
     border-width: 1px;
@@ -3247,7 +3247,7 @@ component TreeGroupRow inherits Rectangle {
         spacing: 8px;
         VerticalLayout {
             alignment: center;
-            Icon { d: Icons.users; tint: Palette.muted; size: 24px; }
+            Icon { d: Icons.users; tint: Palette.muted; size: 26px; }
         }
         VerticalLayout {
             alignment: center;
@@ -3256,11 +3256,11 @@ component TreeGroupRow inherits Rectangle {
             Text {
                 text: root.title;
                 color: Palette.txt;
-                font-size: 18px;
+                font-size: 20px;
                 font-weight: 600;
                 overflow: elide;
             }
-            Text { text: root.sub; color: Palette.muted; font-size: 13px; }
+            Text { text: root.sub; color: Palette.muted; font-size: 14px; }
         }
         Rectangle {
             width: 44px;
@@ -3300,7 +3300,7 @@ component TreeGroupRow inherits Rectangle {
 component TreeAddRow inherits Rectangle {
     in property <string> label;
     callback tapped;
-    height: 46px;
+    height: 58px;
     border-radius: 10px;
     background: touch.pressed ? #16202b : transparent;
     border-width: 1px;
@@ -3347,7 +3347,7 @@ component TreeScreen inherits Rectangle {
                 spacing: 8px;
                 alignment: start;
                 for r in root.rows: Rectangle {
-                    height: r.kind == 0 ? 76px : (r.kind == 2 ? 46px : (r.kind == 3 ? 40px : 62px));
+                    height: r.kind == 0 ? 88px : (r.kind == 2 ? 58px : (r.kind == 3 ? 40px : 76px));
                     if r.kind == 0: TreeFolderHeader {
                         width: 100%;
                         title: r.title;
@@ -3476,7 +3476,7 @@ component PickerScreen inherits Rectangle {
                     horizontal-alignment: center;
                 }
                 for r in root.rows: Rectangle {
-                    height: r.kind == 0 ? 76px : (r.kind == 2 ? 76px : (r.kind == 3 ? 30px : 84px));
+                    height: r.kind == 0 ? 88px : (r.kind == 2 ? 90px : (r.kind == 3 ? 30px : 98px));
                     if r.kind == 3: SectionHeader {
                         text: r.title;
                         vertical-alignment: bottom;
@@ -3668,7 +3668,7 @@ component RecentRowView inherits Rectangle {
     callback long-press;
     property <bool> held: false;
     property <bool> missed: root.kind == 1;
-    height: 92px;
+    height: 106px;
     border-radius: 16px;
     border-width: 1px;
     border-color: Palette.line;
@@ -3707,16 +3707,16 @@ component RecentRowView inherits Rectangle {
         VerticalLayout {
             alignment: center;
             Rectangle {
-                width: 46px;
-                height: 46px;
-                border-radius: 13px;
+                width: 50px;
+                height: 50px;
+                border-radius: 14px;
                 background: root.missed ? #f0555a1f : #33a7dd1f;
                 Icon {
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
                     d: root.outgoing ? Icons.call-out : Icons.call-in;
                     tint: root.missed ? Palette.red : (root.outgoing ? #7fe0a6 : Palette.accent);
-                    size: 24px;
+                    size: 26px;
                 }
             }
         }
@@ -3727,20 +3727,20 @@ component RecentRowView inherits Rectangle {
             Text {
                 text: root.title;
                 color: root.missed ? #ff9a9d : Palette.txt;
-                font-size: 20px;
+                font-size: 22px;
                 font-weight: root.missed ? 800 : 600;
                 overflow: elide;
             }
             Text {
                 text: root.sub;
                 color: Palette.muted;
-                font-size: 14px;
+                font-size: 16px;
                 overflow: elide;
             }
         }
         VerticalLayout {
             alignment: center;
-            Text { text: root.time; color: Palette.faint; font-size: 13px; }
+            Text { text: root.time; color: Palette.faint; font-size: 15px; }
         }
     }
     // Green call button filling the whole right end of the card (clip rounds it).
@@ -4497,7 +4497,7 @@ component DialKey inherits Rectangle {
     callback clicked;
     callback long-press;
     property <bool> held: false;
-    height: 76px;
+    height: 88px;
     border-radius: 16px;
     border-width: 1px;
     border-color: Palette.line2;
@@ -4534,14 +4534,14 @@ component DialKey inherits Rectangle {
         Text {
             text: root.text;
             color: #e8f0f6;
-            font-size: 26px;
+            font-size: 30px;
             font-weight: 600;
             horizontal-alignment: center;
         }
         if root.sub != "": Text {
             text: root.sub;
             color: Palette.faint;
-            font-size: 14px;
+            font-size: 15px;
             font-weight: 700;
             letter-spacing: 1px;
             horizontal-alignment: center;
