@@ -43,6 +43,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    // `--test-ring` plays the default ringtone for ~3s on the configured output
+    // device, then exits - useful to check audio routing (run it while the
+    // service is up to confirm the device can be shared).
+    if std::env::args().any(|a| a == "--test-ring") {
+        let cfg = Config::load("config.toml")?;
+        match ringtone::RingtonePlayer::new(&cfg.audio.output_device) {
+            Some(rt) => {
+                println!("playing test ring for 3s on '{}'...", cfg.audio.output_device);
+                rt.play(ringtone::default_id());
+                thread::sleep(Duration::from_secs(3));
+                rt.stop();
+                println!("done");
+            }
+            None => println!("no ringtone output device available"),
+        }
+        return Ok(());
+    }
+
     let cfg = Config::load("config.toml")?;
     let ui = cfg.resolve_ui();
     tracing::info!(
