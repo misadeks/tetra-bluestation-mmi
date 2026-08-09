@@ -601,6 +601,25 @@ impl AppState {
         }
         true
     }
+
+    /// Guard for on-air actions (calls, PTT, SDS): control up, registered, AND in
+    /// service (downlink present). Blocks these when coverage is lost so the user
+    /// can't fire off actions that depend on the network. Returns false + alerts.
+    fn require_service(&mut self, weak: &slint::Weak<MainWindow>) -> bool {
+        if !self.require_registered(weak) {
+            return false;
+        }
+        if !self.state.service_status.in_service() {
+            self.notify(
+                weak,
+                "No service",
+                "The radio is out of coverage. Wait for service to return before calling or messaging.",
+                1,
+            );
+            return false;
+        }
+        true
+    }
 }
 
 /// Extract the correlation handle from an outbound command or inbound response.
@@ -870,11 +889,7 @@ pub fn run(
             }
             AppEvent::UiPtt => {
                 // Guards mirror the web UI; voice keying lands in M5/M6.
-                if !app.require_online(&weak) {
-                    continue;
-                }
-                if app.state.registration_state != protocol::RegistrationState::Registered {
-                    app.notify(&weak, "Not registered", "Register the radio before transmitting.", 0);
+                if !app.require_service(&weak) {
                     continue;
                 }
                 if effective_tx(&app).is_none() {
@@ -910,11 +925,7 @@ pub fn run(
                 let _ = weak.upgrade_in_event_loop(move |w| w.set_dial_number(n.into()));
             }
             AppEvent::UiDialCall(target, duplex) => {
-                if !app.require_online(&weak) {
-                    continue;
-                }
-                if app.state.registration_state != protocol::RegistrationState::Registered {
-                    app.notify(&weak, "Not registered", "Register the radio before placing a call.", 0);
+                if !app.require_service(&weak) {
                     continue;
                 }
                 if target == 0 {
@@ -983,11 +994,7 @@ pub fn run(
                 push_calls(&app, &weak);
             }
             AppEvent::UiCallContact(idx, duplex) => {
-                if !app.require_online(&weak) {
-                    continue;
-                }
-                if app.state.registration_state != protocol::RegistrationState::Registered {
-                    app.notify(&weak, "Not registered", "Register the radio before placing a call.", 0);
+                if !app.require_service(&weak) {
                     continue;
                 }
                 let Some(cp) = app.codeplug.as_ref() else { continue };
@@ -1216,7 +1223,7 @@ pub fn run(
                 push_contacts(&app, &weak);
             }
             AppEvent::UiCallPttDown => {
-                if !app.require_online(&weak) {
+                if !app.require_service(&weak) {
                     continue;
                 }
                 if let Some(cid) = live_individual_call(&app) {
@@ -1236,11 +1243,7 @@ pub fn run(
                 }
             }
             AppEvent::UiGroupPttDown => {
-                if !app.require_online(&weak) {
-                    continue;
-                }
-                if app.state.registration_state != protocol::RegistrationState::Registered {
-                    app.notify(&weak, "Not registered", "Register the radio before transmitting.", 0);
+                if !app.require_service(&weak) {
                     continue;
                 }
                 let Some(sel) = effective_tx(&app) else {
@@ -2581,11 +2584,7 @@ fn call_back_recent(app: &mut AppState, weak: &slint::Weak<MainWindow>, id: u64,
     if e.peer_ssi == 0 {
         return;
     }
-    if !app.require_online(weak) {
-        return;
-    }
-    if app.state.registration_state != protocol::RegistrationState::Registered {
-        app.notify(weak, "Not registered", "Register the radio before placing a call.", 0);
+    if !app.require_service(weak) {
         return;
     }
     app.mic_muted = false;
@@ -3543,7 +3542,7 @@ fn send_message(app: &mut AppState, weak: &slint::Weak<MainWindow>) {
     if text.is_empty() {
         return;
     }
-    if !app.require_online(weak) {
+    if !app.require_service(weak) {
         return;
     }
     // Groups get no per-recipient delivery reports; individuals get both ticks.
