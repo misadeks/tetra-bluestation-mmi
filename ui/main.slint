@@ -438,16 +438,16 @@ component Badge inherits Rectangle {
     in property <string> text;
     in property <color> fg;
     in property <color> bg;
-    height: 36px;
-    border-radius: 11px;
+    height: 46px;
+    border-radius: 13px;
     background: root.bg;
     HorizontalLayout {
-        padding-left: 18px;
-        padding-right: 18px;
+        padding-left: 20px;
+        padding-right: 20px;
         Text {
             text: root.text;
             color: root.fg;
-            font-size: 15px;
+            font-size: 17px;
             font-weight: 800;
             letter-spacing: 1.5px;
             vertical-alignment: center;
@@ -974,6 +974,7 @@ component HomeScreen inherits Rectangle {
                     spacing: 10px;
                     PrimaryButton {
                         horizontal-stretch: 1;
+                        height: 88px;
                         text: root.badge-kind == 2 ? "On air" : "Select talkgroup";
                         enabled: root.select-enabled;
                         clicked => {
@@ -982,6 +983,7 @@ component HomeScreen inherits Rectangle {
                     }
                     if root.show-cancel: SecondaryButton {
                         horizontal-stretch: 1;
+                        height: 88px;
                         text: "Cancel";
                         clicked => {
                             root.cancel-select();
