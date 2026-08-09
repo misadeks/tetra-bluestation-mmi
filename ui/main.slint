@@ -1616,31 +1616,34 @@ component GroupRowView inherits Rectangle {
         }
     }
     HorizontalLayout {
-        padding-left: 16px;
-        padding-right: root.is-tx ? 16px : 96px;
+        padding-left: 18px;
+        padding-right: root.is-tx ? 18px : 96px;
         spacing: 12px;
-        VerticalLayout {
-            alignment: center;
-            spacing: 5px;
+        // Group name (large), with the TX/SCAN tag inline; fills the row.
+        HorizontalLayout {
             horizontal-stretch: 1;
-            HorizontalLayout {
-                spacing: 8px;
-                alignment: start;
+            spacing: 10px;
+            VerticalLayout {
+                alignment: center;
                 Text {
                     text: root.name;
                     color: Palette.txt;
-                    font-size: 21px;
-                    font-weight: 600;
+                    font-size: 26px;
+                    font-weight: 700;
                     overflow: elide;
                 }
-                if root.tag > 0: VerticalLayout { alignment: center; TagPill { tag: root.tag; } }
-                Rectangle { horizontal-stretch: 1; }
             }
+            if root.tag > 0: VerticalLayout { alignment: center; TagPill { tag: root.tag; } }
+            Rectangle { horizontal-stretch: 1; }
+        }
+        // GSSI pinned to the right of the content, before the add/remove button.
+        VerticalLayout {
+            alignment: center;
             Text {
                 text: root.sub;
                 color: Palette.muted;
-                font-size: 16px;
-                overflow: elide;
+                font-size: 17px;
+                font-weight: 600;
             }
         }
     }
