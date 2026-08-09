@@ -1604,7 +1604,7 @@ component GroupRowView inherits Rectangle {
     callback select;
     callback add;
     callback detach;
-    height: 98px;
+    height: 106px;
     border-radius: 16px;
     border-width: 1px;
     border-color: root.is-tx ? #37c06a55 : Palette.line;
@@ -1688,7 +1688,7 @@ component ScanRowView inherits Rectangle {
     in property <string> sub;
     in property <bool> active;
     callback toggled(bool);
-    height: 90px;
+    height: 106px;
     border-radius: 16px;
     border-width: 1px;
     border-color: root.active ? #37c06a55 : Palette.line;
@@ -1704,14 +1704,14 @@ component ScanRowView inherits Rectangle {
             Text {
                 text: root.name;
                 color: Palette.txt;
-                font-size: 20px;
+                font-size: 23px;
                 font-weight: 600;
                 overflow: elide;
             }
             if root.sub != "": Text {
                 text: root.sub;
                 color: Palette.muted;
-                font-size: 15px;
+                font-size: 17px;
                 overflow: elide;
             }
         }
@@ -2968,7 +2968,7 @@ component CycleRow inherits Rectangle {
     in property <string> label;
     in property <string> value;
     callback tapped;
-    height: 58px;
+    height: 70px;
     border-radius: 12px;
     border-width: 1px;
     border-color: Palette.line2;
@@ -2988,7 +2988,7 @@ component CycleRow inherits Rectangle {
                 text: root.label;
                 width: 116px;
                 color: Palette.muted;
-                font-size: 15px;
+                font-size: 17px;
             }
         }
         VerticalLayout {
@@ -2997,7 +2997,7 @@ component CycleRow inherits Rectangle {
             Text {
                 text: root.value;
                 color: Palette.txt;
-                font-size: 20px;
+                font-size: 22px;
                 font-weight: 600;
                 overflow: elide;
             }
@@ -3893,7 +3893,7 @@ component RecentRowView inherits Rectangle {
             Text {
                 text: root.title;
                 color: root.missed ? #ff9a9d : Palette.txt;
-                font-size: 22px;
+                font-size: 23px;
                 font-weight: root.missed ? 800 : 600;
                 overflow: elide;
             }
@@ -4244,7 +4244,7 @@ component SurveyRowView inherits Rectangle {
     in property <string> sub2;
     callback register;
     callback monitor;
-    height: 150px;
+    height: 156px;
     border-radius: 14px;
     border-width: 1px;
     border-color: Palette.line;
@@ -4255,18 +4255,18 @@ component SurveyRowView inherits Rectangle {
         Text {
             text: root.title;
             color: Palette.txt;
-            font-size: 20px;
+            font-size: 22px;
             font-weight: 700;
         }
         Text {
             text: root.sub1;
             color: Palette.muted;
-            font-size: 14px;
+            font-size: 16px;
         }
         Text {
             text: root.sub2;
             color: Palette.muted;
-            font-size: 14px;
+            font-size: 16px;
         }
         HorizontalLayout {
             spacing: 10px;
@@ -4351,14 +4351,14 @@ component SurveyScreen inherits Rectangle {
                     Text {
                         text: "Auto mode";
                         color: Palette.txt;
-                        font-size: 18px;
+                        font-size: 20px;
                         font-weight: 700;
                         horizontal-alignment: center;
                     }
                     Text {
                         text: "The stack scans and camps on its own. Switch to Manual to survey the programmed carriers and pick a cell.";
                         color: Palette.muted;
-                        font-size: 14px;
+                        font-size: 16px;
                         horizontal-alignment: center;
                         wrap: word-wrap;
                     }
@@ -4387,7 +4387,7 @@ component SurveyScreen inherits Rectangle {
             if root.manual && root.status != "": Text {
                 text: root.status;
                 color: Palette.muted;
-                font-size: 14px;
+                font-size: 16px;
                 horizontal-alignment: center;
             }
 
