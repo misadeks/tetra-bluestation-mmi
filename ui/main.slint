@@ -886,20 +886,31 @@ component HomeScreen inherits Rectangle {
                     horizontal-alignment: center;
                     wrap: word-wrap;
                 }
-                Text {
-                    text: root.group-call-status;
-                    color: Palette.muted;
-                    font-size: 26px;
-                    font-weight: 600;
-                    horizontal-alignment: center;
+                // Status + talker lines have reserved fixed heights so the centred
+                // hero never shifts as they appear/disappear or change.
+                Rectangle {
+                    height: 36px;
+                    Text {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        text: root.group-call-status;
+                        color: Palette.muted;
+                        font-size: 26px;
+                        font-weight: 600;
+                        horizontal-alignment: center;
+                    }
                 }
-                if root.group-talker-id != "": Text {
-                    text: root.group-talker-id;
-                    color: #cfe9ff;
-                    font-size: 40px;
-                    font-weight: 700;
-                    horizontal-alignment: center;
-                    wrap: word-wrap;
+                Rectangle {
+                    height: 52px;
+                    Text {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        text: root.group-talker-id;
+                        color: #cfe9ff;
+                        font-size: 40px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                    }
                 }
             }
 
