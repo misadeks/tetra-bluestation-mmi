@@ -9,7 +9,7 @@
 // The selected ringtone is a UI-only preference (see `prefs.rs`): it is stored
 // locally and never sent to the stack.
 
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use cpal::traits::{DeviceTrait, StreamTrait};
@@ -42,6 +42,8 @@ struct Shared {
     active: AtomicBool,
     /// Read cursor into `buf`.
     pos: AtomicUsize,
+    /// Master playback gain (0.0..1.0) as f32 bits.
+    volume: AtomicU32,
 }
 
 pub struct RingtonePlayer {
@@ -83,6 +85,7 @@ impl RingtonePlayer {
                 buf: Mutex::new(Arc::new(Vec::new())),
                 active: AtomicBool::new(false),
                 pos: AtomicUsize::new(0),
+                volume: AtomicU32::new(1.0f32.to_bits()),
             }),
             current: Mutex::new(None),
             stream: Mutex::new(None),
@@ -101,6 +104,7 @@ impl RingtonePlayer {
                         &self.config,
                         move |data: &mut [$t], _| {
                             let active = shared.active.load(Ordering::Relaxed);
+                            let gain = f32::from_bits(shared.volume.load(Ordering::Relaxed));
                             let wave = if active {
                                 Some(shared.buf.lock().unwrap().clone())
                             } else {
@@ -116,6 +120,7 @@ impl RingtonePlayer {
                                     }
                                     _ => 0,
                                 };
+                                let s = (s as f32 * gain).clamp(-32768.0, 32767.0) as i16;
                                 let v = $conv(s);
                                 for slot in frame.iter_mut() {
                                     *slot = v;
@@ -171,6 +176,11 @@ impl RingtonePlayer {
         *self.current.lock().unwrap() = None;
         // Drop the stream so it stops running and no longer contends with the SDR.
         *self.stream.lock().unwrap() = None;
+    }
+
+    /// Set the ringtone playback gain (0.0..1.0).
+    pub fn set_volume(&self, v: f32) {
+        self.shared.volume.store(v.clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
     }
 }
 

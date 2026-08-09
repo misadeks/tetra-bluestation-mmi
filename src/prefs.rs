@@ -19,6 +19,10 @@ fn default_ringtone() -> String {
     crate::ringtone::default_id().to_string()
 }
 
+fn default_volume() -> f32 {
+    1.0
+}
+
 /// Which ringtone applies to a given incoming call.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum RingCategory {
@@ -47,6 +51,9 @@ pub struct UiPrefs {
     /// Whether the Event Log entry is shown in the main menu (UI-only setting).
     #[serde(default = "default_true")]
     pub show_event_log: bool,
+    /// Master playback volume (0.0..1.0) for call audio and ringtones.
+    #[serde(default = "default_volume")]
+    pub volume: f32,
     /// Legacy single-ringtone field (pre per-type); migrated on load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     ringtone: Option<String>,
@@ -62,6 +69,7 @@ impl Default for UiPrefs {
             ring_duplex: default_ringtone(),
             ring_gateway: default_ringtone(),
             show_event_log: true,
+            volume: 1.0,
             ringtone: None,
             path: PathBuf::new(),
         }
@@ -90,6 +98,11 @@ impl UiPrefs {
                 *r = default_ringtone();
             }
         }
+        // Clamp volume to a sane range (guards NaN / out-of-range files).
+        if !(prefs.volume.is_finite()) {
+            prefs.volume = 1.0;
+        }
+        prefs.volume = prefs.volume.clamp(0.0, 1.0);
         prefs.path = path;
         prefs
     }

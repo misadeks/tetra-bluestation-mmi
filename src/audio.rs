@@ -429,6 +429,8 @@ pub struct AudioEngine {
     out_stream: RefCell<Option<cpal::Stream>>,
     in_stream: RefCell<Option<cpal::Stream>>,
     active: Cell<bool>,
+    /// Master playback gain (0.0..1.0) as f32 bits; read by the output callback.
+    volume: Arc<AtomicU32>,
 }
 
 /// Capture-side parameters retained to (re)build the input stream on demand.
@@ -602,7 +604,14 @@ impl AudioEngine {
             out_stream: RefCell::new(None),
             in_stream: RefCell::new(None),
             active: Cell::new(false),
+            volume: Arc::new(AtomicU32::new(1.0f32.to_bits())),
         })
+    }
+
+    /// Set the master playback gain (0.0..1.0). Applied to downlink audio in the
+    /// output callback. Lock-free: safe to call from the app-loop thread.
+    pub fn set_volume(&self, v: f32) {
+        self.volume.store(v.clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
     }
 
     /// Open the audio streams while a call carries media, or drop them when the
@@ -622,6 +631,7 @@ impl AudioEngine {
                 self.playback.clone(),
                 self.playing.clone(),
                 self.prebuffer,
+                self.volume.clone(),
             ) {
                 Some(s) if s.play().is_ok() => *self.out_stream.borrow_mut() = Some(s),
                 _ => tracing::warn!("audio: failed to open output stream"),
@@ -689,6 +699,7 @@ fn build_output_stream(
     playback: Arc<Mutex<VecDeque<i16>>>,
     playing: Arc<AtomicBool>,
     prebuffer: usize,
+    volume: Arc<AtomicU32>,
 ) -> Option<cpal::Stream> {
     let sample_format = cfg.sample_format();
     let config: cpal::StreamConfig = cfg.clone().into();
@@ -697,10 +708,12 @@ fn build_output_stream(
         ($t:ty, $conv:expr) => {{
             let playback = playback.clone();
             let playing = playing.clone();
+            let volume = volume.clone();
             dev.build_output_stream(
                 &config,
                 move |data: &mut [$t], _| {
                     let mut q = playback.lock().unwrap();
+                    let gain = f32::from_bits(volume.load(Ordering::Relaxed));
                     // Gate on the prebuffer: only start draining once enough audio
                     // has accumulated, and rebuffer after an underrun, so bursty
                     // delivery doesn't inject silence mid-word. prebuffer == 0
@@ -723,6 +736,8 @@ fn build_output_stream(
                         } else {
                             0
                         };
+                        // Apply master gain in the i16 domain (clamped).
+                        let s = (s as f32 * gain).clamp(-32768.0, 32767.0) as i16;
                         let v = $conv(s);
                         for slot in frame.iter_mut() {
                             *slot = v;
