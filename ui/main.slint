@@ -4838,7 +4838,7 @@ component DialerScreen inherits Rectangle {
             spacing: 10px;
             // Delete (clear the whole number).
             Rectangle {
-                height: 66px;
+                height: 88px;
                 horizontal-stretch: 1;
                 border-radius: 16px;
                 border-width: 1px;
@@ -4856,12 +4856,12 @@ component DialerScreen inherits Rectangle {
                     y: (parent.height - self.height) / 2;
                     d: Icons.close;
                     tint: Palette.muted;
-                    size: 24px;
+                    size: 26px;
                 }
             }
             // Call (DUPLEX), green.
             Rectangle {
-                height: 66px;
+                height: 88px;
                 horizontal-stretch: 1;
                 border-radius: 16px;
                 border-width: 1px;
@@ -4880,12 +4880,12 @@ component DialerScreen inherits Rectangle {
                     y: (parent.height - self.height) / 2;
                     d: Icons.phone;
                     tint: root.number == "" ? Palette.muted : #ffffff;
-                    size: 24px;
+                    size: 28px;
                 }
             }
             // Backspace (delete last digit).
             Rectangle {
-                height: 66px;
+                height: 88px;
                 horizontal-stretch: 1;
                 border-radius: 16px;
                 border-width: 1px;
@@ -4903,7 +4903,7 @@ component DialerScreen inherits Rectangle {
                     y: (parent.height - self.height) / 2;
                     d: Icons.backspace;
                     tint: Palette.muted;
-                    size: 24px;
+                    size: 26px;
                 }
             }
         }
