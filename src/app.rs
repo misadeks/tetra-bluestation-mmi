@@ -173,6 +173,10 @@ pub enum AppEvent {
     UiOpenSettings,
     /// Toggle whether the Event Log appears in the main menu (persists).
     UiToggleEventLog,
+    /// Set the master playback volume 0.0..1.0 (applies live; not saved).
+    UiSetVolume(f32),
+    /// Persist the current master volume to disk (on slider release).
+    UiCommitVolume,
     /// Switch which call category the ringtone screen is editing (0/1/2).
     UiRingCategory(i32),
     /// Select a ringtone by index for the current category (persists + previews).
@@ -685,6 +689,13 @@ pub fn run(
 
     // Apply UI-only prefs (e.g. Event Log visibility) immediately, before any
     // stack connection, so they take effect even while offline.
+    // Apply the saved master volume to both audio paths.
+    if let Some(a) = audio.as_ref() {
+        a.set_volume(app.prefs.volume);
+    }
+    if let Some(r) = app.ringtone.as_ref() {
+        r.set_volume(app.prefs.volume);
+    }
     push_ui(&app, &weak);
 
     for event in rx.iter() {
@@ -1752,6 +1763,22 @@ pub fn run(
                 app.prefs.save();
                 let show = app.prefs.show_event_log;
                 let _ = weak.upgrade_in_event_loop(move |w| w.set_show_event_log(show));
+            }
+            AppEvent::UiSetVolume(v) => {
+                let v = v.clamp(0.0, 1.0);
+                // Apply live (audio + ringtone); persist only on release to avoid
+                // writing the prefs file on every drag movement.
+                app.prefs.volume = v;
+                if let Some(a) = audio.as_ref() {
+                    a.set_volume(v);
+                }
+                if let Some(r) = app.ringtone.as_ref() {
+                    r.set_volume(v);
+                }
+                let _ = weak.upgrade_in_event_loop(move |w| w.set_volume(v));
+            }
+            AppEvent::UiCommitVolume => {
+                app.prefs.save();
             }
             AppEvent::UiOpenRingtones => {
                 app.ring_category = crate::prefs::RingCategory::Simplex;
@@ -3289,6 +3316,7 @@ fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
     .to_string();
     let restart_required = s.restart_required;
     let show_event_log = app.prefs.show_event_log;
+    let volume = app.prefs.volume;
     let home_display_text = {
         let hd_enabled = app
             .codeplug
@@ -3335,6 +3363,7 @@ fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
         w.set_ptt_label(ptt_label.into());
         w.set_restart_required(restart_required);
         w.set_show_event_log(show_event_log);
+        w.set_volume(volume);
 
         let rows: Vec<FolderRow> = folder_rows
             .into_iter()

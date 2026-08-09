@@ -584,6 +584,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     {
         let tx = events_tx.clone();
+        window.on_set_volume(move |v| {
+            let _ = tx.send(app::AppEvent::UiSetVolume(v));
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_commit_volume(move || {
+            let _ = tx.send(app::AppEvent::UiCommitVolume);
+        });
+    }
+    {
+        let tx = events_tx.clone();
         window.on_ring_pick_category(move |i| {
             let _ = tx.send(app::AppEvent::UiRingCategory(i));
         });

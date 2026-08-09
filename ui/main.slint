@@ -3696,11 +3696,66 @@ component RingtoneScreen inherits Rectangle {
     }
 }
 
+// A horizontal drag slider (0.0..1.0). `changed` fires live during drag;
+// `released` fires on pointer-up (for committing/persisting).
+component Slider inherits Rectangle {
+    in property <float> value;
+    callback changed(float);
+    callback released;
+    height: 48px;
+    property <length> knob-d: 34px;
+    property <length> travel: max(1px, self.width - root.knob-d);
+    // Track.
+    Rectangle {
+        x: 0;
+        y: (parent.height - self.height) / 2;
+        height: 12px;
+        border-radius: 6px;
+        background: #33414f;
+        // Filled portion up to the knob centre.
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: root.knob-d / 2 + root.travel * root.value;
+            height: parent.height;
+            border-radius: 6px;
+            background: Palette.accent;
+        }
+    }
+    // Knob.
+    Rectangle {
+        width: root.knob-d;
+        height: root.knob-d;
+        border-radius: root.knob-d / 2;
+        y: (parent.height - self.height) / 2;
+        x: root.travel * root.value;
+        background: #ffffff;
+        border-width: 1px;
+        border-color: #0000004d;
+    }
+    ta := TouchArea {
+        moved => {
+            root.changed(Math.max(0, Math.min(1, (self.mouse-x - root.knob-d / 2) / root.travel)));
+        }
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                root.changed(Math.max(0, Math.min(1, (self.mouse-x - root.knob-d / 2) / root.travel)));
+            }
+            if (e.kind == PointerEventKind.up) {
+                root.released();
+            }
+        }
+    }
+}
+
 // Settings hub: entry points for UI-only settings.
 component SettingsScreen inherits Rectangle {
     in property <bool> event-log-on: true;
+    in property <float> volume: 1.0;
     callback open-ringtones;
     callback toggle-event-log;
+    callback set-volume(float);
+    callback volume-released;
     background: transparent;
     VerticalLayout {
         padding: 16px;
@@ -3712,6 +3767,47 @@ component SettingsScreen inherits Rectangle {
             icon: Icons.bell;
             clicked => {
                 root.open-ringtones();
+            }
+        }
+        // Master volume (call audio + ringtones).
+        Rectangle {
+            height: 104px;
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: Palette.line2;
+            background: Palette.surface;
+            VerticalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 12px;
+                padding-bottom: 12px;
+                spacing: 6px;
+                HorizontalLayout {
+                    Text {
+                        text: "Volume";
+                        color: Palette.txt;
+                        font-size: 20px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+                    Text {
+                        text: Math.round(root.volume * 100) + "%";
+                        color: Palette.muted;
+                        font-size: 18px;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+                }
+                Slider {
+                    value: root.volume;
+                    changed(v) => {
+                        root.set-volume(v);
+                    }
+                    released => {
+                        root.volume-released();
+                    }
+                }
             }
         }
         ToggleRow {
@@ -4993,6 +5089,7 @@ export component MainWindow inherits Window {
 
     in property <DeviceInput> device-input: DeviceInput.Touch;
     in property <bool> show-event-log: true;
+    in property <float> volume: 1.0;
     in-out property <Screen> screen: Screen.Home;
 
     // --- Navigation history (breadcrumb stack) ---
@@ -5285,6 +5382,8 @@ export component MainWindow inherits Window {
     callback open-ringtones;
     callback open-settings;
     callback toggle-event-log;
+    callback set-volume(float);
+    callback commit-volume;
     callback ring-select(int);
     callback ring-toggle;
     callback ring-pick-category(int);
@@ -5675,11 +5774,18 @@ export component MainWindow inherits Window {
         if root.device-input == DeviceInput.Touch && root.screen == Screen.Settings: SettingsScreen {
             vertical-stretch: 1;
             event-log-on: root.show-event-log;
+            volume: root.volume;
             open-ringtones => {
                 root.open-ringtones();
             }
             toggle-event-log => {
                 root.toggle-event-log();
+            }
+            set-volume(v) => {
+                root.set-volume(v);
+            }
+            volume-released => {
+                root.commit-volume();
             }
         }
 
