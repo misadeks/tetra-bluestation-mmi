@@ -4950,7 +4950,8 @@ fn push_calls(app: &AppState, weak: &slint::Weak<MainWindow>) {
                 "Requesting floor...".to_string()
             }
             _ if gcall.is_none() => "Connecting...".to_string(),
-            _ => "Floor free - push to talk".to_string(),
+            // Floor free: no status line (the PTT button already says so).
+            _ => String::new(),
         }
     };
     // The talker line (larger): a contact name/callsign when known, otherwise the
