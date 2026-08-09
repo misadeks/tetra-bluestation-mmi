@@ -398,8 +398,8 @@ component CyclerArrow inherits Rectangle {
 component FolderButton inherits Rectangle {
     in property <string> name;
     callback clicked;
-    height: 64px;
-    border-radius: 16px;
+    height: 74px;
+    border-radius: 18px;
     border-width: 1px;
     border-color: Palette.line;
     background: touch.pressed ? #1b2836 : Palette.surface;
@@ -410,19 +410,19 @@ component FolderButton inherits Rectangle {
         }
     }
     HorizontalLayout {
-        padding-left: 22px;
-        padding-right: 20px;
-        spacing: 12px;
+        padding-left: 24px;
+        padding-right: 22px;
+        spacing: 14px;
         alignment: center;
-        VerticalLayout { alignment: center; Icon { d: Icons.folder; tint: Palette.accent; size: 22px; } }
+        VerticalLayout { alignment: center; Icon { d: Icons.folder; tint: Palette.accent; size: 25px; } }
         Text {
             text: root.name;
             color: #cfe0ec;
-            font-size: 21px;
+            font-size: 24px;
             font-weight: 600;
             vertical-alignment: center;
         }
-        VerticalLayout { alignment: center; Icon { d: Icons.chevron-down; tint: Palette.faint; size: 20px; } }
+        VerticalLayout { alignment: center; Icon { d: Icons.chevron-down; tint: Palette.faint; size: 22px; } }
     }
 }
 
