@@ -2149,6 +2149,25 @@ component OnScreenKeyboard inherits Rectangle {
     }
 }
 
+// A blinking text caret shown at the end of an active input field. Blinks only
+// while `on` (the field is the focused input); hidden otherwise.
+component Caret inherits Rectangle {
+    in property <bool> on;
+    in property <length> h: 26px;
+    property <bool> phase: true;
+    width: 3px;
+    height: root.h;
+    border-radius: 1px;
+    background: (root.on && root.phase) ? Palette.accent : transparent;
+    Timer {
+        interval: 530ms;
+        running: root.on;
+        triggered => {
+            root.phase = !root.phase;
+        }
+    }
+}
+
 // A labelled, tappable form field showing its current value.
 component EditFieldRow inherits Rectangle {
     in property <string> label;
@@ -2182,12 +2201,20 @@ component EditFieldRow inherits Rectangle {
         VerticalLayout {
             alignment: center;
             horizontal-stretch: 1;
-            Text {
-                text: root.text == "" ? root.placeholder : root.text;
-                color: root.text == "" ? Palette.faint : Palette.txt;
-                font-size: 22px;
-                font-weight: 600;
-                overflow: elide;
+            HorizontalLayout {
+                spacing: 3px;
+                Text {
+                    text: root.text == "" ? root.placeholder : root.text;
+                    color: root.text == "" ? Palette.faint : Palette.txt;
+                    font-size: 22px;
+                    font-weight: 600;
+                    overflow: elide;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Caret { on: root.focused; h: 26px; }
+                }
+                Rectangle { horizontal-stretch: 1; }
             }
         }
     }
@@ -2197,6 +2224,7 @@ component EditFieldRow inherits Rectangle {
 component SearchBar inherits Rectangle {
     in property <string> query;
     in property <string> placeholder: "Search";
+    in property <bool> active;
     callback activate;
     callback clear;
     height: 70px;
@@ -2220,11 +2248,19 @@ component SearchBar inherits Rectangle {
         VerticalLayout {
             alignment: center;
             horizontal-stretch: 1;
-            Text {
-                text: root.query == "" ? root.placeholder : root.query;
-                color: root.query == "" ? Palette.faint : Palette.txt;
-                font-size: 22px;
-                overflow: elide;
+            HorizontalLayout {
+                spacing: 3px;
+                Text {
+                    text: root.query == "" ? root.placeholder : root.query;
+                    color: root.query == "" ? Palette.faint : Palette.txt;
+                    font-size: 22px;
+                    overflow: elide;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Caret { on: root.active; h: 26px; }
+                }
+                Rectangle { horizontal-stretch: 1; }
             }
         }
         if root.query != "": Rectangle {
@@ -2262,6 +2298,7 @@ component ContactsScreen inherits Rectangle {
         SearchBar {
             query: root.query;
             placeholder: "Search contacts";
+            active: root.searching;
             activate => {
                 root.searching = true;
             }
@@ -2764,11 +2801,19 @@ component MsgThreadScreen inherits Rectangle {
                 VerticalLayout {
                     alignment: center;
                     horizontal-stretch: 1;
-                    Text {
-                        text: root.draft == "" ? "Type a message" : root.draft;
-                        color: root.draft == "" ? Palette.faint : Palette.txt;
-                        font-size: 18px;
-                        overflow: elide;
+                    HorizontalLayout {
+                        spacing: 3px;
+                        Text {
+                            text: root.draft == "" ? "Type a message" : root.draft;
+                            color: root.draft == "" ? Palette.faint : Palette.txt;
+                            font-size: 18px;
+                            overflow: elide;
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Caret { on: true; h: 22px; }
+                        }
+                        Rectangle { horizontal-stretch: 1; }
                     }
                 }
             }
@@ -3476,6 +3521,7 @@ component PickerScreen inherits Rectangle {
         SearchBar {
             query: root.query;
             placeholder: "Search talkgroups";
+            active: root.searching;
             activate => {
                 root.searching = true;
             }
