@@ -857,20 +857,20 @@ component HomeScreen inherits Rectangle {
             vertical-stretch: 1;
             if root.group-call-active: VerticalLayout {
                 alignment: center;
-                spacing: 14px;
+                spacing: 18px;
                 HorizontalLayout {
                     alignment: center;
                     Rectangle {
-                        height: 30px;
-                        border-radius: 10px;
+                        height: 44px;
+                        border-radius: 12px;
                         background: #d23b4133;
                         HorizontalLayout {
-                            padding-left: 16px;
-                            padding-right: 16px;
+                            padding-left: 20px;
+                            padding-right: 20px;
                             Text {
                                 text: "GROUP IN USE";
                                 color: #ff9a9d;
-                                font-size: 13px;
+                                font-size: 19px;
                                 font-weight: 800;
                                 letter-spacing: 2px;
                                 vertical-alignment: center;
@@ -881,7 +881,7 @@ component HomeScreen inherits Rectangle {
                 Text {
                     text: root.group-call-name;
                     color: #f2f7fb;
-                    font-size: 52px;
+                    font-size: 68px;
                     font-weight: 800;
                     horizontal-alignment: center;
                     wrap: word-wrap;
@@ -889,14 +889,14 @@ component HomeScreen inherits Rectangle {
                 Text {
                     text: root.group-call-status;
                     color: Palette.muted;
-                    font-size: 17px;
+                    font-size: 26px;
                     font-weight: 600;
                     horizontal-alignment: center;
                 }
                 if root.group-talker-id != "": Text {
                     text: root.group-talker-id;
                     color: #cfe9ff;
-                    font-size: 26px;
+                    font-size: 40px;
                     font-weight: 700;
                     horizontal-alignment: center;
                     wrap: word-wrap;
@@ -4276,19 +4276,19 @@ component InCallScreen inherits Rectangle {
             vertical-stretch: 1;
             VerticalLayout {
                 alignment: center;
-                spacing: 4px;
+                spacing: 8px;
                 Text {
                     text: root.dir;
                     color: Palette.muted;
-                    font-size: 13px;
-                    letter-spacing: 1px;
-                    font-weight: 600;
+                    font-size: 20px;
+                    letter-spacing: 2px;
+                    font-weight: 700;
                     horizontal-alignment: center;
                 }
                 Text {
                     text: root.peer;
                     color: #ffffff;
-                    font-size: 40px;
+                    font-size: 60px;
                     font-weight: 800;
                     horizontal-alignment: center;
                     wrap: word-wrap;
@@ -4296,22 +4296,23 @@ component InCallScreen inherits Rectangle {
                 Text {
                     text: root.sub;
                     color: Palette.muted;
-                    font-size: 15px;
+                    font-size: 24px;
+                    font-weight: 600;
                     horizontal-alignment: center;
                 }
-                Rectangle { height: 10px; }
+                Rectangle { height: 18px; }
                 Text {
                     text: root.state;
                     color: #8fe6ab;
-                    font-size: 16px;
-                    font-weight: 600;
+                    font-size: 28px;
+                    font-weight: 700;
                     horizontal-alignment: center;
                 }
                 if root.clock != "": Text {
                     text: root.clock;
                     color: #cfe9ff;
-                    font-size: 24px;
-                    font-weight: 700;
+                    font-size: 46px;
+                    font-weight: 800;
                     horizontal-alignment: center;
                 }
             }
@@ -4406,7 +4407,7 @@ component IncomingOverlay inherits Rectangle {
                 Text {
                     text: "INCOMING CALL";
                     color: Palette.muted;
-                    font-size: 14px;
+                    font-size: 17px;
                     letter-spacing: 2px;
                     font-weight: 700;
                     horizontal-alignment: center;
@@ -4414,7 +4415,7 @@ component IncomingOverlay inherits Rectangle {
                 Text {
                     text: root.peer;
                     color: #ffffff;
-                    font-size: 42px;
+                    font-size: 52px;
                     font-weight: 800;
                     horizontal-alignment: center;
                     wrap: word-wrap;
@@ -4422,7 +4423,7 @@ component IncomingOverlay inherits Rectangle {
                 Text {
                     text: root.sub;
                     color: #9fd3ef;
-                    font-size: 24px;
+                    font-size: 27px;
                     font-weight: 600;
                     horizontal-alignment: center;
                 }
@@ -4433,7 +4434,7 @@ component IncomingOverlay inherits Rectangle {
             spacing: 16px;
             Rectangle {
                 horizontal-stretch: 1;
-                height: 104px;
+                height: 116px;
                 border-radius: 18px;
                 background: rej.pressed
                     ? @linear-gradient(180deg, #cf3f44 0%, #a82a2f 100%)
@@ -4448,12 +4449,12 @@ component IncomingOverlay inherits Rectangle {
                     spacing: 8px;
                     HorizontalLayout {
                         alignment: center;
-                        Icon { d: Icons.phone-off; tint: #ffffff; size: 30px; }
+                        Icon { d: Icons.phone-off; tint: #ffffff; size: 36px; }
                     }
                     Text {
                         text: "Reject";
                         color: #ffffff;
-                        font-size: 17px;
+                        font-size: 22px;
                         font-weight: 700;
                         horizontal-alignment: center;
                     }
@@ -4461,7 +4462,7 @@ component IncomingOverlay inherits Rectangle {
             }
             Rectangle {
                 horizontal-stretch: 1;
-                height: 104px;
+                height: 116px;
                 border-radius: 18px;
                 background: ans.pressed
                     ? @linear-gradient(180deg, #1f9a55 0%, #178045 100%)
@@ -4476,12 +4477,12 @@ component IncomingOverlay inherits Rectangle {
                     spacing: 8px;
                     HorizontalLayout {
                         alignment: center;
-                        Icon { d: Icons.phone; tint: #ffffff; size: 30px; }
+                        Icon { d: Icons.phone; tint: #ffffff; size: 36px; }
                     }
                     Text {
                         text: "Answer";
                         color: #ffffff;
-                        font-size: 17px;
+                        font-size: 22px;
                         font-weight: 700;
                         horizontal-alignment: center;
                     }
