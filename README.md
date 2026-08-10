@@ -1,20 +1,11 @@
-# TETRA BlueStation MMI - native Rust + Slint variant
+# TETRA BlueStation MMI
 
-A native **Rust + Slint** touchscreen radio UI for a **BlueStation MS-mode** TETRA
-terminal. It is **another variant of the TN UI**, a sibling to the Python **TN web UI**
-(GitHub `misadeks/tetra-tn-web-ui`, whose app is titled "TNMM Demo UI" and is checked
-out locally as `tnmm_ui`). It is not a port of that browser front-end. Both variants
-play the same role: they implement the **server side of the BlueStation MS external
-interface** (`bluestation-ms-interface-2`) and present the operator a Classic-style
-radio UI over it. This variant is native/embedded rather than browser-based.
+A native **Rust + Slint** touchscreen radio UI - the MMI (man-machine interface) for a
+**tetra-bluestation** MS-mode TETRA terminal. It implements the **server side of the
+BlueStation MS external interface** (`bluestation-ms-interface-2`) and presents the
+operator a Classic-style radio UI over it.
 
-It supersedes a prior C + LVGL attempt (`misadeks/tetra-tn-lvgl-ui`). We switched to
-Rust + Slint because the whole TETRA stack is Rust, the wire protocol is serde
-externally-tagged enums (so we get compile-checked wire parity), and cargo
-cross-compiles cleanly to the Pi, avoiding the ARM64 C-toolchain pain of the LVGL
-attempt.
-
-The stack (or the `fake_stack.py` simulator) is the WebSocket **client** and dials
+The stack (or a simulator standing in for it) is the WebSocket **client** and dials
 **out** to this app on two channels:
 
 | Channel   | This app listens on | Subprotocol                | Traffic                               |
@@ -25,8 +16,8 @@ The stack (or the `fake_stack.py` simulator) is the WebSocket **client** and dia
 Messages are **JSON encoded as UTF-8 inside _binary_ WebSocket frames**, using the
 externally-tagged enum shape `{"Variant": {..}}`. This app does **not** reimplement any
 TETRA stack, protocol, registration, or codec-negotiation logic - it drives the MS over
-the fixed wire contract. See the TN web UI repo (`tetra-tn-web-ui`) and its
-`PROTOCOL.md` for the message catalog.
+the fixed interface-2 wire contract. See `src/protocol.rs` for the serde mirror of the
+wire types and the command builders.
 
 Targets:
 - **Raspberry Pi** (aarch64 embedded Linux) - deployment device.
@@ -283,21 +274,13 @@ winit backend by not setting `SLINT_BACKEND`.
 
 ## Developing with no radio hardware
 
-The **TN web UI** repo (`tetra-tn-web-ui`, checked out locally as `tnmm_ui`) ships a
-`fake_stack.py` simulator that plays the stack (the WS **client**). Because this app is
-the **server**, point the simulator's control and telemetry URLs at the ports this app
-listens on:
+Because this app is the **server**, any stack simulator that acts as the WebSocket
+**client** can drive it - point the simulator's control and telemetry URLs at the ports
+this app listens on (control `9102`, telemetry `9101`) and leave `[command].port` /
+`[telemetry].port` in `config.toml` at their defaults so it connects.
 
-```powershell
-# in the tetra-tn-web-ui repo (locally tnmm_ui), on Windows:
-python fake_stack.py --control ws://127.0.0.1:9102 --telemetry ws://127.0.0.1:9101 [--chaos]
-```
-
-Leave `[command].port` / `[telemetry].port` in `config.toml` at their defaults
-(`9102` / `9101`) so the simulator connects. `--chaos` randomly drops channels so you can
-exercise reconnect handling. On connect the app bootstraps
-(GetInterfaceVersion/GetState/GetConfig), polls GetState every 2s, and reflects
-telemetry live in the status bar and home screen.
+On connect the app bootstraps (`GetInterfaceVersion` / `GetState` / `GetConfig`), polls
+`GetState` every 2 s, and reflects telemetry live in the status bar and home screen.
 
 ## Configuration (`config.toml`)
 
@@ -337,25 +320,23 @@ The `scale` value also corrects the host display scaling during development: set
 it to `1.0` and the dev window occupies exactly `width x height` device pixels
 regardless of the Windows scaling setting.
 
-## Status and milestones
+## Features
 
-Current: **M4 (Pi touch look) + codeplug.** The touch UI is the web-UI device
-frame - status bar, header, a home talkgroup **cycler** (real names from the
-codeplug, folder selector, prev/next arrows), a Select-talkgroup action, a docked
-PTT, a 3-column softkey bar, and a Radio Info screen - all styled from the browser
-tetra-tn-web-ui CSS and driven by live MsRuntimeState. The two WebSocket servers,
-protocol layer, bootstrap + 2s polling, telemetry decode, and reconnect are
-underneath. Tested against `fake_stack.py` and the real BlueStation MS stack. See
-`DECISIONS.md`.
+- Two WebSocket servers (control `9102`, telemetry `9101`) implementing the interface-2
+  wire contract, with bootstrap, periodic `GetState` polling, telemetry decode, and
+  automatic reconnect.
+- Live status bar and home screen driven by `MsRuntimeState`: registration and service
+  state, signal strength, and a home talkgroup cycler with real names from the codeplug.
+- Talkgroup handling from the codeplug: a searchable folders + talkgroups tree, separate
+  scan lists, and attach/switch of the TX group.
+- Dialer with private and group calls, a redial list, and a contacts list.
+- Two-way ACELP voice with push-to-talk, threaded SDS messaging, and a master volume
+  control. Actions that need the network are disabled while out of service.
+- Touch and keypad layouts, selectable per device model.
+- Raspberry Pi kiosk deployment: renders straight to DRM/KMS via the Slint linuxkms
+  backend, with systemd autostart.
 
-- M1 toolchain spike (done).
-- M2 net + JSON (done).
-- M3 state + status bar + home (done).
-- M4 home look + navigation (done for touch/Pi): device frame, talkgroup cycler,
-  PTT dock, softkeys, Radio Info.
-- M4b codeplug parsing (done): real talkgroup names, folder selector + cycling,
-  Select-talkgroup (attach/switch TX).
-- M5+ audio, calls (M6), codeplug editor (M7), Pi hardware I/O (M8), kiosk polish.
+See `DECISIONS.md` for design decisions and deviations.
 
 ## License
 
