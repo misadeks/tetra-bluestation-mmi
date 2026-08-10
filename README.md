@@ -192,4 +192,18 @@ underneath. Tested against `fake_stack.py` and the real BlueStation MS stack. Se
 
 ## License
 
-MIT. See `Cargo.toml`.
+This project is licensed under the **MIT License** - see the [`LICENSE`](LICENSE)
+file for the full text.
+
+### Third-party components
+
+- **`tetra-acelp`** (git submodule at `third_party/libtetra-acelp`) - a pure-Rust
+  implementation of the ETSI EN 300 395-2 TETRA ACELP speech codec, licensed
+  `MIT OR Apache-2.0`. See the submodule's own `LICENSE`/`README` for details.
+- **ETSI reference data tables** - the numeric tables the codec needs are ETSI
+  copyright and are **not** distributed with this repo. They are downloaded and
+  generated locally by the submodule's `populate` tool (see the codec section
+  above) into a git-ignored file; nothing ETSI-copyrighted is committed here.
+- Rust crate dependencies retain their own upstream licenses (see `Cargo.toml`
+  / `cargo tree`).
+
