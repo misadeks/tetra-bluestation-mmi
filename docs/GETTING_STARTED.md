@@ -4,9 +4,6 @@ A step-by-step, copy-paste guide to build and run **TETRA BlueStation MMI** from
 scratch. If you follow this top to bottom you'll have it running. No prior Rust
 experience needed.
 
-> Just want a binary, not to build it yourself? Skip to
-> [Download a prebuilt binary](#download-a-prebuilt-binary).
-
 ---
 
 ## 0. What this is (30 seconds)
@@ -161,27 +158,6 @@ Quick version once the code + codec tables are on the Pi:
 cargo build --release
 sudo SLINT_BACKEND=linuxkms RUST_LOG=info ./target/release/tetra-bluestation-mmi
 ```
-
----
-
-## Download a prebuilt binary
-
-Every push builds binaries for Windows x64, Linux x64, and Linux arm64 (Pi) via
-GitHub Actions.
-
-1. Go to the repo's **Actions** tab.
-2. Open the latest successful **Build** run.
-3. Scroll to **Artifacts** and download the one for your platform:
-   - `tetra-bluestation-mmi-windows-x64`
-   - `tetra-bluestation-mmi-linux-x64`
-   - `tetra-bluestation-mmi-linux-arm64` (Raspberry Pi)
-4. Unzip it. On Linux/Pi make it executable: `chmod +x tetra-bluestation-mmi`.
-5. Put a `config.toml` next to the binary (copy the one from the repo) and run it.
-
-Tagged releases (`v*`) also attach these binaries to the GitHub **Releases** page.
-
-> Note: the codec tables are generated during CI, so the downloaded binaries are
-> ready to run - you do **not** need to run `populate` for a prebuilt binary.
 
 ---
 

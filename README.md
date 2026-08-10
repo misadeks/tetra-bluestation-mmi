@@ -1,7 +1,5 @@
 # TETRA BlueStation MMI
 
-[![Build](https://github.com/misadeks/tetra-bluestation-mmi/actions/workflows/build.yml/badge.svg)](https://github.com/misadeks/tetra-bluestation-mmi/actions/workflows/build.yml)
-
 A native **Rust + Slint** touchscreen radio UI - the MMI (man-machine interface) for a
 **tetra-bluestation** MS-mode TETRA terminal. It implements the **server side of the
 BlueStation MS external interface** (`bluestation-ms-interface-2`) and presents the
