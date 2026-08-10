@@ -1,0 +1,121 @@
+name: Build
+
+# Builds the app for Windows (x64), Linux (x64), and Linux (arm64 / Raspberry Pi)
+# and uploads each binary as a downloadable artifact. On a version tag (v*), the
+# same binaries are attached to a GitHub Release.
+#
+# REQUIRED SECRET: the speech-codec lives in a PRIVATE git submodule
+# (misadeks/libtetra-acelp). The default GITHUB_TOKEN cannot read another private
+# repo, so add a Personal Access Token with read access to that repo as the
+# `SUBMODULE_PAT` secret (Settings -> Secrets and variables -> Actions). Without
+# it, submodule checkout fails.
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write # needed to attach binaries to a Release on tag builds
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            os: windows-latest
+            bin: tetra-bluestation-mmi.exe
+            artifact: tetra-bluestation-mmi-windows-x64
+          - name: linux-x64
+            os: ubuntu-24.04
+            bin: tetra-bluestation-mmi
+            artifact: tetra-bluestation-mmi-linux-x64
+          - name: linux-arm64 (Raspberry Pi)
+            os: ubuntu-24.04-arm
+            bin: tetra-bluestation-mmi
+            artifact: tetra-bluestation-mmi-linux-arm64
+
+    steps:
+      - name: Checkout (with private codec submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          # PAT with read access to the private codec submodule; falls back to the
+          # default token (which only works if the submodule is public).
+          token: ${{ secrets.SUBMODULE_PAT || github.token }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
+      # Native C libraries needed by the Slint backends (winit on desktop,
+      # linuxkms on the Pi/arm64) and the cpal audio dependency. Superset that
+      # covers both Linux runners; harmless extras on either.
+      - name: Install Linux system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config \
+            libasound2-dev libfontconfig1-dev libxkbcommon-dev \
+            libdrm-dev libgbm-dev libinput-dev libudev-dev \
+            libegl-dev libgles-dev libgl1-mesa-dri \
+            libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libwayland-dev
+
+      # The codec's ETSI numeric tables are copyright and NOT committed; they are
+      # generated once by the submodule's `populate` tool. Cache the result keyed
+      # on the submodule commit so we only download the ETSI archive when it changes.
+      - name: Resolve codec submodule commit
+        id: codec
+        shell: bash
+        run: echo "sha=$(git -C third_party/libtetra-acelp rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache generated codec tables
+        uses: actions/cache@v4
+        with:
+          path: third_party/libtetra-acelp/src/tables.rs
+          key: codec-tables-${{ steps.codec.outputs.sha }}
+
+      - name: Generate codec tables (if not cached)
+        shell: bash
+        run: |
+          if [ ! -f third_party/libtetra-acelp/src/tables.rs ]; then
+            echo "tables.rs missing - running populate (downloads the free ETSI archive)"
+            (cd third_party/libtetra-acelp && cargo run -p populate)
+          else
+            echo "tables.rs restored from cache - skipping populate"
+          fi
+
+      - name: Build (release)
+        run: cargo build --release --locked
+
+      - name: Test (release)
+        run: cargo test --release --locked
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: target/release/${{ matrix.bin }}
+          if-no-files-found: error
+
+      - name: Attach binary to Release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/release/${{ matrix.bin }}
+          fail_on_unmatched_files: true

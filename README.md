@@ -1,9 +1,14 @@
 # TETRA BlueStation MMI
 
+[![Build](https://github.com/misadeks/tetra-bluestation-mmi/actions/workflows/build.yml/badge.svg)](https://github.com/misadeks/tetra-bluestation-mmi/actions/workflows/build.yml)
+
 A native **Rust + Slint** touchscreen radio UI - the MMI (man-machine interface) for a
 **tetra-bluestation** MS-mode TETRA terminal. It implements the **server side of the
 BlueStation MS external interface** (`bluestation-ms-interface-2`) and presents the
 operator a classic radio-style UI over it.
+
+> **New here?** Follow the step-by-step **[Getting Started guide](docs/GETTING_STARTED.md)** -
+> it walks you from a fresh machine to a running app on Windows, Linux, or the Pi.
 
 The stack (or a simulator standing in for it) is the WebSocket **client** and dials
 **out** to this app on two channels:
