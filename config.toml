@@ -28,15 +28,7 @@ ws_path   = "ws.log"
 ws_speech = false        # include high-rate MsSpeechFrame voice frames (noisy)
 
 [audio]
-enabled       = true          # two-way voice (ACELP decode/encode)
-# ACELP codec backend:
-#   "rust" (default) - bundled pure-Rust tetra-acelp crate; no external libraries.
-#   "etsi"           - load the prebuilt ETSI C decoder/encoder from codec_dir.
-codec_backend = "rust"
-# Directory holding the prebuilt ACELP codec libraries (ETSI-copyrighted, never
-# committed). Only used when codec_backend = "etsi". Windows: tetra_acelp.dll +
-# tetra_acelp_enc.dll; Linux (Pi): libtetra_acelp.so + libtetra_acelp_enc.so.
-codec_dir     = 'native'
+enabled       = true          # two-way voice (ACELP decode/encode via bundled tetra-acelp)
 output_device = "default"
 input_device  = "default"
 sample_rate   = 8000

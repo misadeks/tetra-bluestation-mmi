@@ -110,16 +110,6 @@ pub struct AudioConfig {
     /// Enable the two-way voice path (decode downlink, encode uplink).
     #[serde(default = "default_true")]
     pub enabled: bool,
-    /// ACELP codec backend: "rust" (bundled pure-Rust `tetra-acelp` crate, the
-    /// default; no external libraries) or "etsi" (load the prebuilt ETSI C
-    /// decoder/encoder shared libraries from `codec_dir`).
-    #[serde(default = "default_codec_backend")]
-    pub codec_backend: String,
-    /// Directory holding the prebuilt ACELP codec libraries
-    /// (`tetra_acelp*.dll` / `.so`). ETSI-copyrighted, never committed here.
-    /// Only used when `codec_backend = "etsi"`.
-    #[serde(default = "default_codec_dir")]
-    pub codec_dir: String,
     #[serde(default = "default_device")]
     pub output_device: String,
     #[serde(default = "default_device")]
@@ -330,15 +320,6 @@ fn default_true() -> bool {
     true
 }
 
-fn default_codec_backend() -> String {
-    "rust".to_string()
-}
-
-fn default_codec_dir() -> String {
-    // The reference UI keeps the prebuilt (ETSI-copyrighted) codec libraries here.
-    r"C:\Users\mihaj\PycharmProjects\tnmm_ui\native".to_string()
-}
-
 fn default_sample_rate() -> u32 {
     8000
 }
@@ -417,8 +398,6 @@ impl Default for AudioConfig {
     fn default() -> Self {
         AudioConfig {
             enabled: true,
-            codec_backend: default_codec_backend(),
-            codec_dir: default_codec_dir(),
             output_device: default_device(),
             input_device: default_device(),
             sample_rate: default_sample_rate(),

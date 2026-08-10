@@ -23,9 +23,11 @@ Thumbs.db
 # Local screenshots
 *.png
 
-# ETSI-copyrighted ACELP codec libraries (loaded at runtime, never committed)
+# Compiled shared libraries (never committed)
 *.dll
 *.so
 *.dylib
-tetra_acelp*
-native/etsi/
+
+# Removed ETSI-C codec glue; keep any local remnants (incl. copyrighted
+# native/etsi/ sources) out of git for good.
+/native/

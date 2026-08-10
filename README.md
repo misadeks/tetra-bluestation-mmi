@@ -60,10 +60,9 @@ its renderer stack through cargo.
 
 ### Speech codec (ACELP) - submodule + one-time populate
 
-Two-way voice uses the **`tetra-acelp`** codec, vendored as a git **submodule** at
-`third_party/libtetra-acelp` and selected at runtime via `[audio].codec_backend`
-(`"rust"`, the default pure-Rust codec; or `"etsi"` to load the prebuilt C
-libraries from `[audio].codec_dir`).
+Two-way voice uses the **`tetra-acelp`** codec, a pure-Rust implementation of the
+ETSI EN 300 395-2 TETRA full-rate ACELP codec, vendored as a git **submodule** at
+`third_party/libtetra-acelp`.
 
 After cloning this repo, initialise the submodule:
 
@@ -85,9 +84,6 @@ cd ../..
 
 Run this once per checkout (the generated file persists and is git-ignored). If
 it is missing, the codec's `build.rs` fails early with these same instructions.
-(The populate step is only skippable if you use the `"etsi"` C backend
-exclusively - but the crate is still compiled, so generating the tables once is
-the simplest path.)
 
 ## Build and run - Windows (RustRover)
 
@@ -145,7 +141,7 @@ telemetry live in the status bar and home screen.
 | `[command]` / `[telemetry]` | `use_tls` / `ca_cert` | `wss` + server cert PEM when TLS is enabled. |
 | `[command]` / `[telemetry]` | `username` / `password` | HTTP Basic auth to accept; empty = accept all (demo). |
 | `[registration]` | `registration_type` | Operator registration preference (identity comes from the MS, never configured). |
-| `[audio]` | `codec_backend` | ACELP codec: `rust` (default, bundled `tetra-acelp` submodule) or `etsi` (prebuilt C libraries from `codec_dir`). |
+| `[audio]` | `enabled` | Enable the two-way ACELP voice path (bundled `tetra-acelp` submodule). |
 | `[audio]` | `output_device` / `input_device` | Output/input device selection. |
 | `[audio]` | `sample_rate` / `frame_ms` / `jitter_ms` | Audio path timing. |
 | `[ui]` | `model` | Device model to use from the catalog (built-ins: `pi-1280x720`, `pi-720x1280`, `linht`, plus any `[[device]]`). |

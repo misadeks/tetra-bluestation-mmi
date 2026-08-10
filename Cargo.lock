@@ -5021,7 +5021,6 @@ dependencies = [
  "chrono",
  "cpal",
  "crossbeam-channel",
- "libloading",
  "serde",
  "serde_json",
  "slint",
