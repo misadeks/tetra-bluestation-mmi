@@ -1,11 +1,11 @@
-// TETRA BlueStation MMI - Slint UI (Pi touch): a classic radio-style device
+﻿// TETRA BlueStation MMI - Slint UI (Pi touch): a classic radio-style device
 // frame of status bar + header +
 // stage + softkey grid; home is the talkgroup cycler with the select action
 // directly below and a docked PTT; Menu and Dialer reachable from the home
 // softkeys. Bundled Inter font, SVG-path icons, large touch metrics. Live values
 // are `in` properties set from Rust (app.rs) off MsRuntimeState.
 
-// Bundle the Inter font (matches the web UI) so the look is consistent on
+// Bundle the Inter font (matches the reference UI) so the look is consistent on
 // Windows and the Pi regardless of installed system fonts.
 import "fonts/Inter-Regular.ttf";
 import "fonts/Inter-Medium.ttf";
@@ -142,7 +142,7 @@ export struct SurveyRow {
     sub2: string,
 }
 
-// Palette lifted from the web UI's :root custom properties.
+// Palette lifted from the reference UI's :root custom properties.
 global Palette {
     out property <color> bg: #06080b;
     out property <color> glass1: #0f1620;
@@ -160,7 +160,7 @@ global Palette {
     out property <color> amber: #e7a72b;
 }
 
-// Line icon rendered from an SVG path (24x24 viewbox), like the web UI icons.
+// Line icon rendered from an SVG path (24x24 viewbox), like the reference UI icons.
 component Icon inherits Path {
     in property <string> d;
     in property <length> size: 22px;
@@ -214,7 +214,7 @@ global Icons {
     out property <string> antenna: "M12 8.4a1.4 1.4 0 1 0 0.01 0M8.9 5.3a5.4 5.4 0 0 0 0 7.4M15.1 5.3a5.4 5.4 0 0 1 0 7.4M12 9.8L9.6 21M12 9.8L14.4 21M10.2 17h3.6";
 }
 
-// 5 signal bars, heights scaled up, bottom-aligned (web UI .sig).
+// 5 signal bars, heights scaled up, bottom-aligned (reference UI .sig).
 component SignalBars inherits Rectangle {
     in property <int> bars;
     in property <bool> registered;
@@ -235,7 +235,7 @@ component SignalBars inherits Rectangle {
     }
 }
 
-// Rounded channel-link badge with a letter (web UI .lnk).
+// Rounded channel-link badge with a letter (reference UI .lnk).
 component LinkBadge inherits Rectangle {
     in property <string> label;
     in property <bool> on;
@@ -4410,7 +4410,7 @@ component SurveyScreen inherits Rectangle {
 }
 
 // In-call view (individual). A proper screen: keeps the status/header/nav chrome
-// and mirrors the web UI's .call-hero + docked PTT. Hang up lives in the nav bar.
+// and mirrors the reference UI's .call-hero + docked PTT. Hang up lives in the nav bar.
 component InCallScreen inherits Rectangle {
     in property <string> dir;
     in property <string> peer;
@@ -4524,7 +4524,7 @@ component InCallScreen inherits Rectangle {
     }
 }
 
-// Incoming-call modal overlay (mirrors the web UI .callov / .inc-card).
+// Incoming-call modal overlay (mirrors the reference UI .callov / .inc-card).
 component IncomingOverlay inherits Rectangle {
     in property <string> peer;
     in property <string> sub;
@@ -5167,7 +5167,7 @@ export component MainWindow inherits Window {
     }
 
     // Auto-open the in-call screen while an individual call is live, and leave it
-    // when the call ends (mirrors the web UI pushing/popping the call view).
+    // when the call ends (mirrors the reference UI pushing/popping the call view).
     changed call-live => {
         if (root.call-live) {
             root.screen = Screen.InCall;

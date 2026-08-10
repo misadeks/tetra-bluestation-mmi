@@ -5,7 +5,7 @@
 # run it on the Pi with the linuxkms backend.
 #
 # From WSL:
-#   cd /mnt/c/Users/mihaj/RustroverProjects/tetra-tn-ui
+#   cd /mnt/c/Users/<you>/RustroverProjects/tetra-bluestation-mmi
 #   bash scripts/wsl/build-deploy-run.sh
 #
 # The Pi sysroot must exist first (once):  scripts/cross/sync-sysroot.sh

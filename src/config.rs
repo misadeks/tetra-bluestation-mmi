@@ -1,9 +1,8 @@
 // M1 config parsing stub.
 //
 // This app is the SERVER side of the BlueStation MS external interface: the
-// stack (or fake_stack.py) is the WebSocket client and dials OUT to the host
-// and ports configured here. Networking is wired up in M2; for M1 we only
-// parse the file and log it.
+// stack (or a simulator) is the WebSocket client and dials OUT to the host
+// and ports configured here.
 
 use std::path::Path;
 

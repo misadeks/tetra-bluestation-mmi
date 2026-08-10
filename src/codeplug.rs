@@ -3,7 +3,7 @@
 // programming" we need for the home cycler: folders and talkgroups. Every other
 // section of the document is ignored (serde drops unknown keys).
 //
-// Semantics mirror the browser tetra-tn-web-ui codeplug tree: talkgroups are
+// Semantics follow the interface-2 codeplug tree: talkgroups are
 // grouped by their folder id, folders are ordered by (order, name), talkgroups
 // within a folder by (order, name), and talkgroups with no/blank folder fall
 // into a synthetic "Other" folder.

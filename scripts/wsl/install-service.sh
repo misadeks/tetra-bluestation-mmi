@@ -5,7 +5,7 @@
 # Pi so it autostarts on boot.
 #
 # From WSL:
-#   cd /mnt/c/Users/mihaj/RustroverProjects/tetra-tn-ui
+#   cd /mnt/c/Users/<you>/RustroverProjects/tetra-bluestation-mmi
 #   bash scripts/wsl/install-service.sh
 #
 # Set FORCE_SYNC=1 to re-pull the Pi sysroot first (after new -dev packages).

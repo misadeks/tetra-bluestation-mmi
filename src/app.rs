@@ -1,4 +1,4 @@
-// Central app state and the single-threaded event loop that owns it.
+﻿// Central app state and the single-threaded event loop that owns it.
 //
 // All net threads (control + telemetry) and timers marshal into here via a
 // crossbeam channel; this loop is the only writer of UI state, which it pushes
@@ -896,7 +896,7 @@ pub fn run(
                 }
             }
             AppEvent::UiPtt => {
-                // Guards mirror the web UI; voice keying lands in M5/M6.
+                // Guards mirror the reference UI; voice keying lands in M5/M6.
                 if !app.require_service(&weak) {
                     continue;
                 }
@@ -2182,7 +2182,7 @@ fn handle_telemetry(
     if variant.starts_with("Tncc") {
         apply_call_event(app, variant, payload, weak);
         // Signal "ringing" (U-ALERT) to the network for hook-signalling incoming
-        // calls, the moment they start ringing - mirroring the web UI's call_ring
+        // calls, the moment they start ringing - mirroring the reference UI's call_ring
         // step. Direct (no-hook) calls send nothing until the user answers.
         emit_ringing_alerts(app);
         push_calls(app, weak);
@@ -2495,7 +2495,7 @@ fn pretty_cause(cause: &str) -> String {
 /// Emit the ringing U-ALERT (TnccSetupResponse with the hook method) for any
 /// hook-signalling incoming call that just started ringing and hasn't been
 /// alerted yet. This tells the network the MS is ringing before the user
-/// answers, matching the web UI's `call_ring` step. No-hook calls send nothing
+/// answers, matching the reference UI's `call_ring` step. No-hook calls send nothing
 /// here (a single SetupResponse on answer connects them).
 fn emit_ringing_alerts(app: &mut AppState) {
     let pending: Vec<(u32, bool)> = app
@@ -3063,7 +3063,7 @@ fn sync_uplink(app: &AppState, audio: Option<&crate::audio::AudioEngine>) {
         }
     }
     // A duplex individual call is through-connected both ways: stream the mic for
-    // the whole call (no PTT), mirroring the web UI's syncDuplexMic.
+    // the whole call (no PTT), mirroring the reference UI's syncDuplexMic.
     if let Some(c) = app
         .calls
         .values()
@@ -3169,7 +3169,7 @@ fn cycle(app: &mut AppState, dir: isize) {
 /// Keep the home cycler pointed at the attached TX group by default. When the
 /// cycler has no selection (or points outside the current folder), snap it to
 /// the effective TX group and its folder, else fall back to the folder's first
-/// talkgroup. Mirrors the web UI's renderHomeCycler reconciliation and never
+/// talkgroup. Mirrors the reference UI's renderHomeCycler reconciliation and never
 /// overrides a valid in-folder selection the operator browsed to.
 fn reconcile_home_view(app: &mut AppState) {
     let folders_len = match &app.codeplug {

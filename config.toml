@@ -1,8 +1,8 @@
 # TETRA BlueStation MMI configuration.
 #
 # This app is the SERVER side of the BlueStation MS external interface: the
-# stack (or fake_stack.py) is the WebSocket client and dials OUT to the host and
-# ports below. Networking is wired up in M2; M1 only parses this file.
+# stack (or a simulator) is the WebSocket client and dials OUT to the host and
+# ports below.
 
 [command]     # control channel (subprotocol bluestation-control-v1)
 host = "0.0.0.0"

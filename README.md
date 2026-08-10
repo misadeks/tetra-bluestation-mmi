@@ -243,7 +243,7 @@ rustup target add aarch64-unknown-linux-gnu
 Then, from the Windows checkout inside WSL:
 
 ```bash
-cd /mnt/c/Users/<you>/RustroverProjects/tetra-tn-ui
+cd /mnt/c/Users/<you>/RustroverProjects/tetra-bluestation-mmi
 cp scripts/cross/pi.env.example scripts/cross/pi.env   # edit PI_HOST/PI_USER
 bash scripts/cross/sync-sysroot.sh          # once, and after apt-installing new -dev pkgs on the Pi
 bash scripts/wsl/build-deploy-run.sh        # sync -> cross-build -> deploy -> run
