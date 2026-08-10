@@ -44,7 +44,6 @@ config.toml       runtime config (BlueStation MS listen ports, devices, [ui])
 scripts/          deploy-pi.sh / deploy-pi.ps1 (build on Pi); cross/ + wsl/ (WSL cross-compile)
 deploy/           tetra-bluestation-mmi.service (systemd kiosk autostart)
 third_party/      git submodules (libtetra-acelp: the Rust ACELP speech codec)
-DECISIONS.md      running log of decisions and deviations
 ```
 
 ## Prerequisites
@@ -151,8 +150,6 @@ regardless of the Windows scaling setting.
 - Touch and keypad layouts, selectable per device model.
 - Raspberry Pi kiosk deployment: renders straight to DRM/KMS via the Slint linuxkms
   backend, with systemd autostart.
-
-See `DECISIONS.md` for design decisions and deviations.
 
 ## License
 

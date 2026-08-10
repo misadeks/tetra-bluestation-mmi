@@ -46,3 +46,6 @@ Thumbs.db
 # Python bytecode cache
 __pycache__/
 *.pyc
+
+# Internal development log (kept local, not shared)
+DECISIONS.md
