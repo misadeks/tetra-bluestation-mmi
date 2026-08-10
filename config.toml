@@ -1,4 +1,4 @@
-# TETRA TN UI configuration.
+# TETRA BlueStation MMI configuration.
 #
 # This app is the SERVER side of the BlueStation MS external interface: the
 # stack (or fake_stack.py) is the WebSocket client and dials OUT to the host and
@@ -28,21 +28,13 @@ ws_path   = "ws.log"
 ws_speech = false        # include high-rate MsSpeechFrame voice frames (noisy)
 
 [audio]
-enabled       = true          # two-way voice (ACELP decode/encode)
-# ACELP codec backend:
-#   "rust" (default) - bundled pure-Rust tetra-acelp crate; no external libraries.
-#   "etsi"           - load the prebuilt ETSI C decoder/encoder from codec_dir.
-codec_backend = "rust"
-# Directory holding the prebuilt ACELP codec libraries (ETSI-copyrighted, never
-# committed). Only used when codec_backend = "etsi". Windows: tetra_acelp.dll +
-# tetra_acelp_enc.dll; Linux (Pi): libtetra_acelp.so + libtetra_acelp_enc.so.
-codec_dir     = 'native'
+enabled       = true          # two-way voice (ACELP decode/encode via bundled tetra-acelp)
 # Audio output/input device (ringtones + two-way voice). A case-insensitive
 # substring of the cpal device name; "default" uses the ALSA default. On the Pi,
 # install deploy/asound.conf (routes "default" to the USB codec, full duplex) and
 # keep these "default" so the UI's audio stays off the SX1255 SDR's I2S DMA.
-# List names with `./tetra-tn-ui --list-audio`. On other hosts (e.g. Windows dev)
-# "default" is simply the system default.
+# List names with `./tetra-bluestation-mmi --list-audio`. On other hosts (e.g.
+# Windows dev) "default" is simply the system default.
 output_device = "default"
 input_device  = "default"
 sample_rate   = 8000

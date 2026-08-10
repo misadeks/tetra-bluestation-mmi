@@ -5014,14 +5014,13 @@ name = "tetra-acelp"
 version = "0.1.0"
 
 [[package]]
-name = "tetra-tn-ui"
+name = "tetra-bluestation-mmi"
 version = "0.1.0"
 dependencies = [
  "base64 0.23.0",
  "chrono",
  "cpal",
  "crossbeam-channel",
- "libloading",
  "serde",
  "serde_json",
  "slint",

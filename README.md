@@ -1,4 +1,4 @@
-# TETRA TN UI - native Rust + Slint variant
+# TETRA BlueStation MMI - native Rust + Slint variant
 
 A native **Rust + Slint** touchscreen radio UI for a **BlueStation MS-mode** TETRA
 terminal. It is **another variant of the TN UI**, a sibling to the Python **TN web UI**
@@ -63,10 +63,9 @@ see the Raspberry Pi section below.
 
 ### Speech codec (ACELP) - submodule + one-time populate
 
-Two-way voice uses the **`tetra-acelp`** codec, vendored as a git **submodule** at
-`third_party/libtetra-acelp` and selected at runtime via `[audio].codec_backend`
-(`"rust"`, the default pure-Rust codec; or `"etsi"` to load the prebuilt C
-libraries from `[audio].codec_dir`).
+Two-way voice uses the **`tetra-acelp`** codec, a pure-Rust implementation of the
+ETSI EN 300 395-2 TETRA full-rate ACELP codec, vendored as a git **submodule** at
+`third_party/libtetra-acelp`.
 
 After cloning this repo, initialise the submodule:
 
@@ -88,9 +87,6 @@ cd ../..
 
 Run this once per checkout (the generated file persists and is git-ignored). If
 it is missing, the codec's `build.rs` fails early with these same instructions.
-(The populate step is only skippable if you use the `"etsi"` C backend
-exclusively - but the crate is still compiled, so generating the tables once is
-the simplest path.)
 
 ## Build and run - Windows (RustRover)
 
@@ -98,7 +94,7 @@ the simplest path.)
 cargo run
 ```
 
-A dark portrait window titled *"TETRA TN UI"* with a scaffold card should open. The app
+A dark portrait window titled *"TETRA BlueStation MMI"* with a scaffold card should open. The app
 reads `config.toml` from the working directory; if the file is absent, built-in defaults
 are used (control `9102`, telemetry `9101`). Set `RUST_LOG=debug` for more verbose logs.
 
@@ -312,7 +308,7 @@ telemetry live in the status bar and home screen.
 | `[command]` / `[telemetry]` | `use_tls` / `ca_cert` | `wss` + server cert PEM when TLS is enabled. |
 | `[command]` / `[telemetry]` | `username` / `password` | HTTP Basic auth to accept; empty = accept all (demo). |
 | `[registration]` | `registration_type` | Operator registration preference (identity comes from the MS, never configured). |
-| `[audio]` | `codec_backend` | ACELP codec: `rust` (default, bundled `tetra-acelp` submodule) or `etsi` (prebuilt C libraries from `codec_dir`). |
+| `[audio]` | `enabled` | Enable the two-way ACELP voice path (bundled `tetra-acelp` submodule). |
 | `[audio]` | `output_device` / `input_device` | Output/input device selection. |
 | `[audio]` | `sample_rate` / `frame_ms` / `jitter_ms` | Audio path timing. |
 | `[ui]` | `model` | Device model to use from the catalog (built-ins: `pi-1280x720`, `pi-720x1280`, `linht`, plus any `[[device]]`). |
@@ -363,4 +359,18 @@ underneath. Tested against `fake_stack.py` and the real BlueStation MS stack. Se
 
 ## License
 
-MIT. See `Cargo.toml`.
+This project is licensed under the **MIT License** - see the [`LICENSE`](LICENSE)
+file for the full text.
+
+### Third-party components
+
+- **`tetra-acelp`** (git submodule at `third_party/libtetra-acelp`) - a pure-Rust
+  implementation of the ETSI EN 300 395-2 TETRA ACELP speech codec, licensed
+  `MIT OR Apache-2.0`. See the submodule's own `LICENSE`/`README` for details.
+- **ETSI reference data tables** - the numeric tables the codec needs are ETSI
+  copyright and are **not** distributed with this repo. They are downloaded and
+  generated locally by the submodule's `populate` tool (see the codec section
+  above) into a git-ignored file; nothing ETSI-copyrighted is committed here.
+- Rust crate dependencies retain their own upstream licenses (see `Cargo.toml`
+  / `cargo tree`).
+

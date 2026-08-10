@@ -1,9 +1,9 @@
 [package]
-name = "tetra-tn-ui"
+name = "tetra-bluestation-mmi"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.95"
-description = "Native Rust + Slint TETRA TN UI, a variant serving the server side of the BlueStation MS external interface"
+description = "Native Rust + Slint MMI (man-machine interface) serving the server side of the tetra-bluestation MS external interface"
 license = "MIT"
 
 [dependencies]
@@ -18,9 +18,9 @@ serde_json = "1.0.151"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 base64 = "0.23.0"
 cpal = "0.15"
-libloading = "0.8"
-# Bundled pure-Rust ACELP codec (git submodule). Selected at runtime via
-# [audio].codec_backend = "rust" (default) vs "etsi" (prebuilt C libraries).
+# Bundled pure-Rust ACELP speech codec (git submodule). The ETSI reference
+# data tables are generated once via the submodule's `populate` tool (see
+# README); they are never committed.
 tetra-acelp = { path = "third_party/libtetra-acelp" }
 
 # Slint backend selection is target-scoped so the Windows/x86 dev build and the

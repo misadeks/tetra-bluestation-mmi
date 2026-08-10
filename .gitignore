@@ -34,12 +34,14 @@ Thumbs.db
 # Generated raw framebuffer splash (derived from deploy/splash.png on deploy)
 *.raw
 
-# ETSI-copyrighted ACELP codec libraries (loaded at runtime, never committed)
+# Compiled shared libraries (never committed)
 *.dll
 *.so
 *.dylib
-tetra_acelp*
-native/etsi/
+
+# Removed ETSI-C codec glue; keep any local remnants (incl. copyrighted
+# native/etsi/ sources) out of git for good.
+/native/
 
 # Python bytecode cache
 __pycache__/

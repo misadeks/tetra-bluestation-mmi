@@ -1,10 +1,10 @@
 // M5 two-way voice: ACELP decode (downlink) + encode (uplink) over cpal.
 //
-// The ETSI EN 300 395-2 TETRA ACELP codec is copyrighted and never shipped in
-// this repo. We load the prebuilt decoder/encoder shared libraries at runtime
-// (path from `[audio].codec_dir`) via a tiny stable C ABI (see the reference
-// `native/acelp_decode.c` / `acelp_encode.c`). If the libraries or an audio
-// device are missing, the engine is simply absent and the rest of the UI runs
+// Speech is coded with the bundled pure-Rust `tetra-acelp` crate (a Rust
+// implementation of the ETSI EN 300 395-2 TETRA full-rate ACELP codec). The
+// ETSI reference data tables it needs are NOT shipped here; they are generated
+// once into the submodule via its `populate` tool (see README). If an audio
+// device is missing, the engine is simply absent and the rest of the UI runs
 // unchanged.
 //
 // Frame contract (mirrors the reference UI):
@@ -15,14 +15,11 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
-use std::ffi::c_void;
-use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crossbeam_channel::{Receiver, Sender};
-use libloading::Library;
 
 use crate::app::AppEvent;
 use crate::config::AudioConfig;
@@ -130,201 +127,13 @@ const FRAME_SAMPLES: usize = 480; // 2 sub-frames, 60 ms
 const SUBFRAME_BITS: usize = 137;
 const FRAME_BITS: usize = 274;
 
-/// Which ACELP implementation decodes/encodes speech. Selected from
-/// `[audio].codec_backend` at startup.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum CodecBackend {
-    /// Bundled pure-Rust `tetra-acelp` crate (no external libraries).
-    Rust,
-    /// Prebuilt ETSI C decoder/encoder shared libraries (loaded via libloading).
-    Etsi,
-}
-
-impl CodecBackend {
-    fn parse(s: &str) -> CodecBackend {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "etsi" | "c" | "native" => CodecBackend::Etsi,
-            _ => CodecBackend::Rust,
-        }
-    }
-}
-
-type DecCreate = unsafe extern "C" fn() -> *mut c_void;
-type DecDestroy = unsafe extern "C" fn(*mut c_void);
-type DecDecode = unsafe extern "C" fn(*mut c_void, *const u8, i32, *mut i16) -> i32;
-type EncCreate = unsafe extern "C" fn() -> *mut c_void;
-type EncDestroy = unsafe extern "C" fn(*mut c_void);
-type EncEncode = unsafe extern "C" fn(*mut c_void, *const i16, *mut u8) -> i32;
-
-/// Loaded codec libraries + resolved entry points. Shareable across threads;
-/// each thread creates its own per-call decoder/encoder context.
-struct CodecLib {
-    _dec_lib: Library,
-    _enc_lib: Library,
-    dec_create: DecCreate,
-    dec_destroy: DecDestroy,
-    dec_decode: DecDecode,
-    enc_create: EncCreate,
-    enc_destroy: EncDestroy,
-    enc_encode: EncEncode,
-}
-
-// The raw fn pointers reference code owned by the kept-alive Library handles.
-unsafe impl Send for CodecLib {}
-unsafe impl Sync for CodecLib {}
-
-fn lib_name(stem: &str) -> String {
-    #[cfg(target_os = "windows")]
-    {
-        format!("{stem}.dll")
-    }
-    #[cfg(target_os = "macos")]
-    {
-        format!("lib{stem}.dylib")
-    }
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        format!("lib{stem}.so")
-    }
-}
-
-impl CodecLib {
-    fn load(dir: &Path) -> Option<CodecLib> {
-        let dec_path = dir.join(lib_name("tetra_acelp"));
-        let enc_path = dir.join(lib_name("tetra_acelp_enc"));
-        // Build the libraries on demand from the ETSI sources when they are
-        // missing (mirrors app/acelp.py in the Python repo).
-        ensure_built(dir, &dec_path, &enc_path);
-        unsafe {
-            let dec_lib = Library::new(&dec_path)
-                .map_err(|e| tracing::warn!(path = %dec_path.display(), error = %e, "codec: decoder load failed"))
-                .ok()?;
-            let enc_lib = Library::new(&enc_path)
-                .map_err(|e| tracing::warn!(path = %enc_path.display(), error = %e, "codec: encoder load failed"))
-                .ok()?;
-            let dec_create = *dec_lib.get::<DecCreate>(b"tetra_dec_create").ok()?;
-            let dec_destroy = *dec_lib.get::<DecDestroy>(b"tetra_dec_destroy").ok()?;
-            let dec_decode = *dec_lib.get::<DecDecode>(b"tetra_dec_decode").ok()?;
-            let enc_create = *enc_lib.get::<EncCreate>(b"tetra_enc_create").ok()?;
-            let enc_destroy = *enc_lib.get::<EncDestroy>(b"tetra_enc_destroy").ok()?;
-            let enc_encode = *enc_lib.get::<EncEncode>(b"tetra_enc_encode").ok()?;
-            tracing::info!(dir = %dir.display(), "codec: ACELP libraries loaded");
-            Some(CodecLib {
-                _dec_lib: dec_lib,
-                _enc_lib: enc_lib,
-                dec_create,
-                dec_destroy,
-                dec_decode,
-                enc_create,
-                enc_destroy,
-                enc_encode,
-            })
-        }
-    }
-}
-
-/// Shared ETSI DSP/maths units used by both the decoder and encoder builds.
-const SHARED_SRC: &[&str] = &[
-    "sub_sc_d.c",
-    "sub_dsp.c",
-    "fbas_tet.c",
-    "fexp_tet.c",
-    "fmat_tet.c",
-    "tetra_op.c",
-];
-
-/// Compile any missing codec library from the ETSI sources with clang, exactly
-/// like the Python repo's `acelp.build_library` / `build_encoder_library`:
-/// `clang -shared -O2 -I<etsi> -I<native> <sources> -o <lib>`. Does nothing if
-/// the sources or clang are absent (the caller then falls back to no-voice).
-fn ensure_built(dir: &Path, dec_path: &Path, enc_path: &Path) {
-    let etsi = dir.join("etsi");
-    if dec_path.exists() && enc_path.exists() {
-        return;
-    }
-    if !etsi.join("source.h").exists() {
-        tracing::info!(dir = %dir.display(), "codec: ETSI sources absent; cannot auto-build");
-        return;
-    }
-    let clang = find_clang();
-    let Some(clang) = clang else {
-        tracing::warn!("codec: clang not found on PATH; cannot auto-build the ACELP libraries");
-        return;
-    };
-    if !dec_path.exists() {
-        let mut srcs: Vec<PathBuf> =
-            std::iter::once("sdec_tet.c").chain(SHARED_SRC.iter().copied()).map(|s| etsi.join(s)).collect();
-        srcs.push(dir.join("acelp_decode.c"));
-        build_lib(&clang, &etsi, dir, &srcs, dec_path, "decoder");
-    }
-    if !enc_path.exists() {
-        let mut srcs: Vec<PathBuf> =
-            std::iter::once("scod_tet.c").chain(SHARED_SRC.iter().copied()).map(|s| etsi.join(s)).collect();
-        srcs.push(dir.join("acelp_encode.c"));
-        build_lib(&clang, &etsi, dir, &srcs, enc_path, "encoder");
-    }
-}
-
-fn find_clang() -> Option<String> {
-    for name in ["clang", "clang.exe"] {
-        if std::process::Command::new(name)
-            .arg("--version")
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-        {
-            return Some(name.to_string());
-        }
-    }
-    None
-}
-
-fn build_lib(clang: &str, etsi: &Path, native: &Path, srcs: &[PathBuf], out: &Path, kind: &str) {
-    let mut cmd = std::process::Command::new(clang);
-    cmd.arg("-shared").arg("-O2");
-    #[cfg(not(windows))]
-    cmd.arg("-fPIC");
-    cmd.arg(format!("-I{}", etsi.display()));
-    cmd.arg(format!("-I{}", native.display()));
-    for s in srcs {
-        cmd.arg(s);
-    }
-    cmd.arg("-o").arg(out);
-    tracing::info!(kind, out = %out.display(), "codec: building ACELP library with clang");
-    match cmd.output() {
-        Ok(o) if o.status.success() && out.exists() => {
-            tracing::info!(kind, "codec: build succeeded");
-        }
-        Ok(o) => {
-            let err = String::from_utf8_lossy(&o.stderr);
-            tracing::warn!(kind, status = ?o.status.code(), stderr = %err.trim(), "codec: build failed");
-        }
-        Err(e) => tracing::warn!(kind, error = %e, "codec: failed to run clang"),
-    }
-}
-
-/// A per-call decoder context. Wraps whichever backend is selected. Not Send:
+/// A per-call decoder context wrapping the bundled Rust ACELP codec. Not Send:
 /// construct and use it on a single thread (the decoder thread).
-enum Decoder {
-    /// ETSI C library context (raw pointer owned here, destroyed on drop).
-    Etsi { codec: Arc<CodecLib>, ctx: *mut c_void },
-    /// Pure-Rust codec (stateful across frames).
-    Rust(tetra_acelp::Decoder),
-}
+struct Decoder(tetra_acelp::Decoder);
 
 impl Decoder {
-    fn new(backend: CodecBackend, codec: Option<Arc<CodecLib>>) -> Option<Decoder> {
-        match backend {
-            CodecBackend::Etsi => {
-                let codec = codec?;
-                let ctx = unsafe { (codec.dec_create)() };
-                if ctx.is_null() {
-                    return None;
-                }
-                Some(Decoder::Etsi { codec, ctx })
-            }
-            CodecBackend::Rust => Some(Decoder::Rust(tetra_acelp::Decoder::new())),
-        }
+    fn new() -> Decoder {
+        Decoder(tetra_acelp::Decoder::new())
     }
 
     /// Decode a 274-bit speech frame into 480 PCM samples (concealing on `bad`).
@@ -334,112 +143,48 @@ impl Decoder {
             return None;
         }
         let mut pcm = [0i16; FRAME_SAMPLES];
-        match self {
-            Decoder::Etsi { codec, ctx } => {
-                let bfi = if bad { 1 } else { 0 };
-                for sf in 0..2 {
-                    let inp = &bits[sf * SUBFRAME_BITS..(sf + 1) * SUBFRAME_BITS];
-                    let out = &mut pcm[sf * SUBFRAME_SAMPLES..(sf + 1) * SUBFRAME_SAMPLES];
-                    let rc = unsafe {
-                        (codec.dec_decode)(*ctx, inp.as_ptr(), bfi, out.as_mut_ptr())
-                    };
-                    if rc != 0 {
-                        return None;
-                    }
-                }
+        let quality = if bad {
+            tetra_acelp::FrameQuality::bad()
+        } else {
+            tetra_acelp::FrameQuality::good()
+        };
+        for sf in 0..2 {
+            let inp = &bits[sf * SUBFRAME_BITS..(sf + 1) * SUBFRAME_BITS];
+            let mut b = [false; tetra_acelp::FRAME_BITS];
+            for (i, &byte) in inp.iter().enumerate() {
+                b[i] = byte != 0;
             }
-            Decoder::Rust(dec) => {
-                let quality = if bad {
-                    tetra_acelp::FrameQuality::bad()
-                } else {
-                    tetra_acelp::FrameQuality::good()
-                };
-                for sf in 0..2 {
-                    let inp = &bits[sf * SUBFRAME_BITS..(sf + 1) * SUBFRAME_BITS];
-                    let mut b = [false; tetra_acelp::FRAME_BITS];
-                    for (i, &byte) in inp.iter().enumerate() {
-                        b[i] = byte != 0;
-                    }
-                    let frame = tetra_acelp::SpeechFrame::from_bits(&b);
-                    let out = dec.decode(&frame, quality);
-                    pcm[sf * SUBFRAME_SAMPLES..(sf + 1) * SUBFRAME_SAMPLES].copy_from_slice(&out);
-                }
-            }
+            let frame = tetra_acelp::SpeechFrame::from_bits(&b);
+            let out = self.0.decode(&frame, quality);
+            pcm[sf * SUBFRAME_SAMPLES..(sf + 1) * SUBFRAME_SAMPLES].copy_from_slice(&out);
         }
         Some(pcm)
     }
 }
 
-impl Drop for Decoder {
-    fn drop(&mut self) {
-        if let Decoder::Etsi { codec, ctx } = self {
-            unsafe { (codec.dec_destroy)(*ctx) };
-        }
-    }
-}
-
-/// A per-call encoder context. Wraps whichever backend is selected. Not Send:
+/// A per-call encoder context wrapping the bundled Rust ACELP codec. Not Send:
 /// construct and use it on a single thread (the encoder thread).
-enum Encoder {
-    Etsi { codec: Arc<CodecLib>, ctx: *mut c_void },
-    Rust(tetra_acelp::Encoder),
-}
+struct Encoder(tetra_acelp::Encoder);
 
 impl Encoder {
-    fn new(backend: CodecBackend, codec: Option<Arc<CodecLib>>) -> Option<Encoder> {
-        match backend {
-            CodecBackend::Etsi => {
-                let codec = codec?;
-                let ctx = unsafe { (codec.enc_create)() };
-                if ctx.is_null() {
-                    return None;
-                }
-                Some(Encoder::Etsi { codec, ctx })
-            }
-            CodecBackend::Rust => Some(Encoder::Rust(tetra_acelp::Encoder::new())),
-        }
+    fn new() -> Encoder {
+        Encoder(tetra_acelp::Encoder::new())
     }
 
     /// Encode 480 PCM samples into 274 unpacked codec bits (2 sub-frames).
     fn encode(&mut self, pcm: &[i16; FRAME_SAMPLES]) -> Option<Vec<u8>> {
         let mut bits = vec![0u8; FRAME_BITS];
-        match self {
-            Encoder::Etsi { codec, ctx } => {
-                for sf in 0..2 {
-                    let inp = &pcm[sf * SUBFRAME_SAMPLES..(sf + 1) * SUBFRAME_SAMPLES];
-                    let out = &mut bits[sf * SUBFRAME_BITS..(sf + 1) * SUBFRAME_BITS];
-                    let rc = unsafe {
-                        (codec.enc_encode)(*ctx, inp.as_ptr(), out.as_mut_ptr())
-                    };
-                    if rc != 0 {
-                        return None;
-                    }
-                }
-            }
-            Encoder::Rust(enc) => {
-                for sf in 0..2 {
-                    let mut pcm240 = [0i16; tetra_acelp::FRAME_SAMPLES];
-                    pcm240.copy_from_slice(
-                        &pcm[sf * SUBFRAME_SAMPLES..(sf + 1) * SUBFRAME_SAMPLES],
-                    );
-                    let frame = enc.encode(&pcm240);
-                    let fb = frame.to_bits();
-                    let out = &mut bits[sf * SUBFRAME_BITS..(sf + 1) * SUBFRAME_BITS];
-                    for (i, &bit) in fb.iter().enumerate() {
-                        out[i] = bit as u8;
-                    }
-                }
+        for sf in 0..2 {
+            let mut pcm240 = [0i16; tetra_acelp::FRAME_SAMPLES];
+            pcm240.copy_from_slice(&pcm[sf * SUBFRAME_SAMPLES..(sf + 1) * SUBFRAME_SAMPLES]);
+            let frame = self.0.encode(&pcm240);
+            let fb = frame.to_bits();
+            let out = &mut bits[sf * SUBFRAME_BITS..(sf + 1) * SUBFRAME_BITS];
+            for (i, &bit) in fb.iter().enumerate() {
+                out[i] = bit as u8;
             }
         }
         Some(bits)
-    }
-}
-
-impl Drop for Encoder {
-    fn drop(&mut self) {
-        if let Encoder::Etsi { codec, ctx } = self {
-            unsafe { (codec.enc_destroy)(*ctx) };
-        }
     }
 }
 
@@ -534,21 +279,7 @@ impl AudioEngine {
             tracing::info!("audio: disabled in config");
             return None;
         }
-        // Select the ACELP backend. The Rust backend needs no external libraries;
-        // the ETSI backend loads the prebuilt C decoder/encoder from codec_dir.
-        let backend = CodecBackend::parse(&cfg.codec_backend);
-        let codec: Option<Arc<CodecLib>> = match backend {
-            CodecBackend::Rust => {
-                tracing::info!("audio: ACELP backend = rust (bundled tetra-acelp)");
-                None
-            }
-            CodecBackend::Etsi => {
-                let dir = PathBuf::from(&cfg.codec_dir);
-                let lib = Arc::new(CodecLib::load(&dir)?);
-                tracing::info!(dir = %dir.display(), "audio: ACELP backend = etsi (C libraries)");
-                Some(lib)
-            }
-        };
+        tracing::info!("audio: ACELP codec = bundled tetra-acelp (Rust)");
 
         let host = cpal::default_host();
         let out_dev = pick_output_device(&host, &cfg.output_device)?;
@@ -599,15 +330,11 @@ impl AudioEngine {
         let (dec_tx, dec_rx) = crossbeam_channel::bounded::<(Vec<u8>, bool)>(8);
         let dec_drop = dec_rx.clone();
         {
-            let codec = codec.clone();
             let playback = playback.clone();
             std::thread::Builder::new()
                 .name("acelp-dec".into())
                 .spawn(move || {
-                    let Some(mut dec) = Decoder::new(backend, codec) else {
-                        tracing::warn!("audio: decoder context init failed; downlink muted");
-                        return;
-                    };
+                    let mut dec = Decoder::new();
                     for (bits, bad) in dec_rx.iter() {
                         let Some(pcm8k) = dec.decode(&bits, bad) else { continue };
                         let mut rs = Resampler::new(CODEC_RATE, out_rate);
@@ -641,15 +368,11 @@ impl AudioEngine {
             let (enc_tx, enc_rx) = crossbeam_channel::bounded::<Vec<i16>>(3);
             let enc_drop = enc_rx.clone();
             {
-                let codec = codec.clone();
                 let cid = uplink_cid.clone();
                 std::thread::Builder::new()
                     .name("acelp-enc".into())
                     .spawn(move || {
-                        let Some(mut encoder) = Encoder::new(backend, codec) else {
-                            tracing::warn!("audio: encoder context init failed");
-                            return;
-                        };
+                        let mut encoder = Encoder::new();
                         let mut sent: u64 = 0;
                         for frame in enc_rx.iter() {
                             if frame.len() != FRAME_SAMPLES {
@@ -944,8 +667,8 @@ mod tests {
     /// ETSI path on the wire).
     #[test]
     fn rust_backend_bit_mapping_matches_crate() {
-        let mut enc = Encoder::new(CodecBackend::Rust, None).expect("encoder");
-        let mut dec = Decoder::new(CodecBackend::Rust, None).expect("decoder");
+        let mut enc = Encoder::new();
+        let mut dec = Decoder::new();
 
         // A non-trivial 480-sample (two sub-frame) input.
         let mut pcm = [0i16; FRAME_SAMPLES];
