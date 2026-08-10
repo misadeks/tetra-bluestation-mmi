@@ -29,9 +29,13 @@ ws_speech = false        # include high-rate MsSpeechFrame voice frames (noisy)
 
 [audio]
 enabled       = true          # two-way voice (ACELP decode/encode)
+# ACELP codec backend:
+#   "rust" (default) - bundled pure-Rust tetra-acelp crate; no external libraries.
+#   "etsi"           - load the prebuilt ETSI C decoder/encoder from codec_dir.
+codec_backend = "rust"
 # Directory holding the prebuilt ACELP codec libraries (ETSI-copyrighted, never
-# committed). Windows: tetra_acelp.dll + tetra_acelp_enc.dll; Linux (Pi):
-# libtetra_acelp.so + libtetra_acelp_enc.so. Must match the running arch.
+# committed). Only used when codec_backend = "etsi". Windows: tetra_acelp.dll +
+# tetra_acelp_enc.dll; Linux (Pi): libtetra_acelp.so + libtetra_acelp_enc.so.
 codec_dir     = 'native'
 # Audio output/input device (ringtones + two-way voice). A case-insensitive
 # substring of the cpal device name; "default" uses the ALSA default. On the Pi,
@@ -57,8 +61,6 @@ model  = "pi-720x1280"
 scale  = 1.0
 # input selects the layout and interaction model: "touch" or "keypad".
 # input  = "touch"      # overrides the model's input kind
-# show_event_log controls whether the Event Log entry appears in the Menu.
-show_event_log = true
 theme  = "classic"
 
 # Device model catalog. Add your own panels here and select one via [ui].model.
