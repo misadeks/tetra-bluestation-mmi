@@ -19,6 +19,9 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 base64 = "0.23.0"
 cpal = "0.15"
 libloading = "0.8"
+# Bundled pure-Rust ACELP codec (git submodule). Selected at runtime via
+# [audio].codec_backend = "rust" (default) vs "etsi" (prebuilt C libraries).
+tetra-acelp = { path = "third_party/libtetra-acelp" }
 
 # Slint backend selection is target-scoped so the Windows/x86 dev build and the
 # Raspberry Pi (aarch64 Linux) kiosk build get different renderer/backend stacks
@@ -57,3 +60,9 @@ slint = { version = "1.17", default-features = false, features = [
 
 [build-dependencies]
 slint-build = "1.17"
+
+# The pure-Rust ACELP codec relies on wrapping fixed-point arithmetic; disable
+# overflow checks for it in dev builds (release already has them off) so decode/
+# encode don't panic on intentional integer wraparound.
+[profile.dev.package.tetra-acelp]
+overflow-checks = false

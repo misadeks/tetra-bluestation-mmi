@@ -130,6 +130,25 @@ const FRAME_SAMPLES: usize = 480; // 2 sub-frames, 60 ms
 const SUBFRAME_BITS: usize = 137;
 const FRAME_BITS: usize = 274;
 
+/// Which ACELP implementation decodes/encodes speech. Selected from
+/// `[audio].codec_backend` at startup.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum CodecBackend {
+    /// Bundled pure-Rust `tetra-acelp` crate (no external libraries).
+    Rust,
+    /// Prebuilt ETSI C decoder/encoder shared libraries (loaded via libloading).
+    Etsi,
+}
+
+impl CodecBackend {
+    fn parse(s: &str) -> CodecBackend {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "etsi" | "c" | "native" => CodecBackend::Etsi,
+            _ => CodecBackend::Rust,
+        }
+    }
+}
+
 type DecCreate = unsafe extern "C" fn() -> *mut c_void;
 type DecDestroy = unsafe extern "C" fn(*mut c_void);
 type DecDecode = unsafe extern "C" fn(*mut c_void, *const u8, i32, *mut i16) -> i32;
@@ -284,34 +303,67 @@ fn build_lib(clang: &str, etsi: &Path, native: &Path, srcs: &[PathBuf], out: &Pa
     }
 }
 
-/// A per-call decoder context. Not Send: use it only on the thread that made it.
-struct Decoder {
-    codec: Arc<CodecLib>,
-    ctx: *mut c_void,
+/// A per-call decoder context. Wraps whichever backend is selected. Not Send:
+/// construct and use it on a single thread (the decoder thread).
+enum Decoder {
+    /// ETSI C library context (raw pointer owned here, destroyed on drop).
+    Etsi { codec: Arc<CodecLib>, ctx: *mut c_void },
+    /// Pure-Rust codec (stateful across frames).
+    Rust(tetra_acelp::Decoder),
 }
 
 impl Decoder {
-    fn new(codec: Arc<CodecLib>) -> Option<Decoder> {
-        let ctx = unsafe { (codec.dec_create)() };
-        if ctx.is_null() {
-            return None;
+    fn new(backend: CodecBackend, codec: Option<Arc<CodecLib>>) -> Option<Decoder> {
+        match backend {
+            CodecBackend::Etsi => {
+                let codec = codec?;
+                let ctx = unsafe { (codec.dec_create)() };
+                if ctx.is_null() {
+                    return None;
+                }
+                Some(Decoder::Etsi { codec, ctx })
+            }
+            CodecBackend::Rust => Some(Decoder::Rust(tetra_acelp::Decoder::new())),
         }
-        Some(Decoder { codec, ctx })
     }
 
     /// Decode a 274-bit speech frame into 480 PCM samples (concealing on `bad`).
-    fn decode(&self, bits: &[u8], bad: bool) -> Option<[i16; FRAME_SAMPLES]> {
+    /// Bits are unpacked (one 0/1 byte each), two 137-bit sub-frames.
+    fn decode(&mut self, bits: &[u8], bad: bool) -> Option<[i16; FRAME_SAMPLES]> {
         if bits.len() != FRAME_BITS {
             return None;
         }
         let mut pcm = [0i16; FRAME_SAMPLES];
-        let bfi = if bad { 1 } else { 0 };
-        for sf in 0..2 {
-            let inp = &bits[sf * SUBFRAME_BITS..(sf + 1) * SUBFRAME_BITS];
-            let out = &mut pcm[sf * SUBFRAME_SAMPLES..(sf + 1) * SUBFRAME_SAMPLES];
-            let rc = unsafe { (self.codec.dec_decode)(self.ctx, inp.as_ptr(), bfi, out.as_mut_ptr()) };
-            if rc != 0 {
-                return None;
+        match self {
+            Decoder::Etsi { codec, ctx } => {
+                let bfi = if bad { 1 } else { 0 };
+                for sf in 0..2 {
+                    let inp = &bits[sf * SUBFRAME_BITS..(sf + 1) * SUBFRAME_BITS];
+                    let out = &mut pcm[sf * SUBFRAME_SAMPLES..(sf + 1) * SUBFRAME_SAMPLES];
+                    let rc = unsafe {
+                        (codec.dec_decode)(*ctx, inp.as_ptr(), bfi, out.as_mut_ptr())
+                    };
+                    if rc != 0 {
+                        return None;
+                    }
+                }
+            }
+            Decoder::Rust(dec) => {
+                let quality = if bad {
+                    tetra_acelp::FrameQuality::bad()
+                } else {
+                    tetra_acelp::FrameQuality::good()
+                };
+                for sf in 0..2 {
+                    let inp = &bits[sf * SUBFRAME_BITS..(sf + 1) * SUBFRAME_BITS];
+                    let mut b = [false; tetra_acelp::FRAME_BITS];
+                    for (i, &byte) in inp.iter().enumerate() {
+                        b[i] = byte != 0;
+                    }
+                    let frame = tetra_acelp::SpeechFrame::from_bits(&b);
+                    let out = dec.decode(&frame, quality);
+                    pcm[sf * SUBFRAME_SAMPLES..(sf + 1) * SUBFRAME_SAMPLES].copy_from_slice(&out);
+                }
             }
         }
         Some(pcm)
@@ -320,34 +372,63 @@ impl Decoder {
 
 impl Drop for Decoder {
     fn drop(&mut self) {
-        unsafe { (self.codec.dec_destroy)(self.ctx) };
+        if let Decoder::Etsi { codec, ctx } = self {
+            unsafe { (codec.dec_destroy)(*ctx) };
+        }
     }
 }
 
-/// A per-call encoder context. Not Send: use it only on the encoder thread.
-struct Encoder {
-    codec: Arc<CodecLib>,
-    ctx: *mut c_void,
+/// A per-call encoder context. Wraps whichever backend is selected. Not Send:
+/// construct and use it on a single thread (the encoder thread).
+enum Encoder {
+    Etsi { codec: Arc<CodecLib>, ctx: *mut c_void },
+    Rust(tetra_acelp::Encoder),
 }
 
 impl Encoder {
-    fn new(codec: Arc<CodecLib>) -> Option<Encoder> {
-        let ctx = unsafe { (codec.enc_create)() };
-        if ctx.is_null() {
-            return None;
+    fn new(backend: CodecBackend, codec: Option<Arc<CodecLib>>) -> Option<Encoder> {
+        match backend {
+            CodecBackend::Etsi => {
+                let codec = codec?;
+                let ctx = unsafe { (codec.enc_create)() };
+                if ctx.is_null() {
+                    return None;
+                }
+                Some(Encoder::Etsi { codec, ctx })
+            }
+            CodecBackend::Rust => Some(Encoder::Rust(tetra_acelp::Encoder::new())),
         }
-        Some(Encoder { codec, ctx })
     }
 
-    /// Encode 480 PCM samples into 274 codec bits (2 sub-frames).
-    fn encode(&self, pcm: &[i16; FRAME_SAMPLES]) -> Option<Vec<u8>> {
+    /// Encode 480 PCM samples into 274 unpacked codec bits (2 sub-frames).
+    fn encode(&mut self, pcm: &[i16; FRAME_SAMPLES]) -> Option<Vec<u8>> {
         let mut bits = vec![0u8; FRAME_BITS];
-        for sf in 0..2 {
-            let inp = &pcm[sf * SUBFRAME_SAMPLES..(sf + 1) * SUBFRAME_SAMPLES];
-            let out = &mut bits[sf * SUBFRAME_BITS..(sf + 1) * SUBFRAME_BITS];
-            let rc = unsafe { (self.codec.enc_encode)(self.ctx, inp.as_ptr(), out.as_mut_ptr()) };
-            if rc != 0 {
-                return None;
+        match self {
+            Encoder::Etsi { codec, ctx } => {
+                for sf in 0..2 {
+                    let inp = &pcm[sf * SUBFRAME_SAMPLES..(sf + 1) * SUBFRAME_SAMPLES];
+                    let out = &mut bits[sf * SUBFRAME_BITS..(sf + 1) * SUBFRAME_BITS];
+                    let rc = unsafe {
+                        (codec.enc_encode)(*ctx, inp.as_ptr(), out.as_mut_ptr())
+                    };
+                    if rc != 0 {
+                        return None;
+                    }
+                }
+            }
+            Encoder::Rust(enc) => {
+                for sf in 0..2 {
+                    let mut pcm240 = [0i16; tetra_acelp::FRAME_SAMPLES];
+                    pcm240.copy_from_slice(
+                        &pcm[sf * SUBFRAME_SAMPLES..(sf + 1) * SUBFRAME_SAMPLES],
+                    );
+                    let frame = enc.encode(&pcm240);
+                    let fb = frame.to_bits();
+                    let out = &mut bits[sf * SUBFRAME_BITS..(sf + 1) * SUBFRAME_BITS];
+                    for (i, &bit) in fb.iter().enumerate() {
+                        out[i] = bit as u8;
+                    }
+                }
             }
         }
         Some(bits)
@@ -356,7 +437,9 @@ impl Encoder {
 
 impl Drop for Encoder {
     fn drop(&mut self) {
-        unsafe { (self.codec.enc_destroy)(self.ctx) };
+        if let Encoder::Etsi { codec, ctx } = self {
+            unsafe { (codec.enc_destroy)(*ctx) };
+        }
     }
 }
 
@@ -451,8 +534,21 @@ impl AudioEngine {
             tracing::info!("audio: disabled in config");
             return None;
         }
-        let dir = PathBuf::from(&cfg.codec_dir);
-        let codec = Arc::new(CodecLib::load(&dir)?);
+        // Select the ACELP backend. The Rust backend needs no external libraries;
+        // the ETSI backend loads the prebuilt C decoder/encoder from codec_dir.
+        let backend = CodecBackend::parse(&cfg.codec_backend);
+        let codec: Option<Arc<CodecLib>> = match backend {
+            CodecBackend::Rust => {
+                tracing::info!("audio: ACELP backend = rust (bundled tetra-acelp)");
+                None
+            }
+            CodecBackend::Etsi => {
+                let dir = PathBuf::from(&cfg.codec_dir);
+                let lib = Arc::new(CodecLib::load(&dir)?);
+                tracing::info!(dir = %dir.display(), "audio: ACELP backend = etsi (C libraries)");
+                Some(lib)
+            }
+        };
 
         let host = cpal::default_host();
         let out_dev = pick_output_device(&host, &cfg.output_device)?;
@@ -508,7 +604,7 @@ impl AudioEngine {
             std::thread::Builder::new()
                 .name("acelp-dec".into())
                 .spawn(move || {
-                    let Some(dec) = Decoder::new(codec) else {
+                    let Some(mut dec) = Decoder::new(backend, codec) else {
                         tracing::warn!("audio: decoder context init failed; downlink muted");
                         return;
                     };
@@ -550,7 +646,7 @@ impl AudioEngine {
                 std::thread::Builder::new()
                     .name("acelp-enc".into())
                     .spawn(move || {
-                        let Some(encoder) = Encoder::new(codec) else {
+                        let Some(mut encoder) = Encoder::new(backend, codec) else {
                             tracing::warn!("audio: encoder context init failed");
                             return;
                         };
@@ -836,5 +932,44 @@ fn build_input_stream(
             tracing::warn!("audio: unsupported input sample format");
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The Rust backend's unpacked-bit wire mapping must match the underlying
+    /// `tetra-acelp` crate exactly (this is what keeps it interoperable with the
+    /// ETSI path on the wire).
+    #[test]
+    fn rust_backend_bit_mapping_matches_crate() {
+        let mut enc = Encoder::new(CodecBackend::Rust, None).expect("encoder");
+        let mut dec = Decoder::new(CodecBackend::Rust, None).expect("decoder");
+
+        // A non-trivial 480-sample (two sub-frame) input.
+        let mut pcm = [0i16; FRAME_SAMPLES];
+        for (i, s) in pcm.iter_mut().enumerate() {
+            *s = ((i as f32 * 0.11).sin() * 8000.0) as i16;
+        }
+
+        let bits = enc.encode(&pcm).expect("encode");
+        assert_eq!(bits.len(), FRAME_BITS);
+        assert!(bits.iter().all(|&b| b <= 1), "bits must be unpacked 0/1");
+
+        // Cross-check every sub-frame's bits against the crate used directly.
+        let mut cenc = tetra_acelp::Encoder::new();
+        for sf in 0..2 {
+            let mut p = [0i16; tetra_acelp::FRAME_SAMPLES];
+            p.copy_from_slice(&pcm[sf * SUBFRAME_SAMPLES..(sf + 1) * SUBFRAME_SAMPLES]);
+            let fb = cenc.encode(&p).to_bits();
+            for i in 0..SUBFRAME_BITS {
+                assert_eq!(bits[sf * SUBFRAME_BITS + i], fb[i] as u8, "bit {i} sf {sf}");
+            }
+        }
+
+        // Decode returns a full 480-sample frame (good and concealed).
+        assert_eq!(dec.decode(&bits, false).expect("decode").len(), FRAME_SAMPLES);
+        assert_eq!(dec.decode(&bits, true).expect("conceal").len(), FRAME_SAMPLES);
     }
 }
