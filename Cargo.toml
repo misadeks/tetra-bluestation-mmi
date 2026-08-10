@@ -5,6 +5,8 @@ edition = "2021"
 rust-version = "1.95"
 description = "Native Rust + Slint MMI (man-machine interface) serving the server side of the tetra-bluestation MS external interface"
 license = "MIT"
+repository = "https://github.com/misadeks/tetra-bluestation-mmi"
+readme = "README.md"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

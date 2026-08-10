@@ -1,4 +1,4 @@
-# TETRA BlueStation MMI
+﻿# TETRA BlueStation MMI
 
 A native **Rust + Slint** touchscreen radio UI - the MMI (man-machine interface) for a
 **tetra-bluestation** MS-mode TETRA terminal. It implements the **server side of the
@@ -49,232 +49,44 @@ DECISIONS.md      running log of decisions and deviations
 
 ## Prerequisites
 
-- **Rust 1.95** or later (`cargo` / `rustc` on PATH).
-- On Windows: the **MSVC** toolchain (Visual Studio 2022 Build Tools, C++ workload).
-- For Pi cross-builds: the `aarch64-unknown-linux-gnu` target plus a cross linker, or
-  build on the Pi directly (the supported path - see *Build and run - Raspberry Pi*).
-
-No external native dependency setup is needed for Windows dev; Slint fetches and builds
-its renderer stack through cargo. The Pi (linuxkms) build needs a few apt packages -
-see the Raspberry Pi section below.
+- **Rust 1.95+** (`cargo` / `rustc` on PATH).
+- **Windows:** the MSVC C++ build tools (Visual Studio 2022 Build Tools, C++ workload).
+- **Linux / Pi:** a few system libraries (ALSA, fontconfig, DRM/KMS, input). The full
+  lists are in the [Getting Started guide](docs/GETTING_STARTED.md) and [PI_SETUP.md](PI_SETUP.md).
 
 ### Speech codec (ACELP) - submodule + one-time populate
 
-Two-way voice uses the **`tetra-acelp`** codec, a pure-Rust implementation of the
-ETSI EN 300 395-2 TETRA full-rate ACELP codec, vendored as a git **submodule** at
-`third_party/libtetra-acelp`.
-
-After cloning this repo, initialise the submodule:
-
-```bash
-git submodule update --init          # or: git clone --recurse-submodules <url>
-```
-
-The codec's ETSI numeric tables are **not distributed** (copyright), so the crate
-will not build until they are generated once, into the git-ignored
-`third_party/libtetra-acelp/src/tables.rs`:
+Two-way voice uses the **`tetra-acelp`** codec (a pure-Rust ETSI EN 300 395-2
+implementation), vendored as a git submodule at `third_party/libtetra-acelp`. Its
+ETSI numeric tables are copyright and **not** committed, so after cloning you
+generate them once:
 
 ```bash
-cd third_party/libtetra-acelp
-cargo run -p populate                 # downloads the free ETSI reference archive
-# or, from a local copy of the archive:
-cargo run -p populate -- path/to/en_30039502v010301p0.zip
-cd ../..
+git submodule update --init            # if you didn't clone with --recurse-submodules
+cd third_party/libtetra-acelp && cargo run -p populate && cd ../..
 ```
 
-Run this once per checkout (the generated file persists and is git-ignored). If
-it is missing, the codec's `build.rs` fails early with these same instructions.
+`populate` downloads the free ETSI reference archive (or pass a local `.zip`). Run
+it once per checkout; the build fails early with this instruction if the tables are
+missing. Details: [Getting Started](docs/GETTING_STARTED.md).
 
-## Build and run - Windows (RustRover)
+## Building and running
 
-```powershell
-cargo run
-```
-
-A dark portrait window titled *"TETRA BlueStation MMI"* with a scaffold card should open. The app
-reads `config.toml` from the working directory; if the file is absent, built-in defaults
-are used (control `9102`, telemetry `9101`). Set `RUST_LOG=debug` for more verbose logs.
-
-Run the unit tests with:
-
-```powershell
-cargo test
-```
-
-## Build and run - Raspberry Pi (aarch64 Linux, DRM/KMS kiosk)
-
-The Pi is a **Raspberry Pi 4** running **Raspberry Pi OS Lite** (no desktop / X /
-Wayland) driving a **Waveshare 5" DSI panel** (5-DSI-TOUCH-A, native portrait
-720x1280). The panel is enabled in `/boot/firmware/config.txt` via
-`dtoverlay=vc4-kms-dsi-waveshare-panel-v2`, so the Pi exposes it as a DRM/KMS
-device (`/dev/dri/card*`). The app renders **straight to DRM/KMS** using the
-Slint **linuxkms** backend - no compositor involved.
-
-> For a start-to-finish, copy-paste checklist of everything to run **on the Pi**
-> (panel overlay, packages, Rust, DRM access, systemd), see **[PI_SETUP.md](PI_SETUP.md)**.
-
-### apt prerequisites (on the Pi)
+**Desktop (Windows / Linux):**
 
 ```bash
-sudo apt update
-sudo apt install build-essential pkg-config \
-  libasound2-dev libdrm-dev libgbm-dev libinput-dev libudev-dev libxkbcommon-dev \
-  libfontconfig1-dev fonts-dejavu-core \
-  libegl-dev libgles-dev libgl1-mesa-dri
+cargo run            # or: cargo build --release
 ```
 
-- `build-essential` + `pkg-config` - C toolchain/linker and lib discovery.
-- `libasound2-dev` - ALSA headers for the `cpal` audio dependency.
-- `libdrm-dev` / `libgbm-dev` - DRM/KMS output for the linuxkms backend.
-- `libinput-dev` / `libudev-dev` - touch/keyboard input via libinput + udev.
-- `libxkbcommon-dev` - keymap handling for the linuxkms backend.
-- `libfontconfig1-dev` - font discovery (Slint links fontconfig on Linux).
-- `fonts-dejavu-core` - a real font so text renders on Pi OS Lite (which ships
-  none); any TTF font package works.
-- `libegl-dev` / `libgles-dev` - EGL + OpenGL ES for the FemtoVG GPU renderer.
-- `libgl1-mesa-dri` - mesa's `v3d` driver so the Pi 4 GPU can run GLES headless.
+A dark portrait window titled *"TETRA BlueStation MMI"* opens. It reads `config.toml`
+from the working directory (built-in defaults if absent: control `9102`, telemetry
+`9101`); set `RUST_LOG=debug` for verbose logs and run `cargo test` for the unit
+tests. Full step-by-step: **[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)**.
 
-Install Rust with [rustup](https://rustup.rs) (>= 1.95).
-
-### The linuxkms backend
-
-The Pi build is target-scoped in `Cargo.toml`: for `aarch64` Linux, Slint is
-pulled in with `default-features = false` plus `backend-linuxkms-noseat`,
-`renderer-femtovg`, and `renderer-software`, so the winit backend is dropped and
-the binary renders to DRM/KMS. `-noseat` skips libseat/logind so it runs from a
-plain systemd service or `sudo` with no seat manager. The backend renders on the
-**V3D GPU via FemtoVG** (OpenGL ES over EGL/GBM) - which keeps the CPU from
-writing every pixel to the framebuffer - and falls back to the software renderer
-automatically if a GL context can't be created. Windows/x86 dev is unaffected and
-keeps the default winit backend.
-
-### Build and run on the Pi
-
-Build natively on the Pi (the primary path - see cross-compiling below):
-
-```bash
-cargo build --release
-sudo SLINT_BACKEND=linuxkms RUST_LOG=info ./target/release/tetra-bluestation-mmi
-```
-
-`sudo` is used so the process can become DRM master and open `/dev/dri/card*`
-and `/dev/input/*`. Alternatively add your user to the `render`, `video`, and
-`input` groups. Run from the checkout so it finds `config.toml` (which already
-selects `model = "pi-720x1280"`).
-
-### Deploy from your dev box
-
-`scripts/deploy-pi.sh` (bash) and `scripts/deploy-pi.ps1` (PowerShell, for
-RustRover on Windows) sync the source to the Pi, run `cargo build --release`
-there, and launch it with `SLINT_BACKEND=linuxkms`. Host/user are parameterized:
-
-```bash
-PI_HOST=tetra-ms.local PI_USER=pi ./scripts/deploy-pi.sh
-```
-
-```powershell
-./scripts/deploy-pi.ps1 -PiHost tetra-ms.local -PiUser pi
-```
-
-RustRover ships two shared run configs under `.idea/runConfigurations/`:
-**Run (Windows dev)** (local `cargo run`, winit) and **Deploy + run on Pi
-(linuxkms)** (invokes the PowerShell deploy script).
-
-### Kiosk autostart (systemd)
-
-Scripted (from your dev box / RustRover) - cross-builds if needed, deploys, and
-installs + enables + starts the service:
-
-```powershell
-./scripts/wsl/install-service.ps1        # add -Sync after new Pi -dev packages
-```
-
-or in WSL: `bash scripts/wsl/install-service.sh` (use `NO_START=1` to install +
-enable without starting immediately).
-
-Manual equivalent, once a release binary is on the Pi:
-
-```bash
-sudo cp deploy/tetra-bluestation-mmi.service /etc/systemd/system/tetra-bluestation-mmi.service
-# edit WorkingDirectory/ExecStart if your checkout isn't /home/pi/tetra-tn-ui
-sudo systemctl daemon-reload
-sudo systemctl enable --now tetra-bluestation-mmi.service
-journalctl -u tetra-bluestation-mmi -f
-```
-
-The unit **takes over tty1** (`Conflicts=getty@tty1.service`, `TTYPath=/dev/tty1`)
-so the seatless linuxkms backend can acquire the DRM master - without a VT the app
-starts but dies with "presenting framebuffer: Permission denied". The text login
-console on tty1 is replaced by the kiosk. Don't run an ad-hoc `build-cross.sh
---run` instance while the service is active; they fight over the DRM master and
-the 9101/9102 ports (install-service kills strays first).
-
-### Performance: CPU pinning and renderer
-
-On a shared Pi where the TETRA radio/stack also runs, keep the UI off the radio's
-cores:
-
-- **Service:** the unit sets `CPUAffinity=0 1` (UI on cores 0-1; keep the radio on
-  2-3, e.g. via its own `CPUAffinity`/`isolcpus`). Tune with `CPU_AFFINITY` in
-  `scripts/cross/pi.env` (empty disables).
-- **Ad-hoc runs:** the scripts prefix `taskset -c 0-1` (tune with `TASKSET_CPUS`).
-  Manually: `sudo SLINT_BACKEND=linuxkms taskset -c 0-1 ./tetra-bluestation-mmi`.
-
-Cut CPU further:
-
-- The Pi build already renders on the **GPU via FemtoVG** (with the software
-  renderer as an automatic fallback); the GL/EGL dev packages above are what let
-  the GPU path come up. It renders straight to KMS via EGL/GBM - no desktop needed.
-- Avoid continuous full-frame animations (they force full redraws each frame).
-- If the UI is sluggish, rule out hardware throttling: `vcgencmd get_throttled`
-  (non-zero = under-voltage/thermal throttling - check PSU/cooling).
-
-### Cross-compile from Windows via WSL (faster than building on the Pi)
-
-You can cross-compile for the Pi from WSL instead of building on-device, mirroring
-the tetra-bluestation setup. The build runs on x86 with the `aarch64` cross-linker
-(`.cargo/config.toml`), linking against a **sysroot rsynced from the Pi** so the
-linuxkms/audio C libraries (libdrm, libinput, libxkbcommon, libudev, libasound)
-resolve at link time. The sysroot is mandatory here - a bare cross-linker can't
-find those libs.
-
-One-time WSL setup (Debian/Ubuntu):
-
-```bash
-sudo apt update
-sudo apt install -y build-essential pkg-config rsync openssh-client gcc-aarch64-linux-gnu
-rustup target add aarch64-unknown-linux-gnu
-```
-
-Then, from the Windows checkout inside WSL:
-
-```bash
-cd /mnt/c/Users/<you>/RustroverProjects/tetra-bluestation-mmi
-cp scripts/cross/pi.env.example scripts/cross/pi.env   # edit PI_HOST/PI_USER
-bash scripts/cross/sync-sysroot.sh          # once, and after apt-installing new -dev pkgs on the Pi
-bash scripts/wsl/build-deploy-run.sh        # sync -> cross-build -> deploy -> run
-```
-
-`scripts/cross/build-cross.sh` also works standalone (`--deploy` / `--run`).
-The WSL wrapper reuses an existing sysroot; after you `apt install` a new `-dev`
-package on the Pi, re-pull it with `-Sync` from RustRover/PowerShell
-(`scripts/wsl/build-deploy-run.ps1 -Sync`) or `FORCE_SYNC=1 bash
-scripts/wsl/build-deploy-run.sh` in WSL (or just delete `.pi-sysroot/`). Note a
-Windows `$env:FORCE_SYNC` does **not** reach WSL - use `-Sync`.
-`sync-sysroot.sh` requires the Pi to already have the apt prerequisites above so
-their headers + pkg-config files come across. The build guards against linking a
-binary that needs a newer glibc than the Pi provides.
-
-From RustRover on Windows use the **WSL cross-build + run on Pi** run config
-(`scripts/wsl/build-deploy-run.ps1`, which calls into WSL).
-
-The plain [`cross`](https://github.com/cross-rs/cross) (Docker) route also works
-but needs a custom image that adds the `arm64` dpkg architecture and installs the
-`*-dev:arm64` packages - more setup than the sysroot path, so it isn't wired up
-here.
-
-For dev on a Pi that *does* run X/Wayland you can also run under the default
-winit backend by not setting `SLINT_BACKEND`.
+**Raspberry Pi (DRM/KMS kiosk):** the Pi renders straight to a DSI panel via the
+Slint **linuxkms** backend (no desktop) and can autostart as a systemd service. The
+complete on-Pi checklist - panel overlay, packages, DRM access, WSL cross-compile,
+autostart, and performance tuning - is in **[PI_SETUP.md](PI_SETUP.md)**.
 
 ## Developing with no radio hardware
 

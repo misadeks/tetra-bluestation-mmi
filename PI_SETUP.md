@@ -166,16 +166,54 @@ transmit).
 
 Pick one path.
 
+### How the Pi build is wired (linuxkms)
+
+For `aarch64` Linux, `Cargo.toml` pulls Slint with `default-features = false` plus
+`backend-linuxkms-noseat`, `renderer-femtovg`, and `renderer-software`: the winit
+backend is dropped and the binary renders straight to DRM/KMS. `-noseat` skips
+libseat/logind so it runs from a plain systemd service or `sudo`. It renders on the
+**V3D GPU via FemtoVG** (OpenGL ES over EGL/GBM) and falls back to the software
+renderer automatically if a GL context can't be created. Desktop (Windows/x86)
+builds are unaffected and keep the default winit backend.
+
 ### A. Cross-compile from WSL on your Windows dev box (recommended)
 
 Nothing else to run on the Pi - just make sure steps 1-3 are done and SSH works.
-From the Windows checkout, see the README "Cross-compile from Windows via WSL"
-section. In short (in WSL):
+Cross-compiling runs on x86 with the `aarch64` cross-linker (`.cargo/config.toml`),
+linking against a **sysroot rsynced from the Pi** so the linuxkms/audio C libraries
+(libdrm, libinput, libxkbcommon, libudev, libasound) resolve at link time. The
+sysroot is mandatory - a bare cross-linker can't find those libs.
+
+One-time WSL setup (Debian/Ubuntu):
 
 ```bash
-bash scripts/cross/sync-sysroot.sh          # once (and after new apt -dev pkgs)
+sudo apt update
+sudo apt install -y build-essential pkg-config rsync openssh-client gcc-aarch64-linux-gnu
+rustup target add aarch64-unknown-linux-gnu
+```
+
+Then, from the Windows checkout inside WSL:
+
+```bash
+cd /mnt/c/Users/<you>/RustroverProjects/tetra-bluestation-mmi
+cp scripts/cross/pi.env.example scripts/cross/pi.env   # edit PI_HOST/PI_USER
+bash scripts/cross/sync-sysroot.sh          # once, and after apt-installing new -dev pkgs on the Pi
 bash scripts/wsl/build-deploy-run.sh        # sync -> cross-build -> deploy -> run
 ```
+
+`scripts/cross/build-cross.sh` also works standalone (`--deploy` / `--run`). The
+WSL wrapper reuses an existing sysroot; after you `apt install` a new `-dev`
+package on the Pi, re-pull it with `-Sync` from RustRover/PowerShell
+(`scripts/wsl/build-deploy-run.ps1 -Sync`) or `FORCE_SYNC=1 bash
+scripts/wsl/build-deploy-run.sh` in WSL (or delete `.pi-sysroot/`). A Windows
+`$env:FORCE_SYNC` does **not** reach WSL - use `-Sync`. `sync-sysroot.sh` needs the
+Pi to already have the step-3 apt packages so their headers + pkg-config files come
+across. The build guards against linking a binary that needs a newer glibc than the
+Pi provides.
+
+The plain [`cross`](https://github.com/cross-rs/cross) (Docker) route also works but
+needs a custom image with the `arm64` dpkg architecture and `*-dev:arm64` packages -
+more setup than the sysroot path, so it isn't wired up here.
 
 ### B. Build on the Pi
 
