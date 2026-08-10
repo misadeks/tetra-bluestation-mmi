@@ -1,4 +1,4 @@
-// TETRA TN UI - native Rust + Slint variant.
+// TETRA BlueStation MMI - native Rust + Slint variant.
 //
 // Another variant of the TN UI: this app implements the server side of the
 // BlueStation MS external interface and presents a Classic-style radio UI over

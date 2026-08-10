@@ -1,9 +1,9 @@
 [package]
-name = "tetra-tn-ui"
+name = "tetra-bluestation-mmi"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.95"
-description = "Native Rust + Slint TETRA TN UI, a variant serving the server side of the BlueStation MS external interface"
+description = "Native Rust + Slint MMI (man-machine interface) serving the server side of the tetra-bluestation MS external interface"
 license = "MIT"
 
 [dependencies]

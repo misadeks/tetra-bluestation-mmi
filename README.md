@@ -1,4 +1,4 @@
-# TETRA TN UI - native Rust + Slint variant
+# TETRA BlueStation MMI - native Rust + Slint variant
 
 A native **Rust + Slint** touchscreen radio UI for a **BlueStation MS-mode** TETRA
 terminal. It is **another variant of the TN UI**, a sibling to the Python **TN web UI**
@@ -91,7 +91,7 @@ it is missing, the codec's `build.rs` fails early with these same instructions.
 cargo run
 ```
 
-A dark portrait window titled *"TETRA TN UI"* with a scaffold card should open. The app
+A dark portrait window titled *"TETRA BlueStation MMI"* with a scaffold card should open. The app
 reads `config.toml` from the working directory; if the file is absent, built-in defaults
 are used (control `9102`, telemetry `9101`). Set `RUST_LOG=debug` for more verbose logs.
 

@@ -1,4 +1,4 @@
-# TETRA TN UI configuration.
+# TETRA BlueStation MMI configuration.
 #
 # This app is the SERVER side of the BlueStation MS external interface: the
 # stack (or fake_stack.py) is the WebSocket client and dials OUT to the host and
