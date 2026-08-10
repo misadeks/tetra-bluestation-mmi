@@ -1,9 +1,9 @@
 // TETRA BlueStation MMI - native Rust + Slint variant.
 //
-// Another variant of the TN UI: this app implements the server side of the
-// BlueStation MS external interface and presents a Classic-style radio UI over
-// it. It is a native/embedded peer of the browser tetra-tn-web-ui (Python TNMM
-// Demo UI), not a port of it.
+// This app implements the server side of the BlueStation MS external interface
+// and presents a classic radio-style UI over it. It does not implement any TETRA
+// stack, protocol, registration, or codec-negotiation logic - it drives the MS
+// over the fixed interface-2 wire contract.
 //
 // M2/M3: the two WebSocket servers (control 9102, telemetry 9101), a serde
 // protocol layer, a central app state, and a status bar + home screen driven by

@@ -3,7 +3,7 @@
 A native **Rust + Slint** touchscreen radio UI - the MMI (man-machine interface) for a
 **tetra-bluestation** MS-mode TETRA terminal. It implements the **server side of the
 BlueStation MS external interface** (`bluestation-ms-interface-2`) and presents the
-operator a Classic-style radio UI over it.
+operator a classic radio-style UI over it.
 
 The stack (or a simulator standing in for it) is the WebSocket **client** and dials
 **out** to this app on two channels:
