@@ -133,13 +133,14 @@ Install Rust with [rustup](https://rustup.rs) (>= 1.95).
 ### The linuxkms backend
 
 The Pi build is target-scoped in `Cargo.toml`: for `aarch64` Linux, Slint is
-pulled in with `default-features = false` plus `backend-linuxkms-noseat` and
-`renderer-software`, so the winit backend is dropped and the binary renders to
-DRM/KMS. `-noseat` skips libseat/logind so it runs from a plain systemd service
-or `sudo` with no seat manager. The software renderer is used for a reliable
-first bring-up; FemtoVG/Skia GPU rendering can be enabled later (swap
-`renderer-software` for `renderer-femtovg` and add the matching GL/EGL packages).
-Windows/x86 dev is unaffected and keeps the default winit backend.
+pulled in with `default-features = false` plus `backend-linuxkms-noseat`,
+`renderer-femtovg`, and `renderer-software`, so the winit backend is dropped and
+the binary renders to DRM/KMS. `-noseat` skips libseat/logind so it runs from a
+plain systemd service or `sudo` with no seat manager. The backend renders on the
+**V3D GPU via FemtoVG** (OpenGL ES over EGL/GBM) - which keeps the CPU from
+writing every pixel to the framebuffer - and falls back to the software renderer
+automatically if a GL context can't be created. Windows/x86 dev is unaffected and
+keeps the default winit backend.
 
 ### Build and run on the Pi
 
@@ -215,12 +216,9 @@ cores:
 
 Cut CPU further:
 
-- The first-bring-up build uses the **software renderer**. To offload drawing to
-  the GPU, switch to the FemtoVG/GLES renderer: in `Cargo.toml` replace
-  `renderer-software` with `renderer-femtovg` for the aarch64 target, and add the
-  GL/EGL dev packages on the Pi (`libgles2-mesa-dev libegl-dev`, then re-run
-  `sync-sysroot.sh`). The linuxkms backend renders straight to KMS via EGL/GBM;
-  no desktop needed.
+- The Pi build already renders on the **GPU via FemtoVG** (with the software
+  renderer as an automatic fallback); the GL/EGL dev packages above are what let
+  the GPU path come up. It renders straight to KMS via EGL/GBM - no desktop needed.
 - Avoid continuous full-frame animations (they force full redraws each frame).
 - If the UI is sluggish, rule out hardware throttling: `vcgencmd get_throttled`
   (non-zero = under-voltage/thermal throttling - check PSU/cooling).
