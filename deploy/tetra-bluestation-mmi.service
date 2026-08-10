@@ -1,4 +1,4 @@
-# TETRA TN UI - Raspberry Pi kiosk (Slint linuxkms / DRM-KMS).
+# TETRA BlueStation MMI - Raspberry Pi kiosk (Slint linuxkms / DRM-KMS).
 #
 # Renders straight to the Waveshare 5" DSI panel via DRM/KMS - no X/Wayland.
 # Runs as root so it can become DRM master and open /dev/dri/card* and
@@ -11,21 +11,21 @@
 # but fails at "Error presenting framebuffer on screen: Permission denied".
 #
 # Install (on the Pi):
-#   sudo cp deploy/tetra-tn-ui.service /etc/systemd/system/tetra-tn-ui.service
+#   sudo cp deploy/tetra-bluestation-mmi.service /etc/systemd/system/tetra-bluestation-mmi.service
 #   # edit WorkingDirectory/ExecStart below if your checkout isn't /home/pi/tetra-tn-ui
 #   sudo systemctl daemon-reload
-#   sudo systemctl enable --now tetra-tn-ui.service
-#   journalctl -u tetra-tn-ui -f      # follow logs
+#   sudo systemctl enable --now tetra-bluestation-mmi.service
+#   journalctl -u tetra-bluestation-mmi -f      # follow logs
 #
 # The binary is built with `cargo build --release` in the checkout (see
 # scripts/deploy-pi.sh). WorkingDirectory must be the checkout so the app finds
-# config.toml (and the `native/` codec libs) next to the binary.
+# config.toml next to the binary.
 #
 # NOTE: don't run an ad-hoc instance (e.g. build-cross.sh --run) while this
 # service is active - they fight over the DRM master and the 9101/9102 ports.
 
 [Unit]
-Description=TETRA TN UI kiosk (Slint linuxkms / DRM-KMS)
+Description=TETRA BlueStation MMI kiosk (Slint linuxkms / DRM-KMS)
 After=network-online.target systemd-user-sessions.service getty@tty1.service
 Wants=network-online.target
 # Stop the text console getty on tty1 so we can own that VT (DRM master).
@@ -40,7 +40,7 @@ Environment=SLINT_BACKEND=linuxkms
 # every pixel to the framebuffer - that CPU memory traffic was starving the
 # co-located SDR's I2S DMA. Needs the mesa v3d driver + libegl/libgles on the Pi.
 Environment=RUST_LOG=info
-ExecStart=/home/pi/tetra-tn-ui/target/release/tetra-tn-ui
+ExecStart=/home/pi/tetra-tn-ui/target/release/tetra-bluestation-mmi
 # Own tty1 so the seatless linuxkms backend can become DRM master.
 TTYPath=/dev/tty1
 TTYReset=yes

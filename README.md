@@ -45,7 +45,7 @@ src/net.rs        the two WebSocket servers (control + telemetry)
 src/app.rs        central app state + the single UI-writer event loop
 config.toml       runtime config (BlueStation MS listen ports, devices, [ui])
 scripts/          deploy-pi.sh / deploy-pi.ps1 (build on Pi); cross/ + wsl/ (WSL cross-compile)
-deploy/           tetra-tn-ui.service (systemd kiosk autostart)
+deploy/           tetra-bluestation-mmi.service (systemd kiosk autostart)
 third_party/      git submodules (libtetra-acelp: the Rust ACELP speech codec)
 DECISIONS.md      running log of decisions and deviations
 ```
@@ -156,7 +156,7 @@ Build natively on the Pi (the primary path - see cross-compiling below):
 
 ```bash
 cargo build --release
-sudo SLINT_BACKEND=linuxkms RUST_LOG=info ./target/release/tetra-tn-ui
+sudo SLINT_BACKEND=linuxkms RUST_LOG=info ./target/release/tetra-bluestation-mmi
 ```
 
 `sudo` is used so the process can become DRM master and open `/dev/dri/card*`
@@ -197,11 +197,11 @@ enable without starting immediately).
 Manual equivalent, once a release binary is on the Pi:
 
 ```bash
-sudo cp deploy/tetra-tn-ui.service /etc/systemd/system/tetra-tn-ui.service
+sudo cp deploy/tetra-bluestation-mmi.service /etc/systemd/system/tetra-bluestation-mmi.service
 # edit WorkingDirectory/ExecStart if your checkout isn't /home/pi/tetra-tn-ui
 sudo systemctl daemon-reload
-sudo systemctl enable --now tetra-tn-ui.service
-journalctl -u tetra-tn-ui -f
+sudo systemctl enable --now tetra-bluestation-mmi.service
+journalctl -u tetra-bluestation-mmi -f
 ```
 
 The unit **takes over tty1** (`Conflicts=getty@tty1.service`, `TTYPath=/dev/tty1`)
@@ -220,7 +220,7 @@ cores:
   2-3, e.g. via its own `CPUAffinity`/`isolcpus`). Tune with `CPU_AFFINITY` in
   `scripts/cross/pi.env` (empty disables).
 - **Ad-hoc runs:** the scripts prefix `taskset -c 0-1` (tune with `TASKSET_CPUS`).
-  Manually: `sudo SLINT_BACKEND=linuxkms taskset -c 0-1 ./tetra-tn-ui`.
+  Manually: `sudo SLINT_BACKEND=linuxkms taskset -c 0-1 ./tetra-bluestation-mmi`.
 
 Cut CPU further:
 

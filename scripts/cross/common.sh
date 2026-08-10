@@ -23,9 +23,9 @@ fi
 : "${PI_HOST:=tetra-ms.local}"
 : "${PI_TARGET:=aarch64-unknown-linux-gnu}"
 : "${REMOTE_DIR:=/home/${PI_USER}/tetra-tn-ui}"
-: "${BINARY_NAME:=tetra-tn-ui}"
+: "${BINARY_NAME:=tetra-bluestation-mmi}"
 : "${CONFIG_FILE:=config.toml}"
-: "${SERVICE_NAME:=tetra-tn-ui.service}"
+: "${SERVICE_NAME:=tetra-bluestation-mmi.service}"
 # Pin the UI to these CPU cores so it stays off the ones the radio/stack uses.
 # systemd CPUAffinity syntax (space/'-' separated); empty disables pinning.
 : "${CPU_AFFINITY:=0 1}"

@@ -1,6 +1,6 @@
 # Raspberry Pi setup guide
 
-Everything that must be done **on the Pi** to run the TETRA TN UI kiosk on a
+Everything that must be done **on the Pi** to run the TETRA BlueStation MMI kiosk on a
 Raspberry Pi 4 + Waveshare 5" DSI panel (5-DSI-TOUCH-A, native portrait
 720x1280), rendering straight to DRM/KMS with the Slint **linuxkms** backend.
 No desktop / X / Wayland is required (Raspberry Pi OS Lite).
@@ -155,7 +155,7 @@ sudo cp deploy/asound.conf /etc/asound.conf   # routes default -> USB card "Devi
 ```
 
 `install-service` does this automatically (if `/etc/asound.conf` doesn't already
-exist). Check names with `aplay -l` / `arecord -l` or `./tetra-tn-ui
+exist). Check names with `aplay -l` / `arecord -l` or `./tetra-bluestation-mmi
 --list-audio`; if your codec's card name isn't `Device`, edit `deploy/asound.conf`.
 Without a mic the engine runs downlink-only (you still hear voice, just can't
 transmit).
@@ -189,7 +189,7 @@ or, directly on the Pi in the checkout:
 
 ```bash
 cargo build --release
-sudo SLINT_BACKEND=linuxkms RUST_LOG=info ./target/release/tetra-tn-ui
+sudo SLINT_BACKEND=linuxkms RUST_LOG=info ./target/release/tetra-bluestation-mmi
 ```
 
 The app reads `config.toml` from its working directory, so run it from the
@@ -212,11 +212,11 @@ bash scripts/wsl/install-service.sh      # from WSL; NO_START=1 to not start now
 **Manual**, once a release binary is on the Pi (default dir `/home/pi/tetra-tn-ui`):
 
 ```bash
-sudo cp deploy/tetra-tn-ui.service /etc/systemd/system/tetra-tn-ui.service
+sudo cp deploy/tetra-bluestation-mmi.service /etc/systemd/system/tetra-bluestation-mmi.service
 # edit WorkingDirectory/ExecStart if your dir differs
 sudo systemctl daemon-reload
-sudo systemctl enable --now tetra-tn-ui.service
-journalctl -u tetra-tn-ui -f            # follow logs
+sudo systemctl enable --now tetra-bluestation-mmi.service
+journalctl -u tetra-bluestation-mmi -f            # follow logs
 ```
 
 The unit runs the binary as root with `SLINT_BACKEND=linuxkms` and
@@ -285,7 +285,7 @@ On a Pi shared with the TETRA radio/stack, keep the UI off the radio's cores:
 - The installed service pins the UI with `CPUAffinity=0 1`; keep the radio on
   cores 2-3 (its own `CPUAffinity` or kernel `isolcpus`). Tune via `CPU_AFFINITY`
   in `scripts/cross/pi.env`.
-- For a manual run: `sudo SLINT_BACKEND=linuxkms taskset -c 0-1 ./tetra-tn-ui`.
+- For a manual run: `sudo SLINT_BACKEND=linuxkms taskset -c 0-1 ./tetra-bluestation-mmi`.
 - Check for under-voltage/thermal throttling (a common cause of a sluggish UI):
 
   ```bash

@@ -70,4 +70,4 @@ fi
 echo ">> running kiosk on the Pi (SLINT_BACKEND=linuxkms)"
 # -t: allocate a TTY so the app can grab the DRM master / input and Ctrl-C works.
 # WorkingDirectory must be the checkout so config.toml is found next to it.
-ssh -t "$REMOTE" "cd ${PI_DIR} && sudo SLINT_BACKEND=linuxkms RUST_LOG=info ./target/release/tetra-tn-ui"
+ssh -t "$REMOTE" "cd ${PI_DIR} && sudo SLINT_BACKEND=linuxkms RUST_LOG=info ./target/release/tetra-bluestation-mmi"

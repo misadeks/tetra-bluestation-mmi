@@ -1,4 +1,4 @@
-# TETRA TN UI - boot splash on the Waveshare 5" DSI panel (DRM/KMS, no desktop).
+# TETRA BlueStation MMI - boot splash on the Waveshare 5" DSI panel (DRM/KMS, no desktop).
 #
 # Shows deploy/splash.png on the panel from boot until the kiosk UI's first
 # frame. For most of that window the app isn't running yet, so the splash must
@@ -31,7 +31,7 @@
 Description=Boot splash on DSI panel (raw -> /dev/fb0)
 # Paint before the kiosk UI claims the panel, and hold tty1 off the login getty
 # so nothing repaints the framebuffer until the UI's modeset.
-Before=tetra-tn-ui.service
+Before=tetra-bluestation-mmi.service
 Conflicts=getty@tty1.service
 
 [Service]

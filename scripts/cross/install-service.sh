@@ -23,9 +23,18 @@ source "${SCRIPT_DIR}/common.sh"
 require_cmd ssh
 require_cmd rsync
 
-# Build first if we don't have a binary yet.
-if [[ ! -x "${LOCAL_BINARY}" ]]; then
-  echo "No binary at ${LOCAL_BINARY}; building it..."
+# Always (re)build so source changes are actually deployed. cargo is incremental,
+# so a no-op rebuild (nothing changed) is cheap. Set SKIP_BUILD=1 to deploy the
+# existing binary as-is (still builds if no binary exists yet).
+if [[ "${SKIP_BUILD:-0}" == "1" ]]; then
+  if [[ ! -x "${LOCAL_BINARY}" ]]; then
+    echo "SKIP_BUILD=1 but no binary at ${LOCAL_BINARY}; building anyway..."
+    "${SCRIPT_DIR}/build-cross.sh"
+  else
+    echo "SKIP_BUILD=1; deploying existing ${LOCAL_BINARY} without rebuilding."
+  fi
+else
+  echo "Building ${BINARY_NAME} (cargo is incremental; set SKIP_BUILD=1 to skip)..."
   "${SCRIPT_DIR}/build-cross.sh"
 fi
 
@@ -99,7 +108,7 @@ fi
 echo "Installing ${SERVICE_NAME}..."
 UNIT_CONTENT="$(cat <<EOF
 [Unit]
-Description=TETRA TN UI kiosk (Slint linuxkms / DRM-KMS)
+Description=TETRA BlueStation MMI kiosk (Slint linuxkms / DRM-KMS)
 After=network-online.target systemd-user-sessions.service getty@tty1.service
 Wants=network-online.target
 Conflicts=getty@tty1.service
