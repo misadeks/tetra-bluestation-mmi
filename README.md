@@ -7,6 +7,9 @@ A native **Rust + Slint** touchscreen radio UI - the MMI (man-machine interface)
 BlueStation MS external interface** (`bluestation-ms-interface-2`) and presents the
 operator a classic radio-style UI over it.
 
+> The MS-mode radio stack this UI drives lives in
+> **[misadeks/tetra-bluestation (ms-mode branch)](https://github.com/misadeks/tetra-bluestation/tree/ms-mode)**.
+
 > **New here?** Follow the step-by-step **[Getting Started guide](docs/GETTING_STARTED.md)** -
 > it walks you from a fresh machine to a running app on Windows, Linux, or the Pi.
 
