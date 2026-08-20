@@ -49,3 +49,6 @@ __pycache__/
 
 # Internal development log (kept local, not shared)
 DECISIONS.md
+
+# Local release payloads / build outputs
+/dist/
