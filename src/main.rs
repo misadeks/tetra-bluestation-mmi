@@ -210,6 +210,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let _ = tx.send(app::AppEvent::UiPtt);
         });
     }
+    // TODO(hardware PTT): wire the physical PTT button here. When an input source is
+    // available (e.g. a libgpiod line on the Pi, or a gpio-keys / evdev keycode),
+    // spawn a listener that sends `app::AppEvent::HwPtt` on each press. The app-side
+    // handling already exists: HwPtt starts a simplex private call when the dialer
+    // holds a valid private number, otherwise keys the current talkgroup. Example:
+    //
+    //     let tx = events_tx.clone();
+    //     std::thread::spawn(move || {
+    //         // ...open the GPIO line / evdev device, block on edges...
+    //         // on each rising edge: let _ = tx.send(app::AppEvent::HwPtt);
+    //     });
     {
         let tx = events_tx.clone();
         window.on_select_talkgroup(move || {

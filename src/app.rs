@@ -38,6 +38,12 @@ pub enum AppEvent {
     UiCancelSelect,
     UiSelectFolder(i32),
     UiPtt,
+    /// Physical PTT button press. Not yet wired to a real input source (GPIO /
+    /// evdev); see the hook in main.rs. When the dialer holds a valid private
+    /// number this starts a simplex (PTT-keyed) private call, otherwise it keys
+    /// the current talkgroup.
+    #[allow(dead_code)]
+    HwPtt,
     UiDialKey(String),
     /// Place a dialer call: (target index 0=private, 1.. = gateway; duplex).
     UiDialCall(i32, bool),
@@ -906,6 +912,25 @@ pub fn run(
                 }
                 let gssi = effective_tx(&app);
                 tracing::info!(?gssi, "UI: PTT pressed (voice calls arrive in a later milestone)");
+            }
+            AppEvent::HwPtt => {
+                // Physical PTT. On the dialer with a private number entered this
+                // starts a simplex (PTT-keyed) private call (replacing the old
+                // on-screen Simplex button); otherwise it keys the current
+                // talkgroup, mirroring UiPtt (voice keying lands in a later
+                // milestone).
+                if !app.require_service(&weak) {
+                    continue;
+                }
+                if try_start_dialer_simplex(&mut app, &weak) {
+                    continue;
+                }
+                if effective_tx(&app).is_none() {
+                    app.notify(&weak, "No talkgroup", "Attach a talkgroup before transmitting.", 0);
+                    continue;
+                }
+                let gssi = effective_tx(&app);
+                tracing::info!(?gssi, "HW PTT: talkgroup key (voice calls arrive in a later milestone)");
             }
             AppEvent::UiDialKey(k) => {
                 match k.as_str() {
@@ -4850,6 +4875,40 @@ fn push_ringtones(app: &AppState, weak: &slint::Weak<MainWindow>) {
         w.set_ring_category(cat_idx);
         w.set_ring_enabled(enabled);
     });
+}
+
+/// Start a private simplex (PTT-keyed) call to the number currently entered on the
+/// dialer, if it is a valid ISSI. Returns true if a call setup was initiated.
+///
+/// This is the action a physical PTT press performs while the dialer holds a private
+/// number (see `AppEvent::HwPtt`), replacing the removed on-screen "Simplex (PTT)
+/// call" button. Gateway / PSTN numbers are duplex and are not started here (they
+/// use the on-screen Call button); an empty or invalid number returns false so the
+/// caller can fall back to talkgroup keying.
+fn try_start_dialer_simplex(app: &mut AppState, weak: &slint::Weak<MainWindow>) -> bool {
+    let has_plus = app.dial_number.contains('+');
+    let parsed = app.dial_number.parse::<u32>().ok();
+    let valid = !has_plus && parsed.map(|n| n >= 1 && n < 0xFF_FFFF).unwrap_or(false);
+    if !valid {
+        return false;
+    }
+    let ssi = parsed.unwrap_or(0);
+    tracing::info!(number = %app.dial_number, "HW PTT: start private simplex call");
+    app.mic_muted = false;
+    app.dtmf_echo.clear();
+    let h = app.next_handle();
+    app.send(protocol::tncc_setup(h, ssi, false, false));
+    app.dialing = Some(Dialing {
+        peer_ssi: ssi,
+        group: false,
+        simplex: true,
+        peer_label: None,
+        peer_sub: None,
+        is_external: false,
+        external_number: None,
+    });
+    push_calls(app, weak);
+    true
 }
 
 /// Push the call/PTT UI state derived from the call map.
