@@ -2066,6 +2066,9 @@ component OnScreenKeyboard inherits Rectangle {
     callback key(string);
     callback backspace;
     callback shift-toggle;
+    // Collapse/dismiss the keyboard. Each host wires this to hide the keyboard
+    // (stop searching, blur the edited field, etc.) so it never traps the screen.
+    callback done;
     VerticalLayout {
         spacing: 6px;
         if !root.numeric: VerticalLayout {
@@ -2127,6 +2130,7 @@ component OnScreenKeyboard inherits Rectangle {
                 KeyCap { label: "-"; tapped => { root.key("-"); } }
                 KeyCap { label: "space"; horizontal-stretch: 6; tapped => { root.key(" "); } }
                 KeyCap { label: "."; tapped => { root.key("."); } }
+                KeyCap { label: "Done"; active: true; horizontal-stretch: 3; tapped => { root.done(); } }
             }
         }
         if root.numeric: VerticalLayout {
@@ -2159,6 +2163,7 @@ component OnScreenKeyboard inherits Rectangle {
                 spacing: 6px;
                 KeyCap { label: "+"; enabled: !root.digits-only; tapped => { root.key("+"); } }
                 KeyCap { icon: Icons.backspace; horizontal-stretch: 2; tapped => { root.backspace(); } }
+                KeyCap { label: "Done"; active: true; horizontal-stretch: 2; tapped => { root.done(); } }
             }
         }
     }
@@ -2363,11 +2368,7 @@ component ContactsScreen inherits Rectangle {
                 }
                 shift-toggle => {
                 }
-            }
-            SecondaryButton {
-                text: "Done";
-                icon: Icons.check;
-                clicked => {
+                done => {
                     root.searching = false;
                 }
             }
@@ -2401,6 +2402,9 @@ component ContactEditScreen inherits Rectangle {
     callback select-target(int);
     callback save;
     callback cancel;
+    // Landscape-friendly: the keyboard can be collapsed with its Done key so the
+    // Cancel/Save row is reachable; tapping any field reopens it.
+    property <bool> kb-open: true;
     background: transparent;
     VerticalLayout {
         padding: 14px;
@@ -2411,6 +2415,7 @@ component ContactEditScreen inherits Rectangle {
             placeholder: "Required";
             focused: root.focus-field == 0;
             pick => {
+                root.kb-open = true;
                 root.set-focus(0);
             }
         }
@@ -2420,6 +2425,7 @@ component ContactEditScreen inherits Rectangle {
             placeholder: "Optional";
             focused: root.focus-field == 1;
             pick => {
+                root.kb-open = true;
                 root.set-focus(1);
             }
         }
@@ -2437,6 +2443,7 @@ component ContactEditScreen inherits Rectangle {
             placeholder: "1..16777215";
             focused: root.focus-field == 2;
             pick => {
+                root.kb-open = true;
                 root.set-focus(2);
             }
         }
@@ -2446,6 +2453,7 @@ component ContactEditScreen inherits Rectangle {
             placeholder: "digits to dial";
             focused: root.focus-field == 3;
             pick => {
+                root.kb-open = true;
                 root.set-focus(3);
             }
         }
@@ -2453,7 +2461,7 @@ component ContactEditScreen inherits Rectangle {
             vertical-stretch: 1;
             min-height: 6px;
         }
-        OnScreenKeyboard {
+        if root.kb-open: OnScreenKeyboard {
             numeric: root.numeric;
             shift: root.shift;
             digits-only: root.numeric && !root.is-phone;
@@ -2465,6 +2473,9 @@ component ContactEditScreen inherits Rectangle {
             }
             shift-toggle => {
                 root.shift-toggle();
+            }
+            done => {
+                root.kb-open = false;
             }
         }
         // Small gap between the keyboard and the action buttons.
@@ -2743,6 +2754,8 @@ component MsgThreadScreen inherits Rectangle {
     property <bool> confirm-visible: false;
     property <int> pending-id;
     property <string> pending-text;
+    // Collapsible keyboard (landscape): Done hides it, tapping the draft reopens it.
+    property <bool> kb-open: true;
     in property <int> scroll-tick;
     // Mirror of the message-list height so we can scroll once it actually grows.
     property <length> content-h: col.preferred-height;
@@ -2810,6 +2823,11 @@ component MsgThreadScreen inherits Rectangle {
             border-width: 1px;
             border-color: Palette.line2;
             background: Palette.surface;
+            TouchArea {
+                clicked => {
+                    root.kb-open = true;
+                }
+            }
             HorizontalLayout {
                 padding-left: 14px;
                 padding-right: 14px;
@@ -2833,7 +2851,7 @@ component MsgThreadScreen inherits Rectangle {
                 }
             }
         }
-        OnScreenKeyboard {
+        if root.kb-open: OnScreenKeyboard {
             numeric: false;
             shift: root.shift;
             key(c) => {
@@ -2844,6 +2862,9 @@ component MsgThreadScreen inherits Rectangle {
             }
             shift-toggle => {
                 root.shift-toggle();
+            }
+            done => {
+                root.kb-open = false;
             }
         }
         PrimaryButton {
@@ -2875,6 +2896,8 @@ component MsgNewScreen inherits Rectangle {
     callback backspace;
     callback start;
     callback cancel;
+    // Collapsible keyboard (landscape): Done hides it, tapping the field reopens it.
+    property <bool> kb-open: true;
     background: transparent;
     VerticalLayout {
         padding: 14px;
@@ -2884,12 +2907,15 @@ component MsgNewScreen inherits Rectangle {
             text: root.issi;
             placeholder: "Recipient number";
             focused: true;
+            pick => {
+                root.kb-open = true;
+            }
         }
         Rectangle {
             vertical-stretch: 1;
             min-height: 6px;
         }
-        OnScreenKeyboard {
+        if root.kb-open: OnScreenKeyboard {
             numeric: true;
             digits-only: true;
             key(c) => {
@@ -2897,6 +2923,9 @@ component MsgNewScreen inherits Rectangle {
             }
             backspace => {
                 root.backspace();
+            }
+            done => {
+                root.kb-open = false;
             }
         }
         Rectangle { height: 8px; }
@@ -3125,6 +3154,8 @@ component FormEditScreen inherits Rectangle {
     callback save;
     callback cancel;
     callback delete;
+    // Collapsible keyboard (landscape): Done hides it, tapping a field reopens it.
+    property <bool> kb-open: true;
     property <int> focus-kind: (root.focus-field >= 0 && root.focus-field < root.fields.length)
         ? root.fields[root.focus-field].kind : 0;
     background: transparent;
@@ -3162,13 +3193,14 @@ component FormEditScreen inherits Rectangle {
                         placeholder: "";
                         focused: root.focus-field == i;
                         pick => {
+                            root.kb-open = true;
                             root.pick(i);
                         }
                     }
                 }
             }
         }
-        OnScreenKeyboard {
+        if root.kb-open: OnScreenKeyboard {
             numeric: root.focus-kind == 1 || root.focus-kind == 2;
             digits-only: root.focus-kind == 1;
             shift: root.shift;
@@ -3180,6 +3212,9 @@ component FormEditScreen inherits Rectangle {
             }
             shift-toggle => {
                 root.shift-toggle();
+            }
+            done => {
+                root.kb-open = false;
             }
         }
         Rectangle { height: 6px; }
@@ -3615,11 +3650,7 @@ component PickerScreen inherits Rectangle {
                 }
                 shift-toggle => {
                 }
-            }
-            SecondaryButton {
-                text: "Done";
-                icon: Icons.check;
-                clicked => {
+                done => {
                     root.searching = false;
                 }
             }
