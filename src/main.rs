@@ -92,14 +92,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // with holes in the letters): rotated glyphs are sampled from the GPU atlas at
     // non-integer coordinates. Slint's software renderer instead rasterizes glyphs
     // natively in the rotated orientation, so text stays crisp. Force it for
-    // rotated layouts, unless the user pinned a backend explicitly. Gated to the
-    // aarch64 Linux (linuxkms) build; the desktop winit build has no such backend.
+    // rotated layouts. The systemd unit / run scripts set SLINT_BACKEND=linuxkms
+    // (backend only, no renderer), so we upgrade that to select the software
+    // renderer; a value that already pins a renderer (e.g. "linuxkms-femtovg") is
+    // left untouched. Gated to the aarch64 Linux (linuxkms) build; the desktop
+    // winit build has no such backend.
     #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-    if ui.rotation != 0 && std::env::var_os("SLINT_BACKEND").is_none() {
-        tracing::info!(
-            "rotated display: selecting software renderer (linuxkms-software) for crisp text"
-        );
-        std::env::set_var("SLINT_BACKEND", "linuxkms-software");
+    if ui.rotation != 0 {
+        let current = std::env::var("SLINT_BACKEND").unwrap_or_default().to_lowercase();
+        // "linuxkms-<renderer>" means a renderer is explicitly pinned - respect it.
+        // Unset or a bare "linuxkms" still needs the software renderer.
+        let renderer_pinned = current.starts_with("linuxkms-");
+        if !renderer_pinned {
+            tracing::info!(
+                "rotated display: selecting software renderer (linuxkms-software) for crisp text"
+            );
+            std::env::set_var("SLINT_BACKEND", "linuxkms-software");
+        }
     }
 
     let window = MainWindow::new()?;

@@ -34,6 +34,10 @@ fi
 # libinput calibration matrix for a rotated touch panel (see pi.env.example);
 # empty = don't install a touch-rotation udev rule.
 : "${TOUCH_CALIBRATION_MATRIX:=}"
+# Boot-splash rotation (0/90/180/270) to match [ui].rotation for a landscape
+# panel; empty/0 = no rotation. The splash is written raw to the framebuffer, so
+# it must be pre-rotated to match the app's rotated display.
+: "${SPLASH_ROTATE:=}"
 : "${RUST_LOG:=info}"
 : "${PI_SYSROOT:=${REPO_ROOT}/.pi-sysroot/${PI_TARGET}}"
 

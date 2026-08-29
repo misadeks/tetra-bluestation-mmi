@@ -12,7 +12,12 @@ target geometry (width/height/stride) from /sys/class/graphics/fb0 and packs
 RGB565 little-endian (bits_per_pixel must be 16, the Pi KMS default). Images
 that don't match the panel size are centred on black (cropped if larger).
 
-Usage: png_to_fb565.py INPUT.png OUTPUT.raw [--fb /dev/fb0-sysfs-name]
+Usage: png_to_fb565.py INPUT.png OUTPUT.raw [--rotate 0|90|180|270]
+
+--rotate turns the image clockwise before packing, to match a rotated display
+(e.g. a landscape 1280x720 splash on a native-portrait 720x1280 panel needs
+--rotate 90, the same quarter turn the app applies via [ui].rotation). Flip to
+270 if it comes out upside down.
 """
 import struct
 import sys
@@ -92,6 +97,20 @@ def main():
     if len(sys.argv) < 3:
         sys.exit(__doc__)
     inp, outp = sys.argv[1], sys.argv[2]
+    # Optional clockwise rotation (0/90/180/270) to match a rotated display.
+    rotate = 0
+    args = sys.argv[3:]
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--rotate" and i + 1 < len(args):
+            rotate = int(args[i + 1]); i += 2; continue
+        if a.startswith("--rotate="):
+            rotate = int(a.split("=", 1)[1]); i += 1; continue
+        i += 1
+    if rotate not in (0, 90, 180, 270):
+        sys.exit("--rotate must be one of 0, 90, 180, 270")
+
     fbdir = "/sys/class/graphics/fb0"
     size = read_int(f"{fbdir}/virtual_size", "720,720")
     fb_w, fb_h = (int(x) for x in size.split(","))
@@ -103,21 +122,39 @@ def main():
     iw, ih, ch, bpc, px = read_png(inp)
     pixstep = ch * bpc          # bytes per pixel in the decoded buffer
     rowbytes = iw * pixstep
+
+    # Rotated logical image size, and a mapping from a rotated-image coordinate
+    # (rx, ry) back to the source byte offset. Clockwise, to match the display.
+    if rotate in (90, 270):
+        rw, rh = ih, iw
+    else:
+        rw, rh = iw, ih
+
+    def src_off(rx, ry):
+        if rotate == 90:
+            sx, sy = ry, ih - 1 - rx
+        elif rotate == 270:
+            sx, sy = iw - 1 - ry, rx
+        elif rotate == 180:
+            sx, sy = iw - 1 - rx, ih - 1 - ry
+        else:
+            sx, sy = rx, ry
+        return sy * rowbytes + sx * pixstep
+
     fb = bytearray(stride * fb_h)  # zero-filled = black
-    # Centre the image on the panel (crop if larger).
-    ox = (fb_w - iw) // 2
-    oy = (fb_h - ih) // 2
-    for y in range(ih):
-        ty = y + oy
+    # Centre the (rotated) image on the panel (crop if larger).
+    ox = (fb_w - rw) // 2
+    oy = (fb_h - rh) // 2
+    for ry in range(rh):
+        ty = ry + oy
         if ty < 0 or ty >= fb_h:
             continue
-        row = y * rowbytes
         base = ty * stride
-        for x in range(iw):
-            tx = x + ox
+        for rx in range(rw):
+            tx = rx + ox
             if tx < 0 or tx >= fb_w:
                 continue
-            s = row + x * pixstep
+            s = src_off(rx, ry)
             # High byte of each channel (8-bit value; MSB for 16-bit BE samples).
             r, g, b = px[s], px[s + bpc], px[s + 2 * bpc]
             v = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
@@ -126,7 +163,8 @@ def main():
             fb[o + 1] = (v >> 8) & 0xFF
     with open(outp, "wb") as f:
         f.write(fb)
-    print(f"wrote {outp}: {fb_w}x{fb_h} RGB565 stride={stride} ({len(fb)} bytes)")
+    print(f"wrote {outp}: {fb_w}x{fb_h} RGB565 stride={stride} "
+          f"rotate={rotate} ({len(fb)} bytes)")
 
 
 if __name__ == "__main__":

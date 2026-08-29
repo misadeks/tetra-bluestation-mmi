@@ -77,7 +77,7 @@ if [[ -n "${TOUCH_CALIBRATION_MATRIX}" ]]; then
   ssh "${REMOTE}" "sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=input --action=change" || true
 fi
 
-# Boot splash: show deploy/splash.png on the DSI panel from boot until the UI's
+# Boot splash: show deploy/splash.portrait.png on the DSI panel from boot until the UI's
 # first frame. We write the image straight to /dev/fb0 (converted to the panel's
 # RGB565 framebuffer format by scripts/png_to_fb565.py, run on the Pi) - fbi is
 # unreliable here because it renders on a VT and clears the screen when it exits.
@@ -88,7 +88,12 @@ if [[ -f "${REPO_ROOT}/deploy/splash.png" && -f "${REPO_ROOT}/scripts/png_to_fb5
   rsync -az "${REPO_ROOT}/deploy/splash.png" "${REMOTE}:${REMOTE_DIR}/deploy/splash.png"
   rsync -az "${REPO_ROOT}/scripts/png_to_fb565.py" "${REMOTE}:${REMOTE_DIR}/png_to_fb565.py"
   # Convert to the panel's framebuffer format on the Pi (reads /sys fb geometry).
-  if ssh "${REMOTE}" "python3 '${REMOTE_DIR}/png_to_fb565.py' '${REMOTE_DIR}/deploy/splash.png' '${REMOTE_DIR}/deploy/splash.raw'"; then
+  # Pre-rotate to match a rotated (landscape) display when SPLASH_ROTATE is set.
+  SPLASH_ROTATE_ARG=""
+  if [[ -n "${SPLASH_ROTATE}" && "${SPLASH_ROTATE}" != "0" ]]; then
+    SPLASH_ROTATE_ARG="--rotate ${SPLASH_ROTATE}"
+  fi
+  if ssh "${REMOTE}" "python3 '${REMOTE_DIR}/png_to_fb565.py' '${REMOTE_DIR}/deploy/splash.png' '${REMOTE_DIR}/deploy/splash.raw' ${SPLASH_ROTATE_ARG}"; then
     SPLASH_UNIT="$(cat <<EOF
 [Unit]
 Description=Boot splash on DSI panel (raw -> /dev/fb0)

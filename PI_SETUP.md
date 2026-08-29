@@ -292,8 +292,14 @@ framebuffer format (RGB565, read from `/sys/class/graphics/fb0`), producing
 The `install-service` scripts handle all of this: they deploy `deploy/splash.png`
 **if it exists locally**, run the converter on the Pi, and install + enable
 `splash.service`. The image is not committed (PNGs are gitignored) — drop your
-own logo at `deploy/splash.png` (native panel size, 720x1280 portrait) before
-deploying, or the splash step is skipped.
+own logo at `deploy/splash.png` before deploying, or the splash step is skipped.
+
+**Landscape splash:** the image is written raw to the native-portrait framebuffer,
+so it does **not** go through the app's display rotation. For a landscape UI, use a
+landscape (1280x720) `splash.png` and pre-rotate it to match `[ui].rotation` by
+setting `SPLASH_ROTATE` in `scripts/cross/pi.env` (e.g. `SPLASH_ROTATE=90`); the
+deploy script passes `--rotate` to the converter. Flip to `270` if it's upside
+down. For a portrait UI use a 720x1280 image and leave `SPLASH_ROTATE` unset.
 
 **Silence the boot console — REQUIRED.** Keep the panel's console on `tty1` (so
 the panel shows that VT) but suppress its output, otherwise kernel/systemd text
@@ -316,7 +322,8 @@ active (holding tty1 off the login getty) until the UI's modeset takes over.
 **Manual install** (if not using the deploy script):
 
 ```bash
-python3 scripts/png_to_fb565.py deploy/splash.png deploy/splash.raw   # run on the Pi
+# run on the Pi; add --rotate 90 for a landscape splash (match [ui].rotation)
+python3 scripts/png_to_fb565.py deploy/splash.png deploy/splash.raw --rotate 90
 sudo cp deploy/splash.service /etc/systemd/system/splash.service
 # edit the splash.raw path in the unit if your dir isn't /home/pi/tetra-tn-ui
 sudo systemctl daemon-reload
