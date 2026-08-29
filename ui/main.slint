@@ -184,6 +184,15 @@ export global Palette {
     out property <color> bubbleinpress: root.dark ? #24333f : #dde4ec;
 }
 
+// On-screen keyboard sizing. `compact` shrinks the keys so the keyboard takes less
+// room (useful in landscape); a key on the keyboard toggles it. Shared globally so
+// every keyboard (search, contact editor, ...) tracks the same choice.
+global Kbd {
+    in-out property <bool> compact: false;
+    out property <length> keyh: root.compact ? 58px : 86px;
+    out property <length> keyfs: root.compact ? 22px : 28px;
+}
+
 // Line icon rendered from an SVG path (24x24 viewbox), like the reference UI icons.
 component Icon inherits Path {
     in property <string> d;
@@ -2062,7 +2071,7 @@ component KeyCap inherits Rectangle {
     // When true, show the letter uppercase (QWERTY shift is on).
     in property <bool> caps;
     callback tapped;
-    height: 86px;
+    height: Kbd.keyh;
     horizontal-stretch: 1;
     border-radius: 16px;
     border-width: 1px;
@@ -2082,14 +2091,14 @@ component KeyCap inherits Rectangle {
         y: (parent.height - self.height) / 2;
         d: root.icon;
         tint: Palette.keytx;
-        size: 28px;
+        size: Kbd.keyfs - 2px;
     }
     if root.icon == "": Text {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
         text: root.caps ? root.label.to-uppercase() : root.label;
         color: Palette.keytx;
-        font-size: 28px;
+        font-size: Kbd.keyfs;
         font-weight: 600;
     }
 }
@@ -2168,6 +2177,7 @@ component OnScreenKeyboard inherits Rectangle {
                 KeyCap { label: "-"; tapped => { root.key("-"); } }
                 KeyCap { label: "space"; horizontal-stretch: 6; tapped => { root.key(" "); } }
                 KeyCap { label: "."; tapped => { root.key("."); } }
+                KeyCap { icon: Kbd.compact ? Icons.chevron-up : Icons.chevron-down; horizontal-stretch: 2; tapped => { Kbd.compact = !Kbd.compact; } }
                 KeyCap { label: "Done"; active: true; horizontal-stretch: 3; tapped => { root.done(); } }
             }
         }
@@ -2201,6 +2211,7 @@ component OnScreenKeyboard inherits Rectangle {
                 spacing: 6px;
                 KeyCap { label: "+"; enabled: !root.digits-only; tapped => { root.key("+"); } }
                 KeyCap { icon: Icons.backspace; horizontal-stretch: 2; tapped => { root.backspace(); } }
+                KeyCap { icon: Kbd.compact ? Icons.chevron-up : Icons.chevron-down; tapped => { Kbd.compact = !Kbd.compact; } }
                 KeyCap { label: "Done"; active: true; horizontal-stretch: 2; tapped => { root.done(); } }
             }
         }
