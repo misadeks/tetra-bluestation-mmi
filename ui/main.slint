@@ -1,4 +1,4 @@
-﻿// TETRA BlueStation MMI - Slint UI (Pi touch): a classic radio-style device
+// TETRA BlueStation MMI - Slint UI (Pi touch): a classic radio-style device
 // frame of status bar + header +
 // stage + softkey grid; home is the talkgroup cycler with the select action
 // directly below and a docked PTT; Menu and Dialer reachable from the home
@@ -143,21 +143,45 @@ export struct SurveyRow {
 }
 
 // Palette lifted from the reference UI's :root custom properties.
-global Palette {
-    out property <color> bg: #06080b;
-    out property <color> glass1: #0f1620;
-    out property <color> glass2: #0a0f16;
-    out property <color> surface: #131c26;
-    out property <color> surface2: #17222f;
-    out property <color> line: #ffffff12;
-    out property <color> line2: #ffffff21;
-    out property <color> txt: #eaf0f5;
-    out property <color> muted: #8b98a5;
-    out property <color> faint: #58656f;
-    out property <color> accent: #33a7dd;
-    out property <color> green: #37c06a;
-    out property <color> red: #f0555a;
-    out property <color> amber: #e7a72b;
+export global Palette {
+    // Master switch. Dark values are identical to the original theme, so flipping
+    // this to false is the only thing that produces the light theme.
+    in-out property <bool> dark: true;
+    out property <color> bg: root.dark ? #06080b : #e9edf2;
+    out property <color> glass1: root.dark ? #0f1620 : #f6f8fb;
+    out property <color> glass2: root.dark ? #0a0f16 : #e8edf3;
+    out property <color> surface: root.dark ? #131c26 : #ffffff;
+    out property <color> surface2: root.dark ? #17222f : #eef3f8;
+    out property <color> line: root.dark ? #ffffff12 : #10203010;
+    out property <color> line2: root.dark ? #ffffff21 : #1020301f;
+    out property <color> txt: root.dark ? #eaf0f5 : #15202b;
+    out property <color> muted: root.dark ? #8b98a5 : #55636f;
+    out property <color> faint: root.dark ? #58656f : #93a0ab;
+    out property <color> accent: root.dark ? #33a7dd : #1f7fb2;
+    out property <color> green: root.dark ? #37c06a : #1f9a55;
+    out property <color> red: root.dark ? #f0555a : #d23b41;
+    out property <color> amber: root.dark ? #e7a72b : #a8790f;
+    // Structural shades (pressed states, chrome panels, keycaps, readouts) and the
+    // accent-tinted text used on tinted fills.
+    out property <color> press: root.dark ? #16202b : #e4e9ef;
+    out property <color> press2: root.dark ? #1b2836 : #dae1e9;
+    out property <color> railpress: root.dark ? #101a24 : #e0e7ee;
+    out property <color> panel1: root.dark ? #0e1822 : #ffffff;
+    out property <color> panel2: root.dark ? #0b131b : #eef2f7;
+    out property <color> rail1: root.dark ? #0c141d : #f3f6fa;
+    out property <color> rail2: root.dark ? #0a1017 : #e9eef4;
+    out property <color> key1: root.dark ? #0f1822 : #ffffff;
+    out property <color> readout: root.dark ? #0b1119 : #eef3f8;
+    out property <color> keytx: root.dark ? #e8f0f6 : #15202b;
+    out property <color> accenttx1: root.dark ? #9fd3ef : #1c6f9c;
+    out property <color> accenttx2: root.dark ? #cfe9ff : #235d86;
+    out property <color> accenttx3: root.dark ? #7ecbef : #1c6f9c;
+    // Idle PTT button and incoming message bubble (dark-only surfaces otherwise).
+    out property <color> ptt1: root.dark ? #1a2430 : #ffffff;
+    out property <color> ptt2: root.dark ? #131b24 : #eef2f7;
+    out property <color> pttpress: root.dark ? #24303d : #e4e9ef;
+    out property <color> bubblein: root.dark ? #1b2732 : #e9eef4;
+    out property <color> bubbleinpress: root.dark ? #24333f : #dde4ec;
 }
 
 // Line icon rendered from an SVG path (24x24 viewbox), like the reference UI icons.
@@ -301,7 +325,7 @@ component StatusBar inherits Rectangle {
     // Green only when attached AND in service; red otherwise.
     property <bool> ok: root.registered && root.in-service;
     height: 70px;
-    background: @linear-gradient(180deg, #0e1822 0%, #0b131b 100%);
+    background: @linear-gradient(180deg, Palette.panel1 0%, Palette.panel2 100%);
 
     HorizontalLayout {
         padding-left: 18px;
@@ -374,7 +398,7 @@ component Header inherits Rectangle {
     in property <string> title;
     in property <bool> muted;
     height: 60px;
-    background: @linear-gradient(180deg, #0e1822 0%, #0b131b 100%);
+    background: @linear-gradient(180deg, Palette.panel1 0%, Palette.panel2 100%);
     Text {
         text: root.title;
         color: root.muted ? Palette.muted : Palette.txt;
@@ -395,7 +419,7 @@ component CyclerArrow inherits Rectangle {
     border-radius: 20px;
     border-width: 1px;
     border-color: Palette.line2;
-    background: touch.pressed ? #1b2836 : @linear-gradient(160deg, #17222f 0%, #0f1822 100%);
+    background: touch.pressed ? Palette.press2 : @linear-gradient(160deg, Palette.surface2 0%, Palette.key1 100%);
     opacity: root.enabled ? 1.0 : 0.3;
     touch := TouchArea {
         enabled: root.enabled;
@@ -420,7 +444,7 @@ component FolderButton inherits Rectangle {
     border-radius: 18px;
     border-width: 1px;
     border-color: Palette.line;
-    background: touch.pressed ? #1b2836 : Palette.surface;
+    background: touch.pressed ? Palette.press2 : Palette.surface;
     horizontal-stretch: 0;
     touch := TouchArea {
         clicked => {
@@ -548,7 +572,7 @@ component SecondaryButton inherits Rectangle {
     border-radius: 14px;
     border-width: 1px;
     border-color: root.danger ? #f0555a80 : Palette.line2;
-    background: touch.pressed ? (root.danger ? #3a1a1c : #1b2836) : Palette.surface;
+    background: touch.pressed ? (root.danger ? #3a1a1c : Palette.press2) : Palette.surface;
     touch := TouchArea {
         clicked => {
             root.clicked();
@@ -590,8 +614,8 @@ component Ptt inherits Rectangle {
         : root.state == 1
             ? @linear-gradient(180deg, #7a5f1e 0%, #5c470f 100%)
             : (root.enabled
-                ? (touch.pressed ? @linear-gradient(180deg, #24303d 0%, #1a2430 100%)
-                                 : @linear-gradient(180deg, #1a2430 0%, #131b24 100%))
+                ? (touch.pressed ? @linear-gradient(180deg, Palette.pttpress 0%, Palette.ptt1 100%)
+                                 : @linear-gradient(180deg, Palette.ptt1 0%, Palette.ptt2 100%))
                 : @linear-gradient(180deg, #1b1d22 0%, #141519 100%));
     opacity: root.enabled ? 1.0 : 0.7;
     touch := TouchArea {
@@ -647,7 +671,7 @@ component Softkey inherits Rectangle {
     border-color: root.danger ? #b5343a : Palette.line;
     background: root.danger
         ? @linear-gradient(180deg, #d23b41 0%, #a82a2f 100%)
-        : (touch.pressed ? #16202b : Palette.surface);
+        : (touch.pressed ? Palette.press : Palette.surface);
     opacity: root.enabled ? 1.0 : 0.35;
     touch := TouchArea {
         enabled: root.enabled;
@@ -732,7 +756,7 @@ component ListRow inherits Rectangle {
     border-radius: 16px;
     border-width: 1px;
     border-color: root.selected ? #33a7dd80 : Palette.line;
-    background: touch.pressed ? #16202b : (root.selected ? #33a7dd1a : Palette.surface);
+    background: touch.pressed ? Palette.press : (root.selected ? #33a7dd1a : Palette.surface);
     touch := TouchArea {
         clicked => {
             root.clicked();
@@ -827,7 +851,7 @@ component HomeScreen inherits Rectangle {
     callback group-ptt-up;
     callback hangup-group;
 
-    property <color> badge-fg: root.badge-kind == 2 ? #ff9a9d : (root.badge-kind == 1 ? #7ecbef : Palette.muted);
+    property <color> badge-fg: root.badge-kind == 2 ? #ff9a9d : (root.badge-kind == 1 ? Palette.accenttx3 : Palette.muted);
     property <color> badge-bg: root.badge-kind == 2 ? #d23b4133 : (root.badge-kind == 1 ? #33a7dd29 : #ffffff10);
 
     background: transparent;
@@ -927,7 +951,7 @@ component HomeScreen inherits Rectangle {
                         x: (parent.width - self.width) / 2;
                         y: (parent.height - self.height) / 2;
                         text: root.group-talker-id;
-                        color: #cfe9ff;
+                        color: Palette.accenttx2;
                         font-size: 40px;
                         font-weight: 700;
                         horizontal-alignment: center;
@@ -1026,7 +1050,7 @@ component HomeScreen inherits Rectangle {
                             padding-right: 16px;
                             Text {
                                 text: "SCAN - " + root.attached-count + " groups";
-                                color: #7ecbef;
+                                color: Palette.accenttx3;
                                 font-size: 13px;
                                 font-weight: 700;
                                 letter-spacing: 1px;
@@ -1318,7 +1342,7 @@ component AlertOverlay inherits Rectangle {
             }
             Text {
                 text: root.title;
-                color: #ffffff;
+                color: Palette.txt;
                 font-size: 28px;
                 font-weight: 800;
                 horizontal-alignment: center;
@@ -1407,7 +1431,7 @@ component ConfirmOverlay inherits Rectangle {
             }
             Text {
                 text: root.title;
-                color: #ffffff;
+                color: Palette.txt;
                 font-size: 28px;
                 font-weight: 800;
                 horizontal-alignment: center;
@@ -1609,7 +1633,7 @@ component TagPill inherits Rectangle {
         padding-right: 10px;
         Text {
             text: root.tag == 2 ? "TX" : "SCAN";
-            color: root.tag == 2 ? #79dfa0 : #7ecbef;
+            color: root.tag == 2 ? #79dfa0 : Palette.accenttx3;
             font-size: 11px;
             font-weight: 800;
             letter-spacing: 0.8px;
@@ -1632,7 +1656,7 @@ component GroupRowView inherits Rectangle {
     border-width: 1px;
     border-color: root.is-tx ? #37c06a55 : Palette.line;
     clip: true;
-    background: touch.pressed ? #16202b : Palette.surface;
+    background: touch.pressed ? Palette.press : Palette.surface;
     touch := TouchArea {
         clicked => {
             root.select();
@@ -1871,7 +1895,7 @@ component TargetSeg inherits Rectangle {
         width: parent.width - 12px;
         height: 100%;
         text: root.label;
-        color: root.selected ? #9fd3ef : Palette.muted;
+        color: root.selected ? Palette.accenttx1 : Palette.muted;
         // Large by default, shrinking for longer labels so the text fills the button
         // without overflowing. Width-based auto-fit forms a layout binding loop in
         // Slint, so scale off the character count instead.
@@ -1956,7 +1980,7 @@ component ContactDetailScreen inherits Rectangle {
                 }
                 if root.callsign != "": Text {
                     text: root.callsign;
-                    color: #9fd3ef;
+                    color: Palette.accenttx1;
                     font-size: 16px;
                     horizontal-alignment: center;
                 }
@@ -2045,8 +2069,8 @@ component KeyCap inherits Rectangle {
     opacity: root.enabled ? 1.0 : 0.35;
     border-color: root.active ? Palette.accent : Palette.line2;
     background: kt.pressed
-        ? #1b2836
-        : (root.active ? #33a7dd29 : @linear-gradient(180deg, #17222f 0%, #0f1822 100%));
+        ? Palette.press2
+        : (root.active ? #33a7dd29 : @linear-gradient(180deg, Palette.surface2 0%, Palette.key1 100%));
     kt := TouchArea {
         enabled: root.enabled;
         clicked => {
@@ -2057,14 +2081,14 @@ component KeyCap inherits Rectangle {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
         d: root.icon;
-        tint: #e8f0f6;
+        tint: Palette.keytx;
         size: 28px;
     }
     if root.icon == "": Text {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
         text: root.caps ? root.label.to-uppercase() : root.label;
-        color: #e8f0f6;
+        color: Palette.keytx;
         font-size: 28px;
         font-weight: 600;
     }
@@ -2538,7 +2562,7 @@ component ConvRowView inherits Rectangle {
     border-radius: 16px;
     border-width: 1px;
     border-color: root.selected ? #33a7dd80 : Palette.line;
-    background: touch.pressed ? #16202b : (root.selected ? #33a7dd1a : Palette.surface);
+    background: touch.pressed ? Palette.press : (root.selected ? #33a7dd1a : Palette.surface);
     hold-timer := Timer {
         interval: 500ms;
         running: false;
@@ -2710,7 +2734,7 @@ component MsgBubble inherits Rectangle {
         Rectangle {
             max-width: 520px;
             border-radius: 14px;
-            background: bubble-touch.pressed ? (root.outgoing ? #2a7fb0 : #24333f) : (root.outgoing ? #1f6f9e : #1b2732);
+            background: bubble-touch.pressed ? (root.outgoing ? #2a7fb0 : Palette.bubbleinpress) : (root.outgoing ? #1f6f9e : Palette.bubblein);
             hold-timer := Timer {
                 interval: 500ms;
                 running: false;
@@ -2739,7 +2763,7 @@ component MsgBubble inherits Rectangle {
                 spacing: 3px;
                 Text {
                     text: root.text;
-                    color: #eef6fb;
+                    color: root.outgoing ? #eef6fb : Palette.txt;
                     font-size: 18px;
                     wrap: word-wrap;
                 }
@@ -3038,7 +3062,7 @@ component CycleRow inherits Rectangle {
     border-radius: 12px;
     border-width: 1px;
     border-color: Palette.line2;
-    background: touch.pressed ? #16202b : Palette.surface;
+    background: touch.pressed ? Palette.press : Palette.surface;
     touch := TouchArea {
         clicked => {
             root.tapped();
@@ -3296,7 +3320,7 @@ component TreeFolderHeader inherits Rectangle {
     callback edit;
     height: 88px;
     border-radius: 12px;
-    background: touch.pressed ? #1b2836 : #16202b;
+    background: touch.pressed ? Palette.press2 : Palette.press;
     border-width: 1px;
     border-color: Palette.line;
     touch := TouchArea {
@@ -3338,7 +3362,7 @@ component TreeFolderHeader inherits Rectangle {
                     padding-right: 14px;
                     Text {
                         text: root.sub;
-                        color: #9fd3ef;
+                        color: Palette.accenttx1;
                         font-size: 19px;
                         font-weight: 700;
                         vertical-alignment: center;
@@ -3374,7 +3398,7 @@ component TreeGroupRow inherits Rectangle {
     callback move-down;
     height: 76px;
     border-radius: 12px;
-    background: touch.pressed ? #16202b : Palette.surface;
+    background: touch.pressed ? Palette.press : Palette.surface;
     border-width: 1px;
     border-color: Palette.line;
     touch := TouchArea {
@@ -3443,7 +3467,7 @@ component TreeAddRow inherits Rectangle {
     callback tapped;
     height: 58px;
     border-radius: 10px;
-    background: touch.pressed ? #16202b : transparent;
+    background: touch.pressed ? Palette.press : transparent;
     border-width: 1px;
     border-color: #ffffff14;
     touch := TouchArea {
@@ -3461,7 +3485,7 @@ component TreeAddRow inherits Rectangle {
         VerticalLayout {
             alignment: center;
             horizontal-stretch: 1;
-            Text { text: root.label; color: #9fd3ef; font-size: 15px; font-weight: 600; }
+            Text { text: root.label; color: Palette.accenttx1; font-size: 15px; font-weight: 600; }
         }
     }
 }
@@ -3728,7 +3752,7 @@ component RingtoneScreen inherits Rectangle {
                 border-radius: 12px;
                 border-width: 1px;
                 border-color: i == root.category ? Palette.accent : Palette.line2;
-                background: i == root.category ? #33a7dd1f : (seg.pressed ? #1b2836 : Palette.surface);
+                background: i == root.category ? #33a7dd1f : (seg.pressed ? Palette.press2 : Palette.surface);
                 seg := TouchArea {
                     clicked => {
                         root.pick-category(i);
@@ -3738,7 +3762,7 @@ component RingtoneScreen inherits Rectangle {
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
                     text: label;
-                    color: i == root.category ? #9fd3ef : Palette.txt;
+                    color: i == root.category ? Palette.accenttx1 : Palette.txt;
                     font-size: 15px;
                     font-weight: i == root.category ? 800 : 600;
                 }
@@ -3915,7 +3939,7 @@ component RecentRowView inherits Rectangle {
     border-width: 1px;
     border-color: Palette.line;
     clip: true;
-    background: touch.pressed ? #16202b : Palette.surface;
+    background: touch.pressed ? Palette.press : Palette.surface;
     hold-timer := Timer {
         interval: 500ms;
         running: false;
@@ -4045,7 +4069,7 @@ component RecentsScreen inherits Rectangle {
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
                     text: "All";
-                    color: !root.missed-only ? #9fd3ef : Palette.muted;
+                    color: !root.missed-only ? Palette.accenttx1 : Palette.muted;
                     font-size: 16px;
                     font-weight: 700;
                 }
@@ -4537,7 +4561,7 @@ component InCallScreen inherits Rectangle {
                 }
                 Text {
                     text: root.peer;
-                    color: #ffffff;
+                    color: Palette.txt;
                     font-size: 60px;
                     font-weight: 800;
                     horizontal-alignment: center;
@@ -4560,7 +4584,7 @@ component InCallScreen inherits Rectangle {
                 }
                 if root.clock != "": Text {
                     text: root.clock;
-                    color: #cfe9ff;
+                    color: Palette.accenttx2;
                     font-size: 46px;
                     font-weight: 800;
                     horizontal-alignment: center;
@@ -4575,10 +4599,10 @@ component InCallScreen inherits Rectangle {
                 border-radius: 12px;
                 border-width: 1px;
                 border-color: Palette.line2;
-                background: #0b1119;
+                background: Palette.readout;
                 Text {
                     text: root.digits == "" ? "DTMF" : root.digits;
-                    color: root.digits == "" ? Palette.faint : #cfe9ff;
+                    color: root.digits == "" ? Palette.faint : Palette.accenttx2;
                     font-size: 32px;
                     font-weight: 700;
                     letter-spacing: 3px;
@@ -4640,7 +4664,7 @@ component InCallScreen inherits Rectangle {
                     }
                     Text {
                         text: root.peer;
-                        color: #ffffff;
+                        color: Palette.txt;
                         font-size: 68px;
                         font-weight: 800;
                         horizontal-alignment: center;
@@ -4663,7 +4687,7 @@ component InCallScreen inherits Rectangle {
                     }
                     if root.clock != "": Text {
                         text: root.clock;
-                        color: #cfe9ff;
+                        color: Palette.accenttx2;
                         font-size: 50px;
                         font-weight: 800;
                         horizontal-alignment: center;
@@ -4714,12 +4738,12 @@ component InCallScreen inherits Rectangle {
                 border-radius: 14px;
                 border-width: 1px;
                 border-color: Palette.line2;
-                background: #0b1119;
+                background: Palette.readout;
                 Text {
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
                     text: root.digits == "" ? "DTMF" : root.digits;
-                    color: root.digits == "" ? Palette.faint : #cfe9ff;
+                    color: root.digits == "" ? Palette.faint : Palette.accenttx2;
                     font-size: 38px;
                     font-weight: 700;
                     letter-spacing: 3px;
@@ -4769,7 +4793,7 @@ component IncomingOverlay inherits Rectangle {
     width: 100%;
     height: 100%;
     // Full-screen opaque incoming-call view (matches the app background).
-    background: @linear-gradient(180deg, #0f1620 0%, #0a0f16 100%);
+    background: @linear-gradient(180deg, Palette.glass1 0%, Palette.glass2 100%);
     VerticalLayout {
         padding: 26px;
         padding-bottom: 30px;
@@ -4808,7 +4832,7 @@ component IncomingOverlay inherits Rectangle {
                 }
                 Text {
                     text: root.peer;
-                    color: #ffffff;
+                    color: Palette.txt;
                     font-size: 52px;
                     font-weight: 800;
                     horizontal-alignment: center;
@@ -4816,7 +4840,7 @@ component IncomingOverlay inherits Rectangle {
                 }
                 Text {
                     text: root.sub;
-                    color: #9fd3ef;
+                    color: Palette.accenttx1;
                     font-size: 27px;
                     font-weight: 600;
                     horizontal-alignment: center;
@@ -4896,7 +4920,7 @@ component DialKey inherits Rectangle {
     border-radius: 16px;
     border-width: 1px;
     border-color: Palette.line2;
-    background: touch.pressed ? #1b2836 : @linear-gradient(180deg, #17222f 0%, #0f1822 100%);
+    background: touch.pressed ? Palette.press2 : @linear-gradient(180deg, Palette.surface2 0%, Palette.key1 100%);
     hold-timer := Timer {
         interval: 450ms;
         running: false;
@@ -4928,7 +4952,7 @@ component DialKey inherits Rectangle {
         spacing: 0px;
         Text {
             text: root.text;
-            color: #e8f0f6;
+            color: Palette.keytx;
             font-size: 30px;
             font-weight: 600;
             horizontal-alignment: center;
@@ -5031,7 +5055,7 @@ component DialerScreen inherits Rectangle {
                         x: (parent.width - self.width) / 2;
                         y: (parent.height - self.height) / 2;
                         text: root.number;
-                        color: #ffffff;
+                        color: Palette.txt;
                         font-size: 44px;
                         font-weight: 800;
                         letter-spacing: 2px;
@@ -5058,7 +5082,7 @@ component DialerScreen inherits Rectangle {
                         border-radius: 16px;
                         border-width: 1px;
                         border-color: Palette.line2;
-                        background: rec-ta.pressed ? #16202b : Palette.surface;
+                        background: rec-ta.pressed ? Palette.press : Palette.surface;
                         rec-ta := TouchArea {
                             clicked => {
                                 root.open-recents();
@@ -5104,7 +5128,7 @@ component DialerScreen inherits Rectangle {
                         border-radius: 16px;
                         border-width: 1px;
                         border-color: Palette.line2;
-                        background: con-ta.pressed ? #16202b : Palette.surface;
+                        background: con-ta.pressed ? Palette.press : Palette.surface;
                         con-ta := TouchArea {
                             clicked => {
                                 root.open-contacts();
@@ -5178,7 +5202,7 @@ component DialerScreen inherits Rectangle {
                 border-radius: 16px;
                 border-width: 1px;
                 border-color: Palette.line2;
-                background: cltouch.pressed ? #1b2836 : Palette.surface;
+                background: cltouch.pressed ? Palette.press2 : Palette.surface;
                 opacity: root.number == "" ? 0.4 : 1.0;
                 cltouch := TouchArea {
                     enabled: root.number != "";
@@ -5225,7 +5249,7 @@ component DialerScreen inherits Rectangle {
                 border-radius: 16px;
                 border-width: 1px;
                 border-color: Palette.line2;
-                background: bstouch.pressed ? #1b2836 : Palette.surface;
+                background: bstouch.pressed ? Palette.press2 : Palette.surface;
                 opacity: root.number == "" ? 0.4 : 1.0;
                 bstouch := TouchArea {
                     enabled: root.number != "";
@@ -5317,7 +5341,7 @@ component DialerScreen inherits Rectangle {
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
                     text: root.number;
-                    color: #ffffff;
+                    color: Palette.txt;
                     font-size: 44px;
                     font-weight: 800;
                     letter-spacing: 2px;
@@ -5340,7 +5364,7 @@ component DialerScreen inherits Rectangle {
                     border-radius: 16px;
                     border-width: 1px;
                     border-color: Palette.line2;
-                    background: wrec.pressed ? #16202b : Palette.surface;
+                    background: wrec.pressed ? Palette.press : Palette.surface;
                     wrec := TouchArea { clicked => { root.open-recents(); } }
                     HorizontalLayout {
                         alignment: center;
@@ -5354,7 +5378,7 @@ component DialerScreen inherits Rectangle {
                     border-radius: 16px;
                     border-width: 1px;
                     border-color: Palette.line2;
-                    background: wcon.pressed ? #16202b : Palette.surface;
+                    background: wcon.pressed ? Palette.press : Palette.surface;
                     wcon := TouchArea { clicked => { root.open-contacts(); } }
                     HorizontalLayout {
                         alignment: center;
@@ -5395,7 +5419,7 @@ component DialerScreen inherits Rectangle {
                     border-radius: 16px;
                     border-width: 1px;
                     border-color: Palette.line2;
-                    background: wdel.pressed ? #1b2836 : Palette.surface;
+                    background: wdel.pressed ? Palette.press2 : Palette.surface;
                     opacity: root.number == "" ? 0.4 : 1.0;
                     wdel := TouchArea { enabled: root.number != ""; clicked => { root.key("clear"); } }
                     Icon { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; d: Icons.close; tint: Palette.muted; size: 30px; }
@@ -5417,7 +5441,7 @@ component DialerScreen inherits Rectangle {
                     border-radius: 16px;
                     border-width: 1px;
                     border-color: Palette.line2;
-                    background: wbs.pressed ? #1b2836 : Palette.surface;
+                    background: wbs.pressed ? Palette.press2 : Palette.surface;
                     opacity: root.number == "" ? 0.4 : 1.0;
                     wbs := TouchArea { enabled: root.number != ""; clicked => { root.key("back"); } }
                     Icon { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; d: Icons.backspace; tint: Palette.muted; size: 30px; }
@@ -5489,7 +5513,7 @@ component NavItem inherits Rectangle {
     border-radius: 14px;
     border-width: 1px;
     border-color: root.selected ? #33a7dd44 : #00000000;
-    background: root.selected ? #12222f : (touch.pressed ? #101a24 : #00000000);
+    background: root.selected ? #12222f : (touch.pressed ? Palette.railpress : #00000000);
     touch := TouchArea {
         clicked => {
             root.clicked();
@@ -5544,7 +5568,7 @@ export component MainWindow inherits Window {
     in property <length> win-height: 1280px;
     width: root.win-width;
     height: root.win-height;
-    background: @linear-gradient(180deg, #0f1620 0%, #0a0f16 100%);
+    background: @linear-gradient(180deg, Palette.glass1 0%, Palette.glass2 100%);
 
     in property <DeviceInput> device-input: DeviceInput.Touch;
     // Landscape device (e.g. pi-1280x720): use the wide MTM-style shell (status
@@ -6015,7 +6039,7 @@ export component MainWindow inherits Window {
         // its own identity + Mute/Hang up controls).
         if root.landscape && root.screen != Screen.Home && root.screen != Screen.InCall: Rectangle {
             height: 68px;
-            background: @linear-gradient(180deg, #0e1822 0%, #0b131b 100%);
+            background: @linear-gradient(180deg, Palette.panel1 0%, Palette.panel2 100%);
             HorizontalLayout {
                 padding-left: 22px;
                 padding-right: 14px;
@@ -6178,7 +6202,7 @@ export component MainWindow inherits Window {
                                 x: (parent.width - self.width) / 2;
                                 y: (parent.height - self.height) / 2;
                                 text: root.group-talker-id;
-                                color: #cfe9ff;
+                                color: Palette.accenttx2;
                                 font-size: 38px;
                                 font-weight: 700;
                             }
@@ -6240,7 +6264,7 @@ export component MainWindow inherits Window {
                                     alignment: center;
                                     Badge {
                                         text: root.badge;
-                                        fg: root.badge-kind == 2 ? #ff9a9d : (root.badge-kind == 1 ? #7ecbef : Palette.muted);
+                                        fg: root.badge-kind == 2 ? #ff9a9d : (root.badge-kind == 1 ? Palette.accenttx3 : Palette.muted);
                                         bg: root.badge-kind == 2 ? #d23b4133 : (root.badge-kind == 1 ? #33a7dd29 : #ffffff10);
                                     }
                                 }
@@ -6714,7 +6738,7 @@ export component MainWindow inherits Window {
                 if root.msg-thread-title != "": VerticalLayout {
                     Rectangle {
                         height: 58px;
-                        background: @linear-gradient(180deg, #0e1822 0%, #0b131b 100%);
+                        background: @linear-gradient(180deg, Palette.panel1 0%, Palette.panel2 100%);
                         HorizontalLayout {
                             padding-left: 18px;
                             padding-right: 14px;
@@ -6947,7 +6971,7 @@ export component MainWindow inherits Window {
         // screen. Landscape uses the right action column instead.
         if !root.landscape: Rectangle {
             height: 108px;
-            background: @linear-gradient(180deg, #0c141d 0%, #0a1017 100%);
+            background: @linear-gradient(180deg, Palette.rail1 0%, Palette.rail2 100%);
             HorizontalLayout {
                 padding-top: 14px;
                 padding-bottom: 14px;
@@ -7045,7 +7069,7 @@ export component MainWindow inherits Window {
         y: 70px;
         width: 170px;
         height: root.height - 70px;
-        background: @linear-gradient(180deg, #0c141d 0%, #0a1017 100%);
+        background: @linear-gradient(180deg, Palette.rail1 0%, Palette.rail2 100%);
         Rectangle {
             x: parent.width - 1px;
             width: 1px;
@@ -7107,7 +7131,7 @@ export component MainWindow inherits Window {
             Rectangle {
                 height: 78px;
                 border-radius: 14px;
-                background: (root.screen != Screen.Home && backarea.pressed) ? #101a24 : #00000000;
+                background: (root.screen != Screen.Home && backarea.pressed) ? Palette.railpress : #00000000;
                 opacity: root.screen == Screen.Home ? 0.32 : 1.0;
                 backarea := TouchArea {
                     enabled: root.screen != Screen.Home;

@@ -58,6 +58,7 @@ scale  = 1.0
 # the image is upside down for your mount. Ignored on desktop. Touch needs a
 # matching libinput calibration matrix - see PI_SETUP.md.
 # rotation = 90         # overrides the model's rotation
+# theme: "classic" (dark, default) or "light" for the light colour scheme.
 theme  = "classic"
 
 # Device model catalog. Add your own panels here and select one via [ui].model.

@@ -124,6 +124,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Landscape panels (wider than tall, e.g. pi-1280x720) use the MTM-style wide
     // shell: status strip + left nav rail + content + right action column.
     window.set_landscape(ui.width > ui.height);
+    // Colour theme from [ui].theme: "light" selects the light palette; anything
+    // else (e.g. "classic") keeps the dark palette.
+    window
+        .global::<Palette>()
+        .set_dark(!ui.theme.eq_ignore_ascii_case("light"));
 
     // --- Wire the network + app event loop --------------------------------
     let (events_tx, events_rx) = crossbeam_channel::unbounded::<app::AppEvent>();
