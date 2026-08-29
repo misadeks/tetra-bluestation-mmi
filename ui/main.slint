@@ -1867,7 +1867,10 @@ component TargetSeg inherits Rectangle {
         height: 100%;
         text: root.label;
         color: root.selected ? #9fd3ef : Palette.muted;
-        font-size: 18px;
+        // Large by default, shrinking for longer labels so the text fills the button
+        // without overflowing. Width-based auto-fit forms a layout binding loop in
+        // Slint, so scale off the character count instead.
+        font-size: max(14px, 30px - (max(0, root.label.character-count - 5) * 1.5px));
         font-weight: 700;
         horizontal-alignment: center;
         vertical-alignment: center;
