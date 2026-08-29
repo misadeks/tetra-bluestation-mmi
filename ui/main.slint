@@ -6308,6 +6308,8 @@ export component MainWindow inherits Window {
                                 font-weight: 700;
                             }
                         }
+                        // Push Hang up toward the bottom, away from the call info.
+                        Rectangle { vertical-stretch: 1; min-height: 40px; }
                         HorizontalLayout {
                             alignment: center;
                             DangerButton {
@@ -6319,6 +6321,7 @@ export component MainWindow inherits Window {
                                 }
                             }
                         }
+                        Rectangle { height: 12px; }
                     }
                     // Idle: folder selector + talkgroup cycler.
                     if !root.group-call-active: VerticalLayout {
