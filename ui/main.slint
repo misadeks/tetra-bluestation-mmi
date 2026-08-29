@@ -5805,32 +5805,10 @@ export component MainWindow inherits Window {
             height: 60px;
             background: @linear-gradient(180deg, #0e1822 0%, #0b131b 100%);
             HorizontalLayout {
-                padding-left: 10px;
+                padding-left: 20px;
                 padding-right: 12px;
                 spacing: 10px;
-                if root.screen != Screen.InCall: Rectangle {
-                    width: 104px;
-                    border-radius: 12px;
-                    background: lsback.pressed ? #16202b : #00000000;
-                    lsback := TouchArea {
-                        clicked => {
-                            root.nav-back();
-                        }
-                    }
-                    HorizontalLayout {
-                        padding-left: 12px;
-                        spacing: 7px;
-                        alignment: start;
-                        VerticalLayout {
-                            alignment: center;
-                            Icon { d: Icons.back; tint: Palette.accent; size: 22px; }
-                        }
-                        VerticalLayout {
-                            alignment: center;
-                            Text { text: "Back"; color: Palette.accent; font-size: 19px; font-weight: 700; }
-                        }
-                    }
-                }
+                // Back lives at the bottom of the nav rail (fixed anchor), not here.
                 VerticalLayout {
                     alignment: center;
                     horizontal-stretch: 1;
@@ -6829,6 +6807,46 @@ export component MainWindow inherits Window {
                 selected: root.screen == Screen.Menu;
                 clicked => {
                     root.screen = Screen.Menu;
+                }
+            }
+            // Divider: separates the "leave/cancel" Back from the destinations above.
+            Rectangle {
+                height: 1px;
+                background: Palette.line2;
+            }
+            // Fixed Back: always in the same spot (bottom-left, thumb-reachable);
+            // pops the nav history one level. Dim + inert on Home (nowhere to go).
+            Rectangle {
+                height: 66px;
+                border-radius: 14px;
+                background: (root.screen != Screen.Home && backarea.pressed) ? #101a24 : #00000000;
+                opacity: root.screen == Screen.Home ? 0.32 : 1.0;
+                backarea := TouchArea {
+                    enabled: root.screen != Screen.Home;
+                    clicked => {
+                        root.nav-back();
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 6px;
+                    Rectangle {
+                        height: 26px;
+                        Icon {
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            d: Icons.back;
+                            tint: Palette.muted;
+                            size: 24px;
+                        }
+                    }
+                    Text {
+                        text: "Back";
+                        color: Palette.muted;
+                        font-size: 14px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                    }
                 }
             }
         }
