@@ -7055,13 +7055,12 @@ export component MainWindow inherits Window {
                 }
             }
             NavItem {
-                icon: Icons.message;
-                label: "Messages";
-                badge-count: root.msg-unread;
-                selected: root.screen == Screen.Messages;
+                icon: Icons.users;
+                label: "Contacts";
+                selected: root.screen == Screen.Contacts;
                 clicked => {
-                    root.open-messages();
-                    root.screen = Screen.Messages;
+                    root.contact-search-clear();
+                    root.screen = Screen.Contacts;
                 }
             }
             Rectangle { vertical-stretch: 1; }
