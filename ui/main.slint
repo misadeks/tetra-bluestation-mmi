@@ -469,6 +469,7 @@ component PrimaryButton inherits Rectangle {
     in property <string> text;
     in property <bool> enabled: true;
     in property <string> icon: Icons.check;
+    in property <length> text-size: 20px;
     callback clicked;
     height: 74px;
     border-radius: 16px;
@@ -494,7 +495,7 @@ component PrimaryButton inherits Rectangle {
         Text {
             text: root.text;
             color: root.enabled ? #8fe6ab : Palette.muted;
-            font-size: 20px;
+            font-size: root.text-size;
             font-weight: 700;
             vertical-alignment: center;
         }
@@ -541,6 +542,7 @@ component SecondaryButton inherits Rectangle {
     in property <string> text;
     in property <string> icon;
     in property <bool> danger: false;
+    in property <length> text-size: 20px;
     callback clicked;
     height: 74px;
     border-radius: 14px;
@@ -562,7 +564,7 @@ component SecondaryButton inherits Rectangle {
         Text {
             text: root.text;
             color: root.danger ? #ff9a9d : Palette.txt;
-            font-size: 20px;
+            font-size: root.text-size;
             font-weight: 600;
             vertical-alignment: center;
         }
@@ -6258,6 +6260,7 @@ export component MainWindow inherits Window {
                             PrimaryButton {
                                 width: root.show-cancel-select ? 340px : 460px;
                                 height: 78px;
+                                text-size: 27px;
                                 text: root.badge-kind == 2 ? "On air" : "Select talkgroup";
                                 enabled: root.select-enabled;
                                 clicked => {
@@ -6267,6 +6270,7 @@ export component MainWindow inherits Window {
                             if root.show-cancel-select: SecondaryButton {
                                 width: 200px;
                                 height: 78px;
+                                text-size: 27px;
                                 text: "Cancel";
                                 clicked => {
                                     root.cancel-select();
