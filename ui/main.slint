@@ -4726,6 +4726,9 @@ component DialKey inherits Rectangle {
 component DialerScreen inherits Rectangle {
     in property <string> number;
     in property <string> recent-hint;
+    // Wide (landscape) layout: number + gateway targets on the left, keypad on
+    // the right, so it fits a short/wide content area without overlapping.
+    in property <bool> wide: false;
     // Selectable targets: index 0 = Private (ISSI), then one per codeplug gateway.
     in property <[DialTarget]> targets: [{ label: "Private", max-len: 8 }];
     // Currently selected target index.
@@ -4739,7 +4742,7 @@ component DialerScreen inherits Rectangle {
     callback open-recents;
     callback open-contacts;
     background: transparent;
-    VerticalLayout {
+    if !root.wide: VerticalLayout {
         padding: 18px;
         spacing: 12px;
 
@@ -5030,6 +5033,191 @@ component DialerScreen inherits Rectangle {
             state: 0;
             press-down => {
                 root.place-call(root.sel, false);
+            }
+        }
+    }
+
+    // Wide (landscape) dialer: targets + number + shortcuts on the left, keypad
+    // and call actions on the right. Same key/place-call logic as the portrait
+    // body (shared component state), just arranged to fit a short/wide area.
+    if root.wide: HorizontalLayout {
+        padding: 18px;
+        spacing: 20px;
+        // LEFT: gateway targets, number display, Recents/Contacts shortcuts.
+        VerticalLayout {
+            horizontal-stretch: 5;
+            spacing: 12px;
+            VerticalLayout {
+                spacing: 8px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    if root.targets.length > 0: TargetSeg {
+                        label: root.targets[0].label;
+                        selected: root.sel == 0;
+                        clicked => { root.sel = 0; root.key("max\{root.targets[0].max-len}"); }
+                    }
+                    if root.targets.length > 1: TargetSeg {
+                        label: root.targets[1].label;
+                        selected: root.sel == 1;
+                        clicked => { root.sel = 1; root.key("max\{root.targets[1].max-len}"); }
+                    }
+                    if root.targets.length > 2: TargetSeg {
+                        label: root.targets[2].label;
+                        selected: root.sel == 2;
+                        clicked => { root.sel = 2; root.key("max\{root.targets[2].max-len}"); }
+                    }
+                }
+                if root.targets.length > 3: HorizontalLayout {
+                    spacing: 8px;
+                    TargetSeg {
+                        label: root.targets[3].label;
+                        selected: root.sel == 3;
+                        clicked => { root.sel = 3; root.key("max\{root.targets[3].max-len}"); }
+                    }
+                    if root.targets.length > 4: TargetSeg {
+                        label: root.targets[4].label;
+                        selected: root.sel == 4;
+                        clicked => { root.sel = 4; root.key("max\{root.targets[4].max-len}"); }
+                    }
+                    if root.targets.length > 5: TargetSeg {
+                        label: root.targets[5].label;
+                        selected: root.sel == 5;
+                        clicked => { root.sel = 5; root.key("max\{root.targets[5].max-len}"); }
+                    }
+                }
+            }
+            Rectangle {
+                vertical-stretch: 1;
+                border-radius: 16px;
+                border-width: 1px;
+                border-color: Palette.line2;
+                background: Palette.surface;
+                if root.number != "": Text {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    text: root.number;
+                    color: #ffffff;
+                    font-size: 46px;
+                    font-weight: 800;
+                    letter-spacing: 2px;
+                    overflow: elide;
+                }
+                if root.number == "": Text {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    text: "Enter a number";
+                    color: Palette.faint;
+                    font-size: 26px;
+                    font-weight: 700;
+                }
+            }
+            HorizontalLayout {
+                spacing: 10px;
+                Rectangle {
+                    height: 72px;
+                    horizontal-stretch: 1;
+                    border-radius: 16px;
+                    border-width: 1px;
+                    border-color: Palette.line2;
+                    background: wrec.pressed ? #16202b : Palette.surface;
+                    wrec := TouchArea { clicked => { root.open-recents(); } }
+                    HorizontalLayout {
+                        padding-left: 14px;
+                        spacing: 12px;
+                        VerticalLayout { alignment: center; Icon { d: Icons.phone; tint: Palette.accent; size: 22px; } }
+                        VerticalLayout { alignment: center; Text { text: "Recents"; color: Palette.txt; font-size: 18px; font-weight: 700; } }
+                    }
+                }
+                Rectangle {
+                    height: 72px;
+                    horizontal-stretch: 1;
+                    border-radius: 16px;
+                    border-width: 1px;
+                    border-color: Palette.line2;
+                    background: wcon.pressed ? #16202b : Palette.surface;
+                    wcon := TouchArea { clicked => { root.open-contacts(); } }
+                    HorizontalLayout {
+                        padding-left: 14px;
+                        spacing: 12px;
+                        VerticalLayout { alignment: center; Icon { d: Icons.users; tint: #6fe0a0; size: 22px; } }
+                        VerticalLayout { alignment: center; Text { text: "Contacts"; color: Palette.txt; font-size: 18px; font-weight: 700; } }
+                    }
+                }
+            }
+        }
+        // RIGHT: keypad + call actions.
+        VerticalLayout {
+            horizontal-stretch: 4;
+            spacing: 10px;
+            for row in [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["*", "0", "#"]]: HorizontalLayout {
+                spacing: 10px;
+                for d in row: DialKey {
+                    text: d;
+                    sub: d == "0" ? "+" : "";
+                    horizontal-stretch: 1;
+                    clicked => {
+                        if (root.number.character-count < root.max-len) {
+                            root.key(d);
+                        }
+                    }
+                    long-press => {
+                        if (d == "0" && root.number.character-count < root.max-len) {
+                            root.key("+");
+                        }
+                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: 10px;
+                Rectangle {
+                    height: 76px;
+                    horizontal-stretch: 1;
+                    border-radius: 16px;
+                    border-width: 1px;
+                    border-color: Palette.line2;
+                    background: wdel.pressed ? #1b2836 : Palette.surface;
+                    opacity: root.number == "" ? 0.4 : 1.0;
+                    wdel := TouchArea { enabled: root.number != ""; clicked => { root.key("clear"); } }
+                    Icon { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; d: Icons.close; tint: Palette.muted; size: 30px; }
+                }
+                Rectangle {
+                    height: 76px;
+                    horizontal-stretch: 1;
+                    border-radius: 16px;
+                    border-width: 1px;
+                    border-color: #2bb76880;
+                    background: root.number == "" ? Palette.surface : (wcall.pressed ? #17402a : @linear-gradient(180deg, #2bb768 0%, #1f9a55 100%));
+                    opacity: root.number == "" ? 0.5 : 1.0;
+                    wcall := TouchArea { enabled: root.number != ""; clicked => { root.place-call(root.sel, true); } }
+                    Icon { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; d: Icons.phone; tint: root.number == "" ? Palette.muted : #ffffff; size: 32px; }
+                }
+                Rectangle {
+                    height: 76px;
+                    horizontal-stretch: 1;
+                    border-radius: 16px;
+                    border-width: 1px;
+                    border-color: Palette.line2;
+                    background: wbs.pressed ? #1b2836 : Palette.surface;
+                    opacity: root.number == "" ? 0.4 : 1.0;
+                    wbs := TouchArea { enabled: root.number != ""; clicked => { root.key("back"); } }
+                    Icon { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; d: Icons.backspace; tint: Palette.muted; size: 30px; }
+                }
+            }
+            // Simplex (PTT) private call - stands in for the portrait docked PTT.
+            if root.is-private: Rectangle {
+                height: 62px;
+                border-radius: 16px;
+                border-width: 1px;
+                border-color: #33a7dd66;
+                background: root.number == "" ? Palette.surface : (wsimp.pressed ? #16283a : #12212e);
+                opacity: root.number == "" ? 0.5 : 1.0;
+                wsimp := TouchArea { enabled: root.number != ""; clicked => { root.place-call(root.sel, false); } }
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 10px;
+                    VerticalLayout { alignment: center; Icon { d: Icons.mic; tint: #8fd8ff; size: 22px; } }
+                    VerticalLayout { alignment: center; Text { text: "Simplex (PTT) call"; color: #cfe9ff; font-size: 18px; font-weight: 700; } }
+                }
             }
         }
     }
@@ -5608,8 +5796,91 @@ export component MainWindow inherits Window {
             vertical-stretch: 1;
             VerticalLayout {
                 x: root.landscape ? 150px : 0px;
-                width: root.landscape ? parent.width - 400px : parent.width;
+                width: root.landscape ? parent.width - 150px : parent.width;
                 height: 100%;
+
+        // Landscape sub-screen header: Back + screen title (portrait uses the top
+        // Header bar + softkey Back instead; Home has no header in either).
+        if root.landscape && root.screen != Screen.Home: Rectangle {
+            height: 60px;
+            background: @linear-gradient(180deg, #0e1822 0%, #0b131b 100%);
+            HorizontalLayout {
+                padding-left: 10px;
+                padding-right: 12px;
+                spacing: 10px;
+                if root.screen != Screen.InCall: Rectangle {
+                    width: 104px;
+                    border-radius: 12px;
+                    background: lsback.pressed ? #16202b : #00000000;
+                    lsback := TouchArea {
+                        clicked => {
+                            root.nav-back();
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        spacing: 7px;
+                        alignment: start;
+                        VerticalLayout {
+                            alignment: center;
+                            Icon { d: Icons.back; tint: Palette.accent; size: 22px; }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Text { text: "Back"; color: Palette.accent; font-size: 19px; font-weight: 700; }
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: root.screen-title();
+                        color: Palette.txt;
+                        font-size: 22px;
+                        font-weight: 700;
+                        overflow: elide;
+                    }
+                }
+                // In-call controls live in the header (no right sidebar).
+                if root.screen == Screen.InCall: VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 132px;
+                        height: 46px;
+                        border-radius: 12px;
+                        border-width: 1px;
+                        border-color: Palette.line2;
+                        background: lsmute.pressed ? #1b2836 : Palette.surface;
+                        lsmute := TouchArea { clicked => { root.toggle-mute(); } }
+                        HorizontalLayout {
+                            alignment: center;
+                            spacing: 8px;
+                            VerticalLayout { alignment: center; Icon { d: root.call-muted ? Icons.mic-off : Icons.mic; tint: Palette.txt; size: 20px; } }
+                            VerticalLayout { alignment: center; Text { text: root.call-muted ? "Unmute" : "Mute"; color: Palette.txt; font-size: 17px; font-weight: 700; } }
+                        }
+                    }
+                }
+                if root.screen == Screen.InCall: VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 140px;
+                        height: 46px;
+                        border-radius: 12px;
+                        border-width: 1px;
+                        border-color: #f0555a80;
+                        background: lshang.pressed ? #3a1417 : @linear-gradient(180deg, #3a1417 0%, #2a0f12 100%);
+                        lshang := TouchArea { clicked => { root.hangup-call(); } }
+                        HorizontalLayout {
+                            alignment: center;
+                            spacing: 8px;
+                            VerticalLayout { alignment: center; Icon { d: Icons.phone-off; tint: #ff9a9d; size: 20px; } }
+                            VerticalLayout { alignment: center; Text { text: "Hang up"; color: #ff9a9d; font-size: 17px; font-weight: 700; } }
+                        }
+                    }
+                }
+            }
+        }
 
         if root.device-input == DeviceInput.Touch && !root.landscape && root.screen == Screen.Home: HomeScreen {
             vertical-stretch: 1;
@@ -5758,6 +6029,17 @@ export component MainWindow inherits Window {
                                 font-weight: 700;
                             }
                         }
+                        HorizontalLayout {
+                            alignment: center;
+                            DangerButton {
+                                width: 360px;
+                                height: 78px;
+                                text: "Hang up";
+                                clicked => {
+                                    root.hangup-group();
+                                }
+                            }
+                        }
                     }
                     // Idle: folder selector + talkgroup cycler.
                     if !root.group-call-active: VerticalLayout {
@@ -5814,6 +6096,28 @@ export component MainWindow inherits Window {
                                 enabled: root.can-cycle;
                                 clicked => {
                                     root.cycle-next();
+                                }
+                            }
+                        }
+                        // Select-talkgroup action (Cancel snaps back to the TX group).
+                        if root.has-codeplug: HorizontalLayout {
+                            alignment: center;
+                            spacing: 12px;
+                            PrimaryButton {
+                                width: root.show-cancel-select ? 340px : 460px;
+                                height: 78px;
+                                text: root.badge-kind == 2 ? "On air" : "Select talkgroup";
+                                enabled: root.select-enabled;
+                                clicked => {
+                                    root.select-talkgroup();
+                                }
+                            }
+                            if root.show-cancel-select: SecondaryButton {
+                                width: 200px;
+                                height: 78px;
+                                text: "Cancel";
+                                clicked => {
+                                    root.cancel-select();
                                 }
                             }
                         }
@@ -6317,6 +6621,7 @@ export component MainWindow inherits Window {
 
         if root.device-input == DeviceInput.Touch && root.screen == Screen.Dialer: DialerScreen {
             vertical-stretch: 1;
+            wide: root.landscape;
             number: root.dial-number;
             recent-hint: root.dial-recent-hint;
             targets: root.dial-targets;
@@ -6483,13 +6788,6 @@ export component MainWindow inherits Window {
         VerticalLayout {
             padding: 12px;
             spacing: 8px;
-            if root.screen != Screen.Home: NavItem {
-                icon: Icons.back;
-                label: "Back";
-                clicked => {
-                    root.nav-back();
-                }
-            }
             NavItem {
                 icon: Icons.home;
                 label: "Home";
@@ -6533,66 +6831,6 @@ export component MainWindow inherits Window {
                     root.screen = Screen.Menu;
                 }
             }
-        }
-    }
-
-    // ===== Landscape right action column (context softkeys) =====
-    if root.landscape: Rectangle {
-        x: root.width - 250px;
-        y: 70px;
-        width: 250px;
-        height: root.height - 70px;
-        background: @linear-gradient(180deg, #0b1119 0%, #080d13 100%);
-        Rectangle {
-            x: 0;
-            width: 1px;
-            height: 100%;
-            background: Palette.line2;
-        }
-        VerticalLayout {
-            padding: 16px;
-            spacing: 12px;
-            // HOME: select/cancel talkgroup, or hang up a live group call.
-            if root.screen == Screen.Home && !root.group-call-active && root.select-enabled: Softkey {
-                height: 82px;
-                text: root.show-cancel-select ? "Cancel" : "Select group";
-                icon: root.show-cancel-select ? Icons.close : Icons.check;
-                clicked => {
-                    if (root.show-cancel-select) {
-                        root.cancel-select();
-                    } else {
-                        root.select-talkgroup();
-                    }
-                }
-            }
-            if root.screen == Screen.Home && root.group-call-active: Softkey {
-                height: 82px;
-                text: "Hang up";
-                icon: Icons.phone-off;
-                danger: true;
-                clicked => {
-                    root.hangup-group();
-                }
-            }
-            // IN CALL: mute + hang up.
-            if root.screen == Screen.InCall: Softkey {
-                height: 82px;
-                text: root.call-muted ? "Unmute" : "Mute";
-                icon: root.call-muted ? Icons.mic-off : Icons.mic;
-                clicked => {
-                    root.toggle-mute();
-                }
-            }
-            if root.screen == Screen.InCall: Softkey {
-                height: 82px;
-                text: "Hang up";
-                icon: Icons.phone-off;
-                danger: true;
-                clicked => {
-                    root.hangup-call();
-                }
-            }
-            Rectangle { vertical-stretch: 1; }
         }
     }
 
