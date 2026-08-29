@@ -2451,8 +2451,10 @@ component ContactEditScreen inherits Rectangle {
     // Landscape-friendly: the keyboard can be collapsed with its Done key so the
     // Cancel/Save row is reachable; tapping any field reopens it.
     property <bool> kb-open: true;
+    // Wide (landscape) editor: fields + actions on the left, docked keyboard right.
+    in property <bool> wide;
     background: transparent;
-    VerticalLayout {
+    if !root.wide: VerticalLayout {
         padding: 14px;
         spacing: 16px;
         EditFieldRow {
@@ -2544,6 +2546,105 @@ component ContactEditScreen inherits Rectangle {
                     root.save();
                 }
             }
+        }
+    }
+
+    // Wide (landscape) editor: form + actions on the left, a docked keyboard on the
+    // right that switches between QWERTY and numeric depending on the focused field
+    // (like a phone in landscape). No overflow: the keyboard has its own column.
+    if root.wide: HorizontalLayout {
+        padding: 16px;
+        spacing: 18px;
+        VerticalLayout {
+            width: 470px;
+            spacing: 12px;
+            EditFieldRow {
+                label: "Name";
+                text: root.name;
+                placeholder: "Required";
+                focused: root.focus-field == 0;
+                pick => {
+                    root.set-focus(0);
+                }
+            }
+            EditFieldRow {
+                label: "Callsign";
+                text: root.callsign;
+                placeholder: "Optional";
+                focused: root.focus-field == 1;
+                pick => {
+                    root.set-focus(1);
+                }
+            }
+            TargetSelector {
+                targets: root.targets;
+                sel: root.target-sel;
+                selected(i) => {
+                    root.select-target(i);
+                }
+            }
+            if !root.is-phone: EditFieldRow {
+                label: "ISSI";
+                text: root.issi;
+                placeholder: "1..16777215";
+                focused: root.focus-field == 2;
+                pick => {
+                    root.set-focus(2);
+                }
+            }
+            if root.is-phone: EditFieldRow {
+                label: "Number";
+                text: root.number;
+                placeholder: "digits to dial";
+                focused: root.focus-field == 3;
+                pick => {
+                    root.set-focus(3);
+                }
+            }
+            Rectangle {
+                vertical-stretch: 1;
+                min-height: 6px;
+            }
+            HorizontalLayout {
+                spacing: 10px;
+                SecondaryButton {
+                    text: "Cancel";
+                    icon: Icons.close;
+                    horizontal-stretch: 1;
+                    clicked => {
+                        root.cancel();
+                    }
+                }
+                PrimaryButton {
+                    text: "Save";
+                    icon: Icons.check;
+                    horizontal-stretch: 1;
+                    clicked => {
+                        root.save();
+                    }
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            Rectangle { vertical-stretch: 1; }
+            OnScreenKeyboard {
+                numeric: root.numeric;
+                shift: root.shift;
+                digits-only: root.numeric && !root.is-phone;
+                key(c) => {
+                    root.key(c);
+                }
+                backspace => {
+                    root.backspace();
+                }
+                shift-toggle => {
+                    root.shift-toggle();
+                }
+                done => {
+                }
+            }
+            Rectangle { vertical-stretch: 1; }
         }
     }
 }
@@ -6856,6 +6957,7 @@ export component MainWindow inherits Window {
             focus-field: root.edit-focus;
             numeric: root.edit-numeric;
             shift: root.edit-shift;
+            wide: root.landscape;
             targets: root.dial-targets;
             target-sel: root.edit-target-sel;
             set-focus(f) => {
