@@ -5991,9 +5991,10 @@ export component MainWindow inherits Window {
                 width: root.landscape ? parent.width - 170px : parent.width;
                 height: 100%;
 
-        // Landscape sub-screen header: Back + screen title (portrait uses the top
-        // Header bar + softkey Back instead; Home has no header in either).
-        if root.landscape && root.screen != Screen.Home: Rectangle {
+        // Landscape sub-screen header: screen title (portrait uses the top Header bar
+        // instead). Home and the in-call view have no header (the call view carries
+        // its own identity + Mute/Hang up controls).
+        if root.landscape && root.screen != Screen.Home && root.screen != Screen.InCall: Rectangle {
             height: 68px;
             background: @linear-gradient(180deg, #0e1822 0%, #0b131b 100%);
             HorizontalLayout {
