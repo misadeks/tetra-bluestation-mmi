@@ -2337,18 +2337,26 @@ component ContactsScreen inherits Rectangle {
         }
         // A little extra breathing room between the search bar and the list.
         Rectangle { height: 6px; }
-        Flickable {
+        if root.contacts.length == 0: Rectangle {
+            vertical-stretch: 1;
+            Text {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                width: parent.width - 32px;
+                text: root.query == "" ? "No contacts programmed" : "No matches for '\{root.query}'";
+                color: Palette.muted;
+                font-size: 24px;
+                font-weight: 600;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+        }
+        if root.contacts.length > 0: Flickable {
             vertical-stretch: 1;
             viewport-height: col.preferred-height;
             col := VerticalLayout {
                 spacing: 10px;
                 alignment: start;
-                if root.contacts.length == 0: Text {
-                    text: root.query == "" ? "No contacts programmed" : "No matches for '\{root.query}'";
-                    color: Palette.muted;
-                    font-size: 16px;
-                    horizontal-alignment: center;
-                }
                 for c in root.contacts: ContactRowView {
                     title: c.name;
                     sub: c.sub;
@@ -3589,18 +3597,26 @@ component PickerScreen inherits Rectangle {
             }
         }
         Rectangle { height: 6px; }
-        Flickable {
+        if root.rows.length == 0: Rectangle {
+            vertical-stretch: 1;
+            Text {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                width: parent.width - 32px;
+                text: root.query == "" ? "No talkgroups programmed" : "No matches for '\{root.query}'";
+                color: Palette.muted;
+                font-size: 24px;
+                font-weight: 600;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+        }
+        if root.rows.length > 0: Flickable {
             vertical-stretch: 1;
             viewport-height: pcol.preferred-height;
             pcol := VerticalLayout {
                 spacing: 8px;
                 alignment: start;
-                if root.rows.length == 0: Text {
-                    text: root.query == "" ? "No talkgroups programmed" : "No matches for '\{root.query}'";
-                    color: Palette.muted;
-                    font-size: 16px;
-                    horizontal-alignment: center;
-                }
                 for r in root.rows: Rectangle {
                     height: r.kind == 0 ? 88px : (r.kind == 2 ? 90px : (r.kind == 3 ? 30px : 98px));
                     if r.kind == 3: SectionHeader {
