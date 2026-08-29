@@ -91,20 +91,20 @@ Why each package:
 | `libxkbcommon-dev` | keymap handling for the linuxkms backend |
 | `libfontconfig1-dev` | font discovery (Slint links fontconfig on Linux) |
 | `fonts-dejavu-core` | an actual font so text renders (Lite ships none) |
-| `libegl-dev`, `libgles-dev`, `libgl1-mesa-dri`, `libglvnd0` | **GPU (FemtoVG) renderer** via EGL/GLES on the mesa V3D driver. Without a working GL stack the app falls back to the **software** renderer, whose rotated (landscape) text is **not anti-aliased** - it looks jagged. These also provide the runtime GL libs a cross-built binary needs. |
+| `libegl-dev`, `libgles-dev`, `libgl1-mesa-dri`, `libglvnd0` | **GPU (FemtoVG) renderer** via EGL/GLES on the mesa V3D driver, used for the **portrait** layout. Also provides the runtime GL libs a cross-built binary needs. (Rotated/landscape layouts deliberately use the software renderer - see section 10.) |
 | `rsync`, `openssh-server` | deploy + sysroot sync from your dev box |
 
 > These `-dev` packages must be installed **before** you run the WSL
 > `sync-sysroot.sh`, so their headers and `.pc` files are copied into the
 > cross-compile sysroot.
 
-> **Crisp text needs the GPU renderer.** Confirm the V3D GPU + EGL/GBM stack works
-> with `sudo apt install -y mesa-utils kmscube && sudo kmscube` (a spinning cube =
-> GL is good). Also check `ls /dev/dri` shows `renderD128`. If the cube fails, the
-> app can't use FemtoVG and rotated text stays jagged - fix the GL stack first.
-> To see which renderer the app picked, run it once manually:
-> `sudo SLINT_BACKEND=linuxkms SLINT_KMS_ROTATION=90 RUST_LOG=info ./tetra-bluestation-mmi`
-> and look for a FemtoVG-vs-software / EGL message in the output.
+> **Check the GPU stack** (used by the portrait renderer): `sudo apt install -y
+> mesa-utils kmscube && sudo kmscube` should show a spinning cube, and `ls
+> /dev/dri` should list `renderD128`. To see which renderer the app picked, run it
+> manually and read the startup line:
+> `sudo SLINT_BACKEND=linuxkms RUST_LOG=info ./tetra-bluestation-mmi`
+> (`Using FemtoVG OpenGL renderer` = GPU; `software` = CPU). Note the app forces
+> the software renderer automatically for rotated layouts (section 10).
 
 ---
 
@@ -362,10 +362,14 @@ turn so it fills the physical panel instead of being clipped. Without it the
 window is drawn at 1280x720 onto the 720x1280 panel, so it looks portrait and the
 right side is cut off. If landscape comes out upside down, set `rotation = 270`.
 
-> **Jagged text in landscape?** The rotation is applied by the renderer, and the
-> **software** renderer's rotated path is not anti-aliased. Make sure the **GPU
-> (FemtoVG) renderer** is active - it rotates crisply. See the GL-stack check in
-> step 3 (`kmscube`); installing the mesa V3D + EGL/GLES runtime fixes it.
+> **Renderer note (text quality).** The GPU (FemtoVG) renderer has a glyph-atlas
+> bug when the display is rotated: text comes out fuzzy with tiny holes in the
+> letters. So **when `rotation != 0` the app automatically selects the software
+> renderer** (`SLINT_BACKEND=linuxkms-software`), which rasterizes rotated glyphs
+> natively and stays crisp. This UI is mostly static, so the CPU cost is minor. To
+> override (e.g. force FemtoVG), set `SLINT_BACKEND` yourself in the environment /
+> systemd unit - an explicit value is always respected. Portrait (`rotation = 0`)
+> keeps using the GPU renderer as before.
 
 ### Touch calibration for the rotated panel
 

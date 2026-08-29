@@ -88,6 +88,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::env::set_var("SLINT_KMS_ROTATION", ui.rotation.to_string());
     }
 
+    // A rotated display triggers a FemtoVG glyph-atlas bug on the Pi (fuzzy text
+    // with holes in the letters): rotated glyphs are sampled from the GPU atlas at
+    // non-integer coordinates. Slint's software renderer instead rasterizes glyphs
+    // natively in the rotated orientation, so text stays crisp. Force it for
+    // rotated layouts, unless the user pinned a backend explicitly. Gated to the
+    // aarch64 Linux (linuxkms) build; the desktop winit build has no such backend.
+    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+    if ui.rotation != 0 && std::env::var_os("SLINT_BACKEND").is_none() {
+        tracing::info!(
+            "rotated display: selecting software renderer (linuxkms-software) for crisp text"
+        );
+        std::env::set_var("SLINT_BACKEND", "linuxkms-software");
+    }
+
     let window = MainWindow::new()?;
     // Fixed window size in logical pixels (physical = logical * scale). Binding
     // the Window width/height makes it non-resizable so screen content never
