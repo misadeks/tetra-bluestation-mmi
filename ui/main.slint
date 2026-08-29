@@ -206,6 +206,8 @@ export global Palette {
     out property <color> callpress: root.dark ? #16321f : #d1ecd9;
     out property <color> detbg: root.dark ? #2a1214 : #f8e1e2;
     out property <color> detpress: root.dark ? #3a1417 : #f1d0d1;
+    // Selected nav-rail item background (subtle accent highlight).
+    out property <color> navsel: root.dark ? #12222f : #d6e9f6;
 }
 
 // On-screen keyboard sizing. `compact` shrinks the keys so the keyboard takes less
@@ -5649,7 +5651,7 @@ component NavItem inherits Rectangle {
     border-radius: 14px;
     border-width: 1px;
     border-color: root.selected ? #33a7dd44 : #00000000;
-    background: root.selected ? #12222f : (touch.pressed ? Palette.railpress : #00000000);
+    background: root.selected ? Palette.navsel : (touch.pressed ? Palette.railpress : #00000000);
     touch := TouchArea {
         clicked => {
             root.clicked();
