@@ -3495,6 +3495,16 @@ fn contact_ident(app: &AppState, ssi: u32) -> Option<String> {
     })
 }
 
+/// The programmed name of a gateway by its gateway ISSI, if known.
+fn gateway_name(app: &AppState, gateway_ssi: u32) -> Option<String> {
+    let cp = app.codeplug.as_ref()?;
+    cp.gateways
+        .iter()
+        .find(|g| g.gateway_issi == gateway_ssi)
+        .map(|g| g.name.clone())
+        .filter(|n| !n.is_empty())
+}
+
 /// Compute the (primary, secondary) display lines for an individual call,
 /// resolving contacts and avoiding a duplicated ISSI on both lines.
 fn individual_lines(
@@ -3503,7 +3513,34 @@ fn individual_lines(
     peer_label: Option<&str>,
     peer_sub: Option<&str>,
     simplex: bool,
+    is_external: bool,
+    external_number: Option<&str>,
 ) -> (String, String) {
+    // Gateway (external / PSTN) call: show the dialled number - or the contact name
+    // when it was placed to a contact - large, with the gateway name underneath.
+    if is_external {
+        let gw = ssi.and_then(|s| gateway_name(app, s));
+        let number = external_number.filter(|n| !n.is_empty());
+        // The call was placed to a contact when the stored label is not just the
+        // gateway name (dialer gateway calls store the gateway name as the label).
+        let contact_name = peer_label
+            .filter(|l| !l.is_empty())
+            .filter(|l| gw.as_deref() != Some(*l));
+        let primary = contact_name
+            .map(|s| s.to_string())
+            .or_else(|| number.map(|s| s.to_string()))
+            .or_else(|| peer_label.map(|s| s.to_string()))
+            .unwrap_or_else(|| "External call".to_string());
+        // Secondary: the gateway name; if a contact name is primary, prefix the
+        // dialled number so it isn't lost.
+        let secondary = match (gw, contact_name.is_some(), number) {
+            (Some(g), true, Some(n)) => format!("{n}  -  {g}"),
+            (Some(g), _, _) => g,
+            (None, _, Some(n)) => format!("{n}  -  gateway"),
+            (None, _, None) => "Gateway call".to_string(),
+        };
+        return (primary, secondary);
+    }
     let mode = if simplex { "Private call - PTT" } else { "Private call - duplex" };
     // An explicit label override (a contact call we placed, or an external
     // number) wins for the primary line.
@@ -4963,6 +5000,8 @@ fn push_calls(app: &AppState, weak: &slint::Weak<MainWindow>) {
                 c.peer_label.as_deref(),
                 c.peer_sub.as_deref(),
                 c.simplex,
+                c.is_external,
+                c.external_number.as_deref(),
             );
             (
                 true,
@@ -4981,6 +5020,8 @@ fn push_calls(app: &AppState, weak: &slint::Weak<MainWindow>) {
                 d.peer_label.as_deref(),
                 d.peer_sub.as_deref(),
                 d.simplex,
+                d.is_external,
+                d.external_number.as_deref(),
             );
             (
                 true,
