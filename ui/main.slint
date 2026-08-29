@@ -715,6 +715,7 @@ component InfoRow inherits HorizontalLayout {
 component ListRow inherits Rectangle {
     in property <string> title;
     in property <string> subtitle;
+    in property <length> title-size: 23px;
     in property <string> icon;
     in property <color> icon-tint: Palette.accent;
     in property <bool> danger;
@@ -759,7 +760,7 @@ component ListRow inherits Rectangle {
             Text {
                 text: root.title;
                 color: root.danger ? #ff9a9d : Palette.txt;
-                font-size: 23px;
+                font-size: root.title-size;
                 font-weight: 600;
                 overflow: elide;
             }
@@ -1069,26 +1070,30 @@ component MenuScreen inherits Rectangle {
     callback open-survey;
     callback open-network;
     callback open-scanlists;
+    // Remembered scroll offset so returning to the menu restores the position.
+    in-out property <length> scroll-y;
     background: transparent;
     // Scrollable: the menu has more rows than fit in the (short) landscape content
     // area, so a Flickable lets it scroll instead of clipping the last entries.
     Flickable {
         viewport-height: mcol.preferred-height;
+        viewport-y <=> root.scroll-y;
         mcol := VerticalLayout {
         padding: 18px;
         spacing: 12px;
         alignment: start;
         ListRow {
             title: "Messages";
-            subtitle: root.unread-messages > 0 ? root.unread-messages + " unread messages" : "Send and read text messages";
+            title-size: 30px;
             icon: Icons.message;
+            trailing-text: root.unread-messages > 0 ? root.unread-messages : "";
             clicked => {
                 root.open-messages();
             }
         }
         ListRow {
             title: "Recents";
-            subtitle: root.missed-calls > 0 ? root.missed-calls + " missed calls" : "Call history and redial";
+            title-size: 30px;
             icon: Icons.phone;
             trailing-text: root.missed-calls > 0 ? root.missed-calls : "";
             clicked => {
@@ -1097,7 +1102,7 @@ component MenuScreen inherits Rectangle {
         }
         ListRow {
             title: "Talkgroups";
-            subtitle: "Select, attach and search groups";
+            title-size: 30px;
             icon: Icons.users;
             clicked => {
                 root.open-groups();
@@ -1105,7 +1110,7 @@ component MenuScreen inherits Rectangle {
         }
         ListRow {
             title: "Scan lists";
-            subtitle: "Turn scan lists on and off";
+            title-size: 30px;
             icon: Icons.activity;
             clicked => {
                 root.open-scanlists();
@@ -1113,7 +1118,7 @@ component MenuScreen inherits Rectangle {
         }
         ListRow {
             title: "Network";
-            subtitle: "Registration, signal and cell survey";
+            title-size: 30px;
             icon: Icons.radio;
             clicked => {
                 root.open-network();
@@ -1121,15 +1126,16 @@ component MenuScreen inherits Rectangle {
         }
         if root.show-event-log: ListRow {
             title: "Event Log";
-            subtitle: root.unread > 0 ? root.unread + " new events" : "Telemetry events";
+            title-size: 30px;
             icon: Icons.logs;
+            trailing-text: root.unread > 0 ? root.unread : "";
             clicked => {
                 root.open-logs();
             }
         }
         ListRow {
             title: "Contacts";
-            subtitle: "Phone book: call people and gateways";
+            title-size: 30px;
             icon: Icons.phone;
             clicked => {
                 root.open-contacts();
@@ -1137,7 +1143,7 @@ component MenuScreen inherits Rectangle {
         }
         ListRow {
             title: "Programming";
-            subtitle: "Edit the codeplug: networks, groups, contacts";
+            title-size: 30px;
             icon: Icons.folder;
             clicked => {
                 root.open-program();
@@ -1145,7 +1151,7 @@ component MenuScreen inherits Rectangle {
         }
         ListRow {
             title: "Settings";
-            subtitle: "Ringtones and app preferences";
+            title-size: 30px;
             icon: Icons.gear;
             clicked => {
                 root.open-settings();
@@ -5504,6 +5510,8 @@ export component MainWindow inherits Window {
     in property <bool> show-event-log: true;
     in property <float> volume: 1.0;
     in-out property <Screen> screen: Screen.Home;
+    // Remembered menu scroll offset (persists across leaving/returning to the menu).
+    property <length> menu-scroll;
 
     // --- Navigation history (breadcrumb stack) ---
     // Back returns to where the user actually came from, not a fixed parent.
@@ -6232,6 +6240,7 @@ export component MainWindow inherits Window {
             unread-messages: root.msg-unread;
             missed-calls: root.missed-calls;
             show-event-log: root.show-event-log;
+            scroll-y <=> root.menu-scroll;
             open-info => {
                 root.screen = Screen.Info;
             }
