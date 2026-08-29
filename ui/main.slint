@@ -147,41 +147,65 @@ export global Palette {
     // Master switch. Dark values are identical to the original theme, so flipping
     // this to false is the only thing that produces the light theme.
     in-out property <bool> dark: true;
-    out property <color> bg: root.dark ? #06080b : #e9edf2;
-    out property <color> glass1: root.dark ? #0f1620 : #f6f8fb;
-    out property <color> glass2: root.dark ? #0a0f16 : #e8edf3;
+    out property <color> bg: root.dark ? #06080b : #e7ecf2;
+    out property <color> glass1: root.dark ? #0f1620 : #eef2f7;
+    out property <color> glass2: root.dark ? #0a0f16 : #dfe6ee;
     out property <color> surface: root.dark ? #131c26 : #ffffff;
-    out property <color> surface2: root.dark ? #17222f : #eef3f8;
-    out property <color> line: root.dark ? #ffffff12 : #10203010;
-    out property <color> line2: root.dark ? #ffffff21 : #1020301f;
-    out property <color> txt: root.dark ? #eaf0f5 : #15202b;
-    out property <color> muted: root.dark ? #8b98a5 : #55636f;
-    out property <color> faint: root.dark ? #58656f : #93a0ab;
-    out property <color> accent: root.dark ? #33a7dd : #1f7fb2;
-    out property <color> green: root.dark ? #37c06a : #1f9a55;
-    out property <color> red: root.dark ? #f0555a : #d23b41;
-    out property <color> amber: root.dark ? #e7a72b : #a8790f;
+    out property <color> surface2: root.dark ? #17222f : #eef2f7;
+    out property <color> line: root.dark ? #ffffff12 : #0d1a2a1c;
+    out property <color> line2: root.dark ? #ffffff21 : #0d1a2a3d;
+    out property <color> txt: root.dark ? #eaf0f5 : #0f1720;
+    out property <color> muted: root.dark ? #8b98a5 : #4f5e6b;
+    out property <color> faint: root.dark ? #58656f : #74828f;
+    out property <color> accent: root.dark ? #33a7dd : #1877a6;
+    out property <color> green: root.dark ? #37c06a : #178a49;
+    out property <color> red: root.dark ? #f0555a : #cc363c;
+    out property <color> amber: root.dark ? #e7a72b : #8a6207;
     // Structural shades (pressed states, chrome panels, keycaps, readouts) and the
     // accent-tinted text used on tinted fills.
-    out property <color> press: root.dark ? #16202b : #e4e9ef;
-    out property <color> press2: root.dark ? #1b2836 : #dae1e9;
-    out property <color> railpress: root.dark ? #101a24 : #e0e7ee;
+    out property <color> press: root.dark ? #16202b : #dbe3ec;
+    out property <color> press2: root.dark ? #1b2836 : #cdd7e2;
+    out property <color> railpress: root.dark ? #101a24 : #d6dfe9;
     out property <color> panel1: root.dark ? #0e1822 : #ffffff;
-    out property <color> panel2: root.dark ? #0b131b : #eef2f7;
-    out property <color> rail1: root.dark ? #0c141d : #f3f6fa;
-    out property <color> rail2: root.dark ? #0a1017 : #e9eef4;
+    out property <color> panel2: root.dark ? #0b131b : #edf1f6;
+    out property <color> rail1: root.dark ? #0c141d : #eef2f7;
+    out property <color> rail2: root.dark ? #0a1017 : #e2e8ef;
     out property <color> key1: root.dark ? #0f1822 : #ffffff;
-    out property <color> readout: root.dark ? #0b1119 : #eef3f8;
-    out property <color> keytx: root.dark ? #e8f0f6 : #15202b;
-    out property <color> accenttx1: root.dark ? #9fd3ef : #1c6f9c;
-    out property <color> accenttx2: root.dark ? #cfe9ff : #235d86;
-    out property <color> accenttx3: root.dark ? #7ecbef : #1c6f9c;
+    out property <color> readout: root.dark ? #0b1119 : #eef2f7;
+    out property <color> keytx: root.dark ? #e8f0f6 : #0f1720;
+    // Accent / green / red text used on tinted fills (never gray: tinted from the hue).
+    out property <color> accenttx1: root.dark ? #9fd3ef : #155d83;
+    out property <color> accenttx2: root.dark ? #cfe9ff : #17527a;
+    out property <color> accenttx3: root.dark ? #7ecbef : #155d83;
+    out property <color> greentx: root.dark ? #79dfa0 : #147a40;
+    out property <color> redtx: root.dark ? #ff9a9d : #c02a30;
     // Idle PTT button and incoming message bubble (dark-only surfaces otherwise).
     out property <color> ptt1: root.dark ? #1a2430 : #ffffff;
     out property <color> ptt2: root.dark ? #131b24 : #eef2f7;
-    out property <color> pttpress: root.dark ? #24303d : #e4e9ef;
-    out property <color> bubblein: root.dark ? #1b2732 : #e9eef4;
-    out property <color> bubbleinpress: root.dark ? #24333f : #dde4ec;
+    out property <color> pttpress: root.dark ? #24303d : #dbe3ec;
+    out property <color> bubblein: root.dark ? #1b2732 : #e5eaf1;
+    out property <color> bubbleinpress: root.dark ? #24333f : #d6dfe8;
+    // Filled Primary / Danger buttons: dark uses deep tints + light-hue text; light
+    // uses saturated fills + white text, so both stay high-contrast.
+    out property <color> pbtn1: root.dark ? #16351f : #2ba85b;
+    out property <color> pbtn2: root.dark ? #10281a : #1f9a52;
+    out property <color> pbtnpress: root.dark ? #16321f : #1c8f4c;
+    out property <color> pbtntx: root.dark ? #8fe6ab : #ffffff;
+    out property <color> pbtnbd: root.dark ? #37c06a80 : #178a49;
+    out property <color> dbtn1: root.dark ? #3a1618 : #e84a4f;
+    out property <color> dbtn2: root.dark ? #2a1013 : #d23b41;
+    out property <color> dbtnpress: root.dark ? #3a1618 : #c33339;
+    out property <color> dbtntx: root.dark ? #ff9a9d : #ffffff;
+    out property <color> dbtnbd: root.dark ? #f0555a80 : #cc363c;
+    // Toggle switch track (off) + knob, so it reads on light too.
+    out property <color> trackoff: root.dark ? #ffffff10 : #ccd6e0;
+    out property <color> knobon: root.dark ? #79dfa0 : #ffffff;
+    out property <color> knoboff: root.dark ? #8fa3b8 : #ffffff;
+    // Quick call / attach (green) and detach (red) end-buttons on list rows.
+    out property <color> callbg: root.dark ? #10281a : #e2f2e8;
+    out property <color> callpress: root.dark ? #16321f : #d1ecd9;
+    out property <color> detbg: root.dark ? #2a1214 : #f8e1e2;
+    out property <color> detpress: root.dark ? #3a1417 : #f1d0d1;
 }
 
 // On-screen keyboard sizing. `compact` shrinks the keys so the keyboard takes less
@@ -281,7 +305,7 @@ component LinkBadge inherits Rectangle {
     background: root.on ? #37c06a2e : #f0555a24;
     Text {
         text: root.label;
-        color: root.on ? #79dfa0 : #ff9a9d;
+        color: root.on ? Palette.greentx : Palette.redtx;
         font-size: 12px;
         font-weight: 700;
         horizontal-alignment: center;
@@ -440,7 +464,7 @@ component CyclerArrow inherits Rectangle {
         x: (parent.width - self.width) / 2 + (root.right ? 2px : -2px);
         y: (parent.height - self.height) / 2;
         d: root.right ? Icons.chevron : Icons.back;
-        tint: #cfe0ec;
+        tint: Palette.txt;
         size: 48px;
         weight: 2.6;
     }
@@ -468,7 +492,7 @@ component FolderButton inherits Rectangle {
         VerticalLayout { alignment: center; Icon { d: Icons.folder; tint: Palette.accent; size: 25px; } }
         Text {
             text: root.name;
-            color: #cfe0ec;
+            color: Palette.txt;
             font-size: 24px;
             font-weight: 600;
             vertical-alignment: center;
@@ -507,9 +531,9 @@ component PrimaryButton inherits Rectangle {
     height: 74px;
     border-radius: 16px;
     border-width: 1px;
-    border-color: root.enabled ? #37c06a80 : Palette.line;
+    border-color: root.enabled ? Palette.pbtnbd : Palette.line;
     background: root.enabled
-        ? (touch.pressed ? #16321f : @linear-gradient(180deg, #16351f 0%, #10281a 100%))
+        ? (touch.pressed ? Palette.pbtnpress : @linear-gradient(180deg, Palette.pbtn1 0%, Palette.pbtn2 100%))
         : Palette.surface;
     opacity: root.enabled ? 1.0 : 0.45;
     touch := TouchArea {
@@ -523,11 +547,11 @@ component PrimaryButton inherits Rectangle {
         spacing: 10px;
         VerticalLayout {
             alignment: center;
-            Icon { d: root.icon; tint: root.enabled ? #8fe6ab : Palette.muted; size: 22px; }
+            Icon { d: root.icon; tint: root.enabled ? Palette.pbtntx : Palette.muted; size: 22px; }
         }
         Text {
             text: root.text;
-            color: root.enabled ? #8fe6ab : Palette.muted;
+            color: root.enabled ? Palette.pbtntx : Palette.muted;
             font-size: root.text-size;
             font-weight: 700;
             vertical-alignment: center;
@@ -543,9 +567,9 @@ component DangerButton inherits Rectangle {
     height: 74px;
     border-radius: 16px;
     border-width: 1px;
-    border-color: root.enabled ? #f0555a80 : Palette.line;
+    border-color: root.enabled ? Palette.dbtnbd : Palette.line;
     background: root.enabled
-        ? (touch.pressed ? #3a1618 : @linear-gradient(180deg, #3a1618 0%, #2a1013 100%))
+        ? (touch.pressed ? Palette.dbtnpress : @linear-gradient(180deg, Palette.dbtn1 0%, Palette.dbtn2 100%))
         : Palette.surface;
     opacity: root.enabled ? 1.0 : 0.45;
     touch := TouchArea {
@@ -559,11 +583,11 @@ component DangerButton inherits Rectangle {
         spacing: 10px;
         VerticalLayout {
             alignment: center;
-            Icon { d: root.icon; tint: root.enabled ? #ff9a9d : Palette.muted; size: 22px; }
+            Icon { d: root.icon; tint: root.enabled ? Palette.dbtntx : Palette.muted; size: 22px; }
         }
         Text {
             text: root.text;
-            color: root.enabled ? #ff9a9d : Palette.muted;
+            color: root.enabled ? Palette.dbtntx : Palette.muted;
             font-size: 20px;
             font-weight: 700;
             vertical-alignment: center;
@@ -596,7 +620,7 @@ component SecondaryButton inherits Rectangle {
         }
         Text {
             text: root.text;
-            color: root.danger ? #ff9a9d : Palette.txt;
+            color: root.danger ? Palette.redtx : Palette.txt;
             font-size: root.text-size;
             font-weight: 600;
             vertical-alignment: center;
@@ -658,7 +682,7 @@ component Ptt inherits Rectangle {
             }
             if root.sub != "": Text {
                 text: root.sub;
-                color: root.enabled ? #b9ccd8 : Palette.muted;
+                color: root.enabled ? Palette.muted : Palette.muted;
                 font-size: 15px;
                 font-weight: 600;
                 horizontal-alignment: center;
@@ -797,7 +821,7 @@ component ListRow inherits Rectangle {
             horizontal-stretch: 1;
             Text {
                 text: root.title;
-                color: root.danger ? #ff9a9d : Palette.txt;
+                color: root.danger ? Palette.redtx : Palette.txt;
                 font-size: root.title-size;
                 font-weight: 600;
                 overflow: elide;
@@ -860,7 +884,7 @@ component HomeScreen inherits Rectangle {
     callback group-ptt-up;
     callback hangup-group;
 
-    property <color> badge-fg: root.badge-kind == 2 ? #ff9a9d : (root.badge-kind == 1 ? Palette.accenttx3 : Palette.muted);
+    property <color> badge-fg: root.badge-kind == 2 ? Palette.redtx : (root.badge-kind == 1 ? Palette.accenttx3 : Palette.muted);
     property <color> badge-bg: root.badge-kind == 2 ? #d23b4133 : (root.badge-kind == 1 ? #33a7dd29 : #ffffff10);
 
     background: transparent;
@@ -894,7 +918,7 @@ component HomeScreen inherits Rectangle {
                     }
                     Text {
                         text: root.home-display;
-                        color: #dbeafc;
+                        color: Palette.txt;
                         font-size: 20px;
                         font-weight: 600;
                         vertical-alignment: center;
@@ -923,7 +947,7 @@ component HomeScreen inherits Rectangle {
                             padding-right: 20px;
                             Text {
                                 text: "GROUP IN USE";
-                                color: #ff9a9d;
+                                color: Palette.redtx;
                                 font-size: 19px;
                                 font-weight: 800;
                                 letter-spacing: 2px;
@@ -934,7 +958,7 @@ component HomeScreen inherits Rectangle {
                 }
                 Text {
                     text: root.group-call-name;
-                    color: #f2f7fb;
+                    color: Palette.txt;
                     font-size: 68px;
                     font-weight: 800;
                     horizontal-alignment: center;
@@ -997,7 +1021,7 @@ component HomeScreen inherits Rectangle {
                         spacing: 8px;
                         Text {
                             text: root.talkgroup-name;
-                            color: #f2f7fb;
+                            color: Palette.txt;
                             font-size: 64px;
                             font-weight: 800;
                             horizontal-alignment: center;
@@ -1287,7 +1311,7 @@ component LogDetailScreen inherits Rectangle {
                     y: 12px;
                     width: parent.width - 28px;
                     text: root.body;
-                    color: #b9ccd8;
+                    color: Palette.muted;
                     font-size: 14px;
                     font-family: "Consolas";
                     wrap: word-wrap;
@@ -1359,7 +1383,7 @@ component AlertOverlay inherits Rectangle {
             }
             if root.message != "": Text {
                 text: root.message;
-                color: #d7e2ec;
+                color: Palette.muted;
                 font-size: 22px;
                 font-weight: 500;
                 horizontal-alignment: center;
@@ -1448,7 +1472,7 @@ component ConfirmOverlay inherits Rectangle {
             }
             if root.message != "": Text {
                 text: root.message;
-                color: #d7e2ec;
+                color: Palette.muted;
                 font-size: 22px;
                 font-weight: 500;
                 horizontal-alignment: center;
@@ -1615,7 +1639,7 @@ component Toggle inherits Rectangle {
     border-radius: 19px;
     border-width: 1px;
     border-color: root.on ? #37c06a80 : Palette.line2;
-    background: root.on ? #37c06a3d : #ffffff10;
+    background: root.on ? #37c06a3d : Palette.trackoff;
     TouchArea {
         clicked => {
             root.toggled(!root.on);
@@ -1627,7 +1651,7 @@ component Toggle inherits Rectangle {
         border-radius: 15px;
         x: root.on ? parent.width - self.width - 4px : 4px;
         y: (parent.height - self.height) / 2;
-        background: root.on ? #79dfa0 : #8fa3b8;
+        background: root.on ? Palette.knobon : Palette.knoboff;
         animate x { duration: 120ms; easing: ease; }
     }
 }
@@ -1642,7 +1666,7 @@ component TagPill inherits Rectangle {
         padding-right: 10px;
         Text {
             text: root.tag == 2 ? "TX" : "SCAN";
-            color: root.tag == 2 ? #79dfa0 : Palette.accenttx3;
+            color: root.tag == 2 ? Palette.greentx : Palette.accenttx3;
             font-size: 11px;
             font-weight: 800;
             letter-spacing: 0.8px;
@@ -1711,8 +1735,8 @@ component GroupRowView inherits Rectangle {
         width: 84px;
         height: parent.height;
         background: root.attached
-            ? (act.pressed ? #3a1417 : #2a1214)
-            : (act.pressed ? #16321f : #10281a);
+            ? (act.pressed ? Palette.detpress : Palette.detbg)
+            : (act.pressed ? Palette.callpress : Palette.callbg);
         // Left divider between the content and the button.
         Rectangle {
             x: 0;
@@ -1861,7 +1885,7 @@ component ContactRowView inherits Rectangle {
         y: 0;
         width: 84px;
         height: parent.height;
-        background: ctouch.pressed ? #16321f : #10281a;
+        background: ctouch.pressed ? Palette.callpress : Palette.callbg;
         // Left divider between the content and the call button.
         Rectangle {
             x: 0;
@@ -4093,7 +4117,7 @@ component RecentRowView inherits Rectangle {
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
                     d: root.outgoing ? Icons.call-out : Icons.call-in;
-                    tint: root.missed ? Palette.red : (root.outgoing ? #7fe0a6 : Palette.accent);
+                    tint: root.missed ? Palette.red : (root.outgoing ? Palette.greentx : Palette.accent);
                     size: 26px;
                 }
             }
@@ -4104,7 +4128,7 @@ component RecentRowView inherits Rectangle {
             horizontal-stretch: 1;
             Text {
                 text: root.title;
-                color: root.missed ? #ff9a9d : Palette.txt;
+                color: root.missed ? Palette.redtx : Palette.txt;
                 font-size: 23px;
                 font-weight: root.missed ? 800 : 600;
                 overflow: elide;
@@ -4127,7 +4151,7 @@ component RecentRowView inherits Rectangle {
         y: 0;
         width: 84px;
         height: parent.height;
-        background: callta.pressed ? #16321f : #10281a;
+        background: callta.pressed ? Palette.callpress : Palette.callbg;
         // Left divider between the content and the call button.
         Rectangle {
             x: 0;
@@ -4198,7 +4222,7 @@ component RecentsScreen inherits Rectangle {
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
                     text: "Missed";
-                    color: root.missed-only ? #ff9a9d : Palette.muted;
+                    color: root.missed-only ? Palette.redtx : Palette.muted;
                     font-size: 16px;
                     font-weight: 700;
                 }
@@ -4322,7 +4346,7 @@ component RecentDetailScreen inherits Rectangle {
                             x: (parent.width - self.width) / 2;
                             y: (parent.height - self.height) / 2;
                             d: root.outgoing ? Icons.call-out : Icons.call-in;
-                            tint: root.missed ? Palette.red : (root.outgoing ? #7fe0a6 : Palette.accent);
+                            tint: root.missed ? Palette.red : (root.outgoing ? Palette.greentx : Palette.accent);
                             size: 30px;
                         }
                     }
@@ -4421,7 +4445,7 @@ component ConfigScreen inherits Rectangle {
                     y: 12px;
                     width: parent.width - 28px;
                     text: root.toml == "" ? "No config loaded yet" : root.toml;
-                    color: #b9ccd8;
+                    color: Palette.muted;
                     font-size: 13px;
                     font-family: "Consolas";
                     wrap: word-wrap;
@@ -4689,7 +4713,7 @@ component InCallScreen inherits Rectangle {
                 Rectangle { height: 18px; }
                 Text {
                     text: root.state;
-                    color: #8fe6ab;
+                    color: Palette.greentx;
                     font-size: 28px;
                     font-weight: 700;
                     horizontal-alignment: center;
@@ -4792,7 +4816,7 @@ component InCallScreen inherits Rectangle {
                     Rectangle { height: 14px; }
                     Text {
                         text: root.state;
-                        color: #8fe6ab;
+                        color: Palette.greentx;
                         font-size: 30px;
                         font-weight: 700;
                         horizontal-alignment: center;
@@ -5261,7 +5285,7 @@ component DialerScreen inherits Rectangle {
                                         x: (parent.width - self.width) / 2;
                                         y: (parent.height - self.height) / 2;
                                         d: Icons.user;
-                                        tint: #6fe0a0;
+                                        tint: Palette.greentx;
                                         size: 22px;
                                     }
                                 }
@@ -5495,7 +5519,7 @@ component DialerScreen inherits Rectangle {
                     HorizontalLayout {
                         alignment: center;
                         spacing: 14px;
-                        VerticalLayout { alignment: center; Icon { d: Icons.user; tint: #6fe0a0; size: 34px; } }
+                        VerticalLayout { alignment: center; Icon { d: Icons.user; tint: Palette.greentx; size: 34px; } }
                         VerticalLayout { alignment: center; Text { text: "Contacts"; color: Palette.txt; font-size: 26px; font-weight: 700; } }
                     }
                 }
@@ -6253,7 +6277,7 @@ export component MainWindow inherits Window {
                             }
                             Text {
                                 text: root.home-display;
-                                color: #dbeafc;
+                                color: Palette.txt;
                                 font-size: 20px;
                                 font-weight: 600;
                                 vertical-alignment: center;
@@ -6280,7 +6304,7 @@ export component MainWindow inherits Window {
                                     padding-right: 20px;
                                     Text {
                                         text: "GROUP IN USE";
-                                        color: #ff9a9d;
+                                        color: Palette.redtx;
                                         font-size: 18px;
                                         font-weight: 800;
                                         letter-spacing: 2px;
@@ -6291,7 +6315,7 @@ export component MainWindow inherits Window {
                         }
                         Text {
                             text: root.group-call-name;
-                            color: #f2f7fb;
+                            color: Palette.txt;
                             font-size: 60px;
                             font-weight: 800;
                             horizontal-alignment: center;
@@ -6362,7 +6386,7 @@ export component MainWindow inherits Window {
                                 spacing: 8px;
                                 Text {
                                     text: root.talkgroup-name;
-                                    color: #f2f7fb;
+                                    color: Palette.txt;
                                     font-size: 62px;
                                     font-weight: 800;
                                     horizontal-alignment: center;
@@ -6379,7 +6403,7 @@ export component MainWindow inherits Window {
                                     alignment: center;
                                     Badge {
                                         text: root.badge;
-                                        fg: root.badge-kind == 2 ? #ff9a9d : (root.badge-kind == 1 ? Palette.accenttx3 : Palette.muted);
+                                        fg: root.badge-kind == 2 ? Palette.redtx : (root.badge-kind == 1 ? Palette.accenttx3 : Palette.muted);
                                         bg: root.badge-kind == 2 ? #d23b4133 : (root.badge-kind == 1 ? #33a7dd29 : #ffffff10);
                                     }
                                 }
