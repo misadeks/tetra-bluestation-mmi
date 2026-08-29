@@ -4437,11 +4437,19 @@ component InCallScreen inherits Rectangle {
     in property <bool> ptt-enabled;
     in property <bool> show-dtmf;
     in property <string> digits;
+    // Landscape variant: Mute / Hang up become on-screen buttons and the DTMF pad
+    // adopts the dialer's 2-column arrangement (there is no softkey bar to host them).
+    in property <bool> wide;
+    in property <bool> muted;
     callback ptt-down;
     callback ptt-up;
     callback dtmf(string);
+    callback toggle-mute;
+    callback hangup;
     background: transparent;
-    VerticalLayout {
+
+    // ===== Portrait layout (Mute / Hang up live in the softkey bar) =====
+    if !root.wide: VerticalLayout {
         padding: 22px;
         spacing: 10px;
         // Hero, vertically centered.
@@ -4534,6 +4542,133 @@ component InCallScreen inherits Rectangle {
             }
             release => {
                 root.ptt-up();
+            }
+        }
+    }
+
+    // ===== Landscape (wide) layout =====
+    // LEFT: call identity hero + Mute / Hang up buttons. RIGHT: DTMF keypad (dialer
+    // style) for duplex calls, or the docked PTT for a simplex active call. The right
+    // column is omitted entirely when there is nothing to show, so the hero centers.
+    if root.wide: HorizontalLayout {
+        padding: 22px;
+        spacing: 20px;
+        VerticalLayout {
+            horizontal-stretch: 5;
+            spacing: 16px;
+            Rectangle {
+                vertical-stretch: 1;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 10px;
+                    Text {
+                        text: root.dir;
+                        color: Palette.muted;
+                        font-size: 24px;
+                        letter-spacing: 2px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                    }
+                    Text {
+                        text: root.peer;
+                        color: #ffffff;
+                        font-size: 68px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                    Text {
+                        text: root.sub;
+                        color: Palette.muted;
+                        font-size: 26px;
+                        font-weight: 600;
+                        horizontal-alignment: center;
+                    }
+                    Rectangle { height: 14px; }
+                    Text {
+                        text: root.state;
+                        color: #8fe6ab;
+                        font-size: 30px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                    }
+                    if root.clock != "": Text {
+                        text: root.clock;
+                        color: #cfe9ff;
+                        font-size: 50px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: 14px;
+                SecondaryButton {
+                    horizontal-stretch: 1;
+                    height: 82px;
+                    icon: root.muted ? Icons.mic-off : Icons.mic;
+                    text: root.muted ? "Unmute" : "Mute";
+                    clicked => {
+                        root.toggle-mute();
+                    }
+                }
+                DangerButton {
+                    horizontal-stretch: 1;
+                    height: 82px;
+                    icon: Icons.phone-off;
+                    text: "Hang up";
+                    clicked => {
+                        root.hangup();
+                    }
+                }
+            }
+        }
+        // RIGHT column: only present when there is a keypad or PTT to show.
+        if root.show-dtmf || root.can-ptt: VerticalLayout {
+            horizontal-stretch: 4;
+            spacing: 12px;
+            if root.show-dtmf: Rectangle {
+                height: 72px;
+                border-radius: 14px;
+                border-width: 1px;
+                border-color: Palette.line2;
+                background: #0b1119;
+                Text {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    text: root.digits == "" ? "DTMF" : root.digits;
+                    color: root.digits == "" ? Palette.faint : #cfe9ff;
+                    font-size: 38px;
+                    font-weight: 700;
+                    letter-spacing: 3px;
+                    overflow: elide;
+                }
+            }
+            if root.show-dtmf: VerticalLayout {
+                spacing: 10px;
+                for row in [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["*", "0", "#"]]: HorizontalLayout {
+                    spacing: 10px;
+                    for d in row: KeyCap {
+                        label: d;
+                        tapped => {
+                            root.dtmf(d);
+                        }
+                    }
+                }
+            }
+            if !root.show-dtmf && root.can-ptt: Ptt {
+                vertical-stretch: 1;
+                text: root.ptt-state == 2 ? "ON AIR"
+                    : root.ptt-state == 1 ? "Requesting..."
+                    : "Push to talk";
+                enabled: root.ptt-enabled;
+                state: root.ptt-state;
+                press-down => {
+                    root.ptt-down();
+                }
+                release => {
+                    root.ptt-up();
+                }
             }
         }
     }
@@ -5203,22 +5338,9 @@ component DialerScreen inherits Rectangle {
                     Icon { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; d: Icons.backspace; tint: Palette.muted; size: 30px; }
                 }
             }
-            // Simplex (PTT) private call - stands in for the portrait docked PTT.
-            if root.is-private: Rectangle {
-                height: 62px;
-                border-radius: 16px;
-                border-width: 1px;
-                border-color: #33a7dd66;
-                background: root.number == "" ? Palette.surface : (wsimp.pressed ? #16283a : #12212e);
-                opacity: root.number == "" ? 0.5 : 1.0;
-                wsimp := TouchArea { enabled: root.number != ""; clicked => { root.place-call(root.sel, false); } }
-                HorizontalLayout {
-                    alignment: center;
-                    spacing: 10px;
-                    VerticalLayout { alignment: center; Icon { d: Icons.mic; tint: #8fd8ff; size: 22px; } }
-                    VerticalLayout { alignment: center; Text { text: "Simplex (PTT) call"; color: #cfe9ff; font-size: 18px; font-weight: 700; } }
-                }
-            }
+            // Simplex private calls are started with the physical PTT (no on-screen
+            // button in landscape); a spacer keeps the keypad column balanced.
+            Rectangle { vertical-stretch: 1; }
         }
     }
 }
@@ -5278,7 +5400,7 @@ component NavItem inherits Rectangle {
     in property <bool> selected;
     in property <int> badge-count: 0;
     callback clicked;
-    height: 82px;
+    height: 94px;
     border-radius: 14px;
     border-width: 1px;
     border-color: root.selected ? #33a7dd44 : #00000000;
@@ -5290,15 +5412,15 @@ component NavItem inherits Rectangle {
     }
     VerticalLayout {
         alignment: center;
-        spacing: 6px;
+        spacing: 7px;
         Rectangle {
-            height: 30px;
+            height: 34px;
             Icon {
                 x: (parent.width - self.width) / 2;
                 y: (parent.height - self.height) / 2;
                 d: root.icon;
                 tint: root.selected ? Palette.txt : Palette.muted;
-                size: 27px;
+                size: 31px;
             }
             if root.badge-count > 0: Rectangle {
                 x: parent.width / 2 + 10px;
@@ -5320,7 +5442,7 @@ component NavItem inherits Rectangle {
         Text {
             text: root.label;
             color: root.selected ? Palette.txt : Palette.muted;
-            font-size: 17px;
+            font-size: 19px;
             font-weight: 700;
             horizontal-alignment: center;
         }
@@ -5795,66 +5917,30 @@ export component MainWindow inherits Window {
         Rectangle {
             vertical-stretch: 1;
             VerticalLayout {
-                x: root.landscape ? 150px : 0px;
-                width: root.landscape ? parent.width - 150px : parent.width;
+                x: root.landscape ? 170px : 0px;
+                width: root.landscape ? parent.width - 170px : parent.width;
                 height: 100%;
 
         // Landscape sub-screen header: Back + screen title (portrait uses the top
         // Header bar + softkey Back instead; Home has no header in either).
         if root.landscape && root.screen != Screen.Home: Rectangle {
-            height: 60px;
+            height: 68px;
             background: @linear-gradient(180deg, #0e1822 0%, #0b131b 100%);
             HorizontalLayout {
-                padding-left: 20px;
-                padding-right: 12px;
+                padding-left: 22px;
+                padding-right: 14px;
                 spacing: 10px;
-                // Back lives at the bottom of the nav rail (fixed anchor), not here.
+                // Back lives at the bottom of the nav rail (fixed anchor); in-call
+                // Mute / Hang up are normal buttons inside the call view (not here).
                 VerticalLayout {
                     alignment: center;
                     horizontal-stretch: 1;
                     Text {
                         text: root.screen-title();
                         color: Palette.txt;
-                        font-size: 22px;
+                        font-size: 26px;
                         font-weight: 700;
                         overflow: elide;
-                    }
-                }
-                // In-call controls live in the header (no right sidebar).
-                if root.screen == Screen.InCall: VerticalLayout {
-                    alignment: center;
-                    Rectangle {
-                        width: 132px;
-                        height: 46px;
-                        border-radius: 12px;
-                        border-width: 1px;
-                        border-color: Palette.line2;
-                        background: lsmute.pressed ? #1b2836 : Palette.surface;
-                        lsmute := TouchArea { clicked => { root.toggle-mute(); } }
-                        HorizontalLayout {
-                            alignment: center;
-                            spacing: 8px;
-                            VerticalLayout { alignment: center; Icon { d: root.call-muted ? Icons.mic-off : Icons.mic; tint: Palette.txt; size: 20px; } }
-                            VerticalLayout { alignment: center; Text { text: root.call-muted ? "Unmute" : "Mute"; color: Palette.txt; font-size: 17px; font-weight: 700; } }
-                        }
-                    }
-                }
-                if root.screen == Screen.InCall: VerticalLayout {
-                    alignment: center;
-                    Rectangle {
-                        width: 140px;
-                        height: 46px;
-                        border-radius: 12px;
-                        border-width: 1px;
-                        border-color: #f0555a80;
-                        background: lshang.pressed ? #3a1417 : @linear-gradient(180deg, #3a1417 0%, #2a0f12 100%);
-                        lshang := TouchArea { clicked => { root.hangup-call(); } }
-                        HorizontalLayout {
-                            alignment: center;
-                            spacing: 8px;
-                            VerticalLayout { alignment: center; Icon { d: Icons.phone-off; tint: #ff9a9d; size: 20px; } }
-                            VerticalLayout { alignment: center; Text { text: "Hang up"; color: #ff9a9d; font-size: 17px; font-weight: 700; } }
-                        }
                     }
                 }
             }
@@ -6637,6 +6723,8 @@ export component MainWindow inherits Window {
             ptt-enabled: root.registered;
             show-dtmf: root.call-dtmf;
             digits: root.call-digits;
+            wide: root.landscape;
+            muted: root.call-muted;
             ptt-down => {
                 root.call-ptt-down();
             }
@@ -6645,6 +6733,12 @@ export component MainWindow inherits Window {
             }
             dtmf(k) => {
                 root.call-dtmf-key(k);
+            }
+            toggle-mute => {
+                root.toggle-mute();
+            }
+            hangup => {
+                root.hangup-call();
             }
         }
 
@@ -6754,7 +6848,7 @@ export component MainWindow inherits Window {
     if root.landscape: Rectangle {
         x: 0;
         y: 70px;
-        width: 150px;
+        width: 170px;
         height: root.height - 70px;
         background: @linear-gradient(180deg, #0c141d 0%, #0a1017 100%);
         Rectangle {
@@ -6817,7 +6911,7 @@ export component MainWindow inherits Window {
             // Fixed Back: always in the same spot (bottom-left, thumb-reachable);
             // pops the nav history one level. Dim + inert on Home (nowhere to go).
             Rectangle {
-                height: 66px;
+                height: 78px;
                 border-radius: 14px;
                 background: (root.screen != Screen.Home && backarea.pressed) ? #101a24 : #00000000;
                 opacity: root.screen == Screen.Home ? 0.32 : 1.0;
@@ -6829,21 +6923,21 @@ export component MainWindow inherits Window {
                 }
                 VerticalLayout {
                     alignment: center;
-                    spacing: 6px;
+                    spacing: 7px;
                     Rectangle {
-                        height: 26px;
+                        height: 30px;
                         Icon {
                             x: (parent.width - self.width) / 2;
                             y: (parent.height - self.height) / 2;
                             d: Icons.back;
                             tint: Palette.muted;
-                            size: 24px;
+                            size: 28px;
                         }
                     }
                     Text {
                         text: "Back";
                         color: Palette.muted;
-                        font-size: 17px;
+                        font-size: 19px;
                         font-weight: 700;
                         horizontal-alignment: center;
                     }
