@@ -31,6 +31,9 @@ fi
 : "${CPU_AFFINITY:=0 1}"
 # taskset cpu-list for ad-hoc (non-service) runs; empty disables pinning.
 : "${TASKSET_CPUS:=0-1}"
+# libinput calibration matrix for a rotated touch panel (see pi.env.example);
+# empty = don't install a touch-rotation udev rule.
+: "${TOUCH_CALIBRATION_MATRIX:=}"
 : "${RUST_LOG:=info}"
 : "${PI_SYSROOT:=${REPO_ROOT}/.pi-sysroot/${PI_TARGET}}"
 

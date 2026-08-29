@@ -355,23 +355,47 @@ right side is cut off. If landscape comes out upside down, set `rotation = 270`.
 
 ### Touch calibration for the rotated panel
 
-`SLINT_KMS_ROTATION` rotates the **image only** - the touchscreen still reports
-coordinates in the panel's native (portrait) orientation, so taps land in the
-wrong place. Fix it with a libinput calibration matrix via a udev rule on the Pi:
+`SLINT_KMS_ROTATION` rotates the **image only** - the touchscreen (a Goodix
+`10-0014 Goodix Capacitive TouchScreen` on this panel) still reports coordinates
+in the panel's native (portrait) orientation, so taps land in the wrong place
+until you apply a matching **libinput calibration matrix** via a udev rule. This
+is Waveshare's own documented command-line method for the 5-DSI-TOUCH-A. For the
+default `rotation = 90`, use this:
 
 ```bash
-# 90 rotation (matches [ui].rotation = 90). Use the 270 matrix instead if you
-# set rotation = 270. Applies to any touchscreen (ID_INPUT_TOUCHSCREEN).
+# Pairs with [ui].rotation = 90. Applies to any touchscreen (ID_INPUT_TOUCHSCREEN).
 sudo tee /etc/udev/rules.d/99-touch-rotate.rules >/dev/null <<'EOF'
-# 90 clockwise:
-ENV{ID_INPUT_TOUCHSCREEN}=="1", ENV{LIBINPUT_CALIBRATION_MATRIX}="0 -1 1 1 0 0"
-# 270 clockwise (90 counter-clockwise): use instead of the line above
-# ENV{ID_INPUT_TOUCHSCREEN}=="1", ENV{LIBINPUT_CALIBRATION_MATRIX}="0 1 0 -1 0 1"
-# 180 (upside down): "-1 0 1 0 -1 1"
+ENV{ID_INPUT_TOUCHSCREEN}=="1", ENV{LIBINPUT_CALIBRATION_MATRIX}="0 1 0 -1 0 1"
 EOF
+# Apply without a full reboot: reload rules, re-trigger input, restart the app.
 sudo udevadm control --reload-rules
-sudo reboot
+sudo udevadm trigger --subsystem-match=input --action=change
+sudo systemctl restart tetra-bluestation-mmi     # or reboot
 ```
+
+The matrix must match `[ui].rotation`:
+
+| `[ui].rotation` | Matrix (`LIBINPUT_CALIBRATION_MATRIX`) |
+|---|---|
+| `90`  | `0 1 0 -1 0 1` |
+| `180` | `-1 0 1 0 -1 1` |
+| `270` | `0 -1 1 1 0 0` |
+| `0`   | (no rule needed) |
+
+> Note: these are indexed by the app's `[ui].rotation` (Slint rotates the image
+> clockwise). Waveshare's wiki lists the 90 and 270 matrices the other way round
+> because its `video=...,rotate=` cmdline rotates the opposite direction - so if
+> touch is **180 off** (top-left hits bottom-right), swap to the other quarter-turn
+> matrix (`90` <-> `270`). After editing the rule, re-run the three
+> `udevadm`/`systemctl` lines above; no full reboot needed.
+
+Why not the panel overlay? The `vc4-kms-dsi-waveshare-panel-v2` overlay only
+exposes touch-axis flags (`invx`, `invy`, `swapxy`) and **no `rotation`** (confirm
+with `strings /boot/overlays/vc4-kms-dsi-waveshare-panel-v2.dtbo | grep -iE
+'rotation|swapxy'`), so it can't rotate the display - that stays in the app. Its
+GUI "display + touch synchronous rotation" (Control Center -> Screens) only works
+under the desktop compositor, not this bare-KMS kiosk. The udev matrix above is
+the supported path here.
 
 After reboot the display and touch are both landscape. To go back to portrait,
 use `model = "pi-720x1280"` (rotation 0) and remove the udev rule.

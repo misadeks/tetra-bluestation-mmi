@@ -67,6 +67,16 @@ if [[ -f "${REPO_ROOT}/deploy/asound.conf" ]]; then
   ssh "${REMOTE}" "sudo cp /tmp/asound.conf /etc/asound.conf"
 fi
 
+# Touchscreen calibration for a rotated (landscape) panel: install a libinput
+# udev rule so touch matches [ui].rotation. Only when TOUCH_CALIBRATION_MATRIX is
+# set (see pi.env); reload + re-trigger input so it applies without a reboot.
+if [[ -n "${TOUCH_CALIBRATION_MATRIX}" ]]; then
+  echo "Installing touch calibration matrix (${TOUCH_CALIBRATION_MATRIX})..."
+  TOUCH_RULE="ENV{ID_INPUT_TOUCHSCREEN}==\"1\", ENV{LIBINPUT_CALIBRATION_MATRIX}=\"${TOUCH_CALIBRATION_MATRIX}\""
+  printf '%s\n' "${TOUCH_RULE}" | ssh "${REMOTE}" "sudo tee /etc/udev/rules.d/99-touch-rotate.rules >/dev/null"
+  ssh "${REMOTE}" "sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=input --action=change" || true
+fi
+
 # Boot splash: show deploy/splash.png on the DSI panel from boot until the UI's
 # first frame. We write the image straight to /dev/fb0 (converted to the panel's
 # RGB565 framebuffer format by scripts/png_to_fb565.py, run on the Pi) - fbi is
