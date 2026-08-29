@@ -4670,8 +4670,10 @@ component InCallScreen inherits Rectangle {
             }
             HorizontalLayout {
                 spacing: 14px;
-                // Equal-width slots so the button never resizes when Mute<->Unmute.
-                Rectangle {
+                // Mute only for duplex calls; it's meaningless for a half-duplex PTT
+                // call (you transmit only while holding PTT), so hide it there and let
+                // Hang up fill the row.
+                if !root.can-ptt: Rectangle {
                     horizontal-stretch: 1;
                     height: 82px;
                     SecondaryButton {
