@@ -43,9 +43,9 @@ jitter_ms     = 0             # downlink cushion (ms) for bursty delivery; 0 = o
 
 [ui]
 # Select a device model from the catalog below (or the built-in models:
-# "pi-1280x720", "pi-720x1280", "linht"). Explicit width/height/scale/input
-# below override the selected model.
-model  = "pi-720x1280"
+# "pi-1280x720", "pi-720x1280", "linht"). Explicit width/height/scale/input/
+# rotation below override the selected model.
+model  = "pi-1280x720"
 # width  = 720          # device pixels, overrides the model
 # height = 1280         # device pixels, overrides the model
 # scale forces the UI scale factor and, in dev, overrides the host display
@@ -53,6 +53,11 @@ model  = "pi-720x1280"
 scale  = 1.0
 # input selects the layout and interaction model: "touch" or "keypad".
 # input  = "touch"      # overrides the model's input kind
+# rotation (0/90/180/270) rotates the rendered output on the Pi (linuxkms) so a
+# landscape model shows correctly on a native-portrait panel. Flip 90<->270 if
+# the image is upside down for your mount. Ignored on desktop. Touch needs a
+# matching libinput calibration matrix - see PI_SETUP.md.
+# rotation = 90         # overrides the model's rotation
 theme  = "classic"
 
 # Device model catalog. Add your own panels here and select one via [ui].model.
@@ -64,13 +69,15 @@ width  = 720
 height = 1280
 scale  = 1.0
 input  = "touch"
+rotation = 0
 
 [[device]]
-name   = "pi-1280x720"   # landscape Pi touchscreen
+name   = "pi-1280x720"   # landscape UI on the native-portrait DSI panel
 width  = 1280
 height = 720
 scale  = 1.0
 input  = "touch"
+rotation = 90            # quarter-turn onto the 720x1280 panel (use 270 to flip)
 
 [[device]]
 name   = "linht"         # LinHT-style keypad handheld (example, adjust to hardware)

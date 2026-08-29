@@ -70,6 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         width = ui.width,
         height = ui.height,
         scale = ui.scale,
+        rotation = ui.rotation,
         input = ?ui.input,
         theme = %ui.theme,
         "loaded config"
@@ -78,6 +79,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Override the host display scaling (e.g. Windows 150%) so the window renders
     // at the device's own scale factor. Must be set before the window is created.
     std::env::set_var("SLINT_SCALE_FACTOR", ui.scale.to_string());
+
+    // Rotate the rendered output on the Pi's linuxkms backend so a landscape
+    // model (e.g. pi-1280x720) displays correctly on a native-portrait panel.
+    // Read by the linuxkms backend only; the desktop (winit) backend ignores it.
+    // Must be set before the window is created.
+    if ui.rotation != 0 {
+        std::env::set_var("SLINT_KMS_ROTATION", ui.rotation.to_string());
+    }
 
     let window = MainWindow::new()?;
     // Fixed window size in logical pixels (physical = logical * scale). Binding

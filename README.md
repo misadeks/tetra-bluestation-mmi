@@ -113,8 +113,9 @@ On connect the app bootstraps (`GetInterfaceVersion` / `GetState` / `GetConfig`)
 | `[ui]` | `width` / `height` | Explicit device-pixel size; overrides the selected model. |
 | `[ui]` | `scale` | UI scale factor. In dev it overrides the host display scaling (e.g. Windows 150%) so the window renders at the target 1:1; `1.0` = one window pixel per device pixel. |
 | `[ui]` | `input` | Interaction model / layout: `touch` (tap targets) or `keypad` (softkeys + Up/Down focus). Overrides the model. |
+| `[ui]` | `rotation` | Screen rotation in degrees (`0`/`90`/`180`/`270`) for the Pi (linuxkms) so a landscape model shows on a native-portrait panel. Ignored on desktop; touch needs a matching calibration (see [PI_SETUP.md](PI_SETUP.md)). |
 | `[ui]` | `theme` | UI theme. |
-| `[[device]]` | `name` / `width` / `height` / `scale` / `input` | A device model in the catalog. Select it via `[ui].model`; a profile here overrides a built-in of the same name. |
+| `[[device]]` | `name` / `width` / `height` / `scale` / `input` / `rotation` | A device model in the catalog. Select it via `[ui].model`; a profile here overrides a built-in of the same name. |
 
 ### Device models and layouts
 

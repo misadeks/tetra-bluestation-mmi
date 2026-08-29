@@ -151,6 +151,16 @@ pub struct DeviceProfile {
     /// Interaction model for this device (touch or keypad).
     #[serde(default = "default_input")]
     pub input: InputKind,
+    /// Screen rotation in degrees (0, 90, 180, 270) applied by the Pi linuxkms
+    /// backend via `SLINT_KMS_ROTATION`. Use this to drive a landscape layout on
+    /// a panel whose native orientation is portrait (or vice versa): e.g. a
+    /// 720x1280 portrait DSI panel shows a 1280x720 landscape model at 90. The
+    /// `width`/`height` above stay the model's own (landscape) dimensions;
+    /// rotation only maps them onto the physical panel. Ignored on desktop
+    /// (winit) builds. Touch input needs a matching libinput calibration matrix
+    /// (see PI_SETUP.md).
+    #[serde(default = "default_rotation")]
+    pub rotation: u32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -171,6 +181,10 @@ pub struct UiConfig {
     /// Explicit interaction-model override. Takes precedence over the model.
     #[serde(default)]
     pub input: Option<InputKind>,
+    /// Explicit screen-rotation override (degrees: 0/90/180/270). Takes
+    /// precedence over the model. See `DeviceProfile::rotation`.
+    #[serde(default)]
+    pub rotation: Option<u32>,
     #[serde(default = "default_theme")]
     pub theme: String,
 }
@@ -183,6 +197,7 @@ pub struct ResolvedUi {
     pub height: u32,
     pub scale: f32,
     pub input: InputKind,
+    pub rotation: u32,
     pub theme: String,
     pub model: Option<String>,
 }
@@ -245,14 +260,33 @@ impl Config {
             .input
             .or(base.as_ref().map(|d| d.input))
             .unwrap_or_else(default_input);
+        let rotation = normalize_rotation(
+            self.ui
+                .rotation
+                .or(base.as_ref().map(|d| d.rotation))
+                .unwrap_or_else(default_rotation),
+        );
 
         ResolvedUi {
             width,
             height,
             scale,
             input,
+            rotation,
             theme: self.ui.theme.clone(),
             model: self.ui.model.clone(),
+        }
+    }
+}
+
+/// Coerce a rotation value to one of the four supported quarter turns, warning
+/// and falling back to 0 for anything else.
+fn normalize_rotation(deg: u32) -> u32 {
+    match deg {
+        0 | 90 | 180 | 270 => deg,
+        other => {
+            tracing::warn!(rotation = other, "ui.rotation must be 0, 90, 180, or 270; using 0");
+            0
         }
     }
 }
@@ -268,6 +302,10 @@ pub fn builtin_devices() -> Vec<DeviceProfile> {
             height: 720,
             scale: 1.0,
             input: InputKind::Touch,
+            // Landscape layout on the native-portrait Waveshare 5" DSI panel:
+            // rotate the 1280x720 UI a quarter turn onto the 720x1280 panel.
+            // Override with [ui].rotation (e.g. 270) to flip the mount direction.
+            rotation: 90,
         },
         DeviceProfile {
             name: "pi-720x1280".to_string(),
@@ -275,6 +313,7 @@ pub fn builtin_devices() -> Vec<DeviceProfile> {
             height: 1280,
             scale: 1.0,
             input: InputKind::Touch,
+            rotation: 0,
         },
         DeviceProfile {
             name: "linht".to_string(),
@@ -282,6 +321,7 @@ pub fn builtin_devices() -> Vec<DeviceProfile> {
             height: 800,
             scale: 1.0,
             input: InputKind::Keypad,
+            rotation: 0,
         },
     ]
 }
@@ -341,6 +381,10 @@ fn default_height() -> u32 {
 
 fn default_scale() -> f32 {
     1.0
+}
+
+fn default_rotation() -> u32 {
+    0
 }
 
 fn default_input() -> InputKind {
@@ -414,6 +458,7 @@ impl Default for UiConfig {
             height: None,
             scale: None,
             input: None,
+            rotation: None,
             theme: default_theme(),
         }
     }
@@ -452,7 +497,28 @@ mod tests {
         assert_eq!((ui.width, ui.height), (1280, 720));
         assert_eq!(ui.scale, 1.0);
         assert_eq!(ui.input, InputKind::Touch);
+        // The landscape Pi model rotates onto the native-portrait panel.
+        assert_eq!(ui.rotation, 90);
         assert_eq!(ui.model.as_deref(), Some("pi-1280x720"));
+    }
+
+    #[test]
+    fn portrait_model_has_no_rotation() {
+        let cfg: Config = toml::from_str("[ui]\nmodel = \"pi-720x1280\"\n").unwrap();
+        assert_eq!(cfg.resolve_ui().rotation, 0);
+    }
+
+    #[test]
+    fn explicit_rotation_overrides_model() {
+        let cfg: Config =
+            toml::from_str("[ui]\nmodel = \"pi-1280x720\"\nrotation = 270\n").unwrap();
+        assert_eq!(cfg.resolve_ui().rotation, 270);
+    }
+
+    #[test]
+    fn invalid_rotation_falls_back_to_zero() {
+        let cfg: Config = toml::from_str("[ui]\nrotation = 45\n").unwrap();
+        assert_eq!(cfg.resolve_ui().rotation, 0);
     }
 
     #[test]

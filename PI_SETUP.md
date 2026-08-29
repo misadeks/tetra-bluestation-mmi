@@ -336,6 +336,48 @@ On a Pi shared with the TETRA radio/stack, keep the UI off the radio's cores:
 
 ---
 
+## 10. Landscape orientation (rotated display + touch)
+
+The Waveshare 5" DSI panel is **natively portrait (720x1280)**. To run the UI in
+**landscape**, select the landscape model in `config.toml`:
+
+```toml
+[ui]
+model = "pi-1280x720"     # 1280x720 landscape; rotation defaults to 90
+# rotation = 270          # uncomment/flip if the image is upside down for your mount
+```
+
+The `pi-1280x720` model carries `rotation = 90`, which the app passes to the
+linuxkms backend via `SLINT_KMS_ROTATION`. That rotates the 1280x720 UI a quarter
+turn so it fills the physical panel instead of being clipped. Without it the
+window is drawn at 1280x720 onto the 720x1280 panel, so it looks portrait and the
+right side is cut off. If landscape comes out upside down, set `rotation = 270`.
+
+### Touch calibration for the rotated panel
+
+`SLINT_KMS_ROTATION` rotates the **image only** - the touchscreen still reports
+coordinates in the panel's native (portrait) orientation, so taps land in the
+wrong place. Fix it with a libinput calibration matrix via a udev rule on the Pi:
+
+```bash
+# 90 rotation (matches [ui].rotation = 90). Use the 270 matrix instead if you
+# set rotation = 270. Applies to any touchscreen (ID_INPUT_TOUCHSCREEN).
+sudo tee /etc/udev/rules.d/99-touch-rotate.rules >/dev/null <<'EOF'
+# 90 clockwise:
+ENV{ID_INPUT_TOUCHSCREEN}=="1", ENV{LIBINPUT_CALIBRATION_MATRIX}="0 -1 1 1 0 0"
+# 270 clockwise (90 counter-clockwise): use instead of the line above
+# ENV{ID_INPUT_TOUCHSCREEN}=="1", ENV{LIBINPUT_CALIBRATION_MATRIX}="0 1 0 -1 0 1"
+# 180 (upside down): "-1 0 1 0 -1 1"
+EOF
+sudo udevadm control --reload-rules
+sudo reboot
+```
+
+After reboot the display and touch are both landscape. To go back to portrait,
+use `model = "pi-720x1280"` (rotation 0) and remove the udev rule.
+
+---
+
 ## Quick copy-paste (steps 1-5, fresh Pi)
 
 ```bash
