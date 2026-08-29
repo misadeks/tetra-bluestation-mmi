@@ -1651,7 +1651,7 @@ component GroupRowView inherits Rectangle {
     callback select;
     callback add;
     callback detach;
-    height: 106px;
+    height: 86px;
     border-radius: 16px;
     border-width: 1px;
     border-color: root.is-tx ? #37c06a55 : Palette.line;
@@ -1675,7 +1675,7 @@ component GroupRowView inherits Rectangle {
                 Text {
                     text: root.name;
                     color: Palette.txt;
-                    font-size: 26px;
+                    font-size: 23px;
                     font-weight: 700;
                     overflow: elide;
                 }
@@ -3751,7 +3751,7 @@ component PickerScreen inherits Rectangle {
                 spacing: 8px;
                 alignment: start;
                 for r in root.rows: Rectangle {
-                    height: r.kind == 0 ? 88px : (r.kind == 2 ? 90px : (r.kind == 3 ? 30px : 98px));
+                    height: r.kind == 0 ? 88px : (r.kind == 2 ? 90px : (r.kind == 3 ? 30px : 88px));
                     if r.kind == 3: SectionHeader {
                         text: r.title;
                         vertical-alignment: bottom;
