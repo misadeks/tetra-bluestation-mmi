@@ -1070,7 +1070,11 @@ component MenuScreen inherits Rectangle {
     callback open-network;
     callback open-scanlists;
     background: transparent;
-    VerticalLayout {
+    // Scrollable: the menu has more rows than fit in the (short) landscape content
+    // area, so a Flickable lets it scroll instead of clipping the last entries.
+    Flickable {
+        viewport-height: mcol.preferred-height;
+        mcol := VerticalLayout {
         padding: 18px;
         spacing: 12px;
         alignment: start;
@@ -1146,6 +1150,7 @@ component MenuScreen inherits Rectangle {
             clicked => {
                 root.open-settings();
             }
+        }
         }
     }
 }
