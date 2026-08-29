@@ -5227,7 +5227,7 @@ component DialerScreen inherits Rectangle {
                 }
             }
             Rectangle {
-                vertical-stretch: 1;
+                height: 120px;
                 border-radius: 16px;
                 border-width: 1px;
                 border-color: Palette.line2;
@@ -5237,7 +5237,7 @@ component DialerScreen inherits Rectangle {
                     y: (parent.height - self.height) / 2;
                     text: root.number;
                     color: #ffffff;
-                    font-size: 46px;
+                    font-size: 44px;
                     font-weight: 800;
                     letter-spacing: 2px;
                     overflow: elide;
@@ -5252,9 +5252,9 @@ component DialerScreen inherits Rectangle {
                 }
             }
             HorizontalLayout {
+                vertical-stretch: 1;
                 spacing: 10px;
                 Rectangle {
-                    height: 72px;
                     horizontal-stretch: 1;
                     border-radius: 16px;
                     border-width: 1px;
@@ -5262,14 +5262,13 @@ component DialerScreen inherits Rectangle {
                     background: wrec.pressed ? #16202b : Palette.surface;
                     wrec := TouchArea { clicked => { root.open-recents(); } }
                     HorizontalLayout {
-                        padding-left: 14px;
-                        spacing: 12px;
-                        VerticalLayout { alignment: center; Icon { d: Icons.phone; tint: Palette.accent; size: 22px; } }
-                        VerticalLayout { alignment: center; Text { text: "Recents"; color: Palette.txt; font-size: 18px; font-weight: 700; } }
+                        alignment: center;
+                        spacing: 14px;
+                        VerticalLayout { alignment: center; Icon { d: Icons.phone; tint: Palette.accent; size: 34px; } }
+                        VerticalLayout { alignment: center; Text { text: "Recents"; color: Palette.txt; font-size: 26px; font-weight: 700; } }
                     }
                 }
                 Rectangle {
-                    height: 72px;
                     horizontal-stretch: 1;
                     border-radius: 16px;
                     border-width: 1px;
@@ -5277,10 +5276,10 @@ component DialerScreen inherits Rectangle {
                     background: wcon.pressed ? #16202b : Palette.surface;
                     wcon := TouchArea { clicked => { root.open-contacts(); } }
                     HorizontalLayout {
-                        padding-left: 14px;
-                        spacing: 12px;
-                        VerticalLayout { alignment: center; Icon { d: Icons.users; tint: #6fe0a0; size: 22px; } }
-                        VerticalLayout { alignment: center; Text { text: "Contacts"; color: Palette.txt; font-size: 18px; font-weight: 700; } }
+                        alignment: center;
+                        spacing: 14px;
+                        VerticalLayout { alignment: center; Icon { d: Icons.users; tint: #6fe0a0; size: 34px; } }
+                        VerticalLayout { alignment: center; Text { text: "Contacts"; color: Palette.txt; font-size: 26px; font-weight: 700; } }
                     }
                 }
             }
