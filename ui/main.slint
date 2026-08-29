@@ -292,6 +292,9 @@ component StatusBar inherits Rectangle {
     in property <bool> scan;
     in property <bool> control-on;
     in property <bool> telemetry-on;
+    // Optional clock (landscape status strip shows it; portrait leaves it empty
+    // because the header carries the clock instead).
+    in property <string> clock: "";
     // Green only when attached AND in service; red otherwise.
     property <bool> ok: root.registered && root.in-service;
     height: 70px;
@@ -342,6 +345,18 @@ component StatusBar inherits Rectangle {
         }
 
         Rectangle { horizontal-stretch: 1; }
+
+        // Landscape clock (empty in portrait, where the header shows the time).
+        if root.clock != "": VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.clock;
+                color: Palette.txt;
+                font-size: 17px;
+                font-weight: 700;
+                vertical-alignment: center;
+            }
+        }
 
         // Battery pinned flush to the far right (time lives in the header below).
         VerticalLayout {
@@ -5067,6 +5082,63 @@ component KeypadHome inherits FocusScope {
     }
 }
 
+// Left nav-rail button for the landscape shell: icon over label, selected state,
+// and an optional unread-count badge (used by Messages).
+component NavItem inherits Rectangle {
+    in property <string> icon;
+    in property <string> label;
+    in property <bool> selected;
+    in property <int> badge-count: 0;
+    callback clicked;
+    height: 82px;
+    border-radius: 14px;
+    border-width: 1px;
+    border-color: root.selected ? #33a7dd44 : #00000000;
+    background: root.selected ? #12222f : (touch.pressed ? #101a24 : #00000000);
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+    VerticalLayout {
+        alignment: center;
+        spacing: 6px;
+        Rectangle {
+            height: 30px;
+            Icon {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                d: root.icon;
+                tint: root.selected ? Palette.txt : Palette.muted;
+                size: 27px;
+            }
+            if root.badge-count > 0: Rectangle {
+                x: parent.width / 2 + 10px;
+                y: -3px;
+                width: 19px;
+                height: 19px;
+                border-radius: 9px;
+                background: Palette.red;
+                Text {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    text: root.badge-count > 9 ? "9+" : root.badge-count;
+                    color: #ffffff;
+                    font-size: 11px;
+                    font-weight: 800;
+                }
+            }
+        }
+        Text {
+            text: root.label;
+            color: root.selected ? Palette.txt : Palette.muted;
+            font-size: 14px;
+            font-weight: 700;
+            horizontal-alignment: center;
+        }
+    }
+}
+
 export component MainWindow inherits Window {
     title: "TETRA BlueStation MMI";
     default-font-family: "Inter";
@@ -5080,6 +5152,10 @@ export component MainWindow inherits Window {
     background: @linear-gradient(180deg, #0f1620 0%, #0a0f16 100%);
 
     in property <DeviceInput> device-input: DeviceInput.Touch;
+    // Landscape device (e.g. pi-1280x720): use the wide MTM-style shell (status
+    // strip + left nav rail + content + right action column) instead of the
+    // portrait stack. Set from Rust when the model is wider than it is tall.
+    in property <bool> landscape: false;
     in property <bool> show-event-log: true;
     in property <float> volume: 1.0;
     in-out property <Screen> screen: Screen.Home;
@@ -5511,14 +5587,31 @@ export component MainWindow inherits Window {
             scan: root.scan-active;
             control-on: root.control-connected;
             telemetry-on: root.telemetry-connected;
+            // Landscape shows the clock in the status strip (no header below).
+            clock: root.landscape ? root.clock : "";
         }
 
-        Header {
+        // Portrait keeps the header bar; landscape uses the left nav rail instead.
+        if !root.landscape: Header {
             title: root.screen-title();
             muted: root.screen == Screen.Home;
         }
 
-        if root.device-input == DeviceInput.Touch && root.screen == Screen.Home: HomeScreen {
+        // Shared content area. In landscape it is inset to leave room for the
+        // overlaid nav rail (left) and action column (right); in portrait it fills
+        // full width between the header and the softkey bar. The screen dispatch
+        // inside is identical for both orientations (single source of truth). We
+        // use a plain Rectangle + explicitly-sized inner VerticalLayout (rather
+        // than padding on a layout) so children that bind to parent.width don't
+        // form a layout binding loop.
+        Rectangle {
+            vertical-stretch: 1;
+            VerticalLayout {
+                x: root.landscape ? 150px : 0px;
+                width: root.landscape ? parent.width - 400px : parent.width;
+                height: 100%;
+
+        if root.device-input == DeviceInput.Touch && !root.landscape && root.screen == Screen.Home: HomeScreen {
             vertical-stretch: 1;
             has-codeplug: root.has-codeplug;
             folder-name: root.folder-name;
@@ -5565,6 +5658,167 @@ export component MainWindow inherits Window {
             }
             hangup-group => {
                 root.hangup-group();
+            }
+        }
+
+        // Landscape Home: wide hero (folder + cycler, or the group-call panel).
+        // No docked PTT (physical fist-mic handles talk); Select group lives in
+        // the right action column.
+        if root.device-input == DeviceInput.Touch && root.landscape && root.screen == Screen.Home: Rectangle {
+            vertical-stretch: 1;
+            VerticalLayout {
+                padding: 26px;
+                spacing: 18px;
+                // Operator banner pushed by the network (home-mode display SDS).
+                if root.home-display != "": HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: min(parent.width, hd2.preferred-width);
+                        height: hd2.preferred-height;
+                        border-radius: 14px;
+                        border-width: 1px;
+                        border-color: #33a7dd3d;
+                        background: #12212e;
+                        hd2 := HorizontalLayout {
+                            padding-left: 18px;
+                            padding-right: 18px;
+                            padding-top: 12px;
+                            padding-bottom: 12px;
+                            spacing: 12px;
+                            alignment: center;
+                            VerticalLayout {
+                                alignment: center;
+                                Icon { d: Icons.info; tint: Palette.accent; size: 22px; }
+                            }
+                            Text {
+                                text: root.home-display;
+                                color: #dbeafc;
+                                font-size: 20px;
+                                font-weight: 600;
+                                vertical-alignment: center;
+                                horizontal-alignment: center;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+                }
+                Rectangle {
+                    vertical-stretch: 1;
+                    // Group call in progress: hero shows the active group + talker.
+                    if root.group-call-active: VerticalLayout {
+                        alignment: center;
+                        spacing: 14px;
+                        HorizontalLayout {
+                            alignment: center;
+                            Rectangle {
+                                height: 42px;
+                                border-radius: 12px;
+                                background: #d23b4133;
+                                HorizontalLayout {
+                                    padding-left: 20px;
+                                    padding-right: 20px;
+                                    Text {
+                                        text: "GROUP IN USE";
+                                        color: #ff9a9d;
+                                        font-size: 18px;
+                                        font-weight: 800;
+                                        letter-spacing: 2px;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                        Text {
+                            text: root.group-call-name;
+                            color: #f2f7fb;
+                            font-size: 60px;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            wrap: word-wrap;
+                        }
+                        Rectangle {
+                            height: 34px;
+                            Text {
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                text: root.group-call-status;
+                                color: Palette.muted;
+                                font-size: 24px;
+                                font-weight: 600;
+                            }
+                        }
+                        Rectangle {
+                            height: 48px;
+                            Text {
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                text: root.group-talker-id;
+                                color: #cfe9ff;
+                                font-size: 38px;
+                                font-weight: 700;
+                            }
+                        }
+                    }
+                    // Idle: folder selector + talkgroup cycler.
+                    if !root.group-call-active: VerticalLayout {
+                        alignment: center;
+                        spacing: 20px;
+                        if root.has-codeplug: HorizontalLayout {
+                            alignment: center;
+                            FolderButton {
+                                name: root.folder-name;
+                                clicked => {
+                                    root.screen = Screen.Folders;
+                                }
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: 16px;
+                            CyclerArrow {
+                                right: false;
+                                enabled: root.can-cycle;
+                                clicked => {
+                                    root.cycle-prev();
+                                }
+                            }
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                spacing: 8px;
+                                Text {
+                                    text: root.talkgroup-name;
+                                    color: #f2f7fb;
+                                    font-size: 62px;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    wrap: word-wrap;
+                                }
+                                Text {
+                                    text: root.tg-sub;
+                                    color: Palette.muted;
+                                    font-size: 21px;
+                                    font-weight: 600;
+                                    horizontal-alignment: center;
+                                }
+                                if root.badge != "": HorizontalLayout {
+                                    alignment: center;
+                                    Badge {
+                                        text: root.badge;
+                                        fg: root.badge-kind == 2 ? #ff9a9d : (root.badge-kind == 1 ? #7ecbef : Palette.muted);
+                                        bg: root.badge-kind == 2 ? #d23b4133 : (root.badge-kind == 1 ? #33a7dd29 : #ffffff10);
+                                    }
+                                }
+                            }
+                            CyclerArrow {
+                                right: true;
+                                enabled: root.can-cycle;
+                                clicked => {
+                                    root.cycle-next();
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -6111,11 +6365,15 @@ export component MainWindow inherits Window {
             }
         }
 
-        // Softkey bar: three fixed equal-width slots (LEFT / CENTER / RIGHT).
-        // Each slot is a stretch:1 wrapper whose width never depends on its
-        // content, so buttons stay the same size and never shift between screens.
-        // Only the button shown inside each slot changes per screen.
-        Rectangle {
+            } // inner content VerticalLayout
+        } // content Rectangle wrapper
+
+        // Softkey bar (portrait only): three fixed equal-width slots (LEFT /
+        // CENTER / RIGHT). Each slot is a stretch:1 wrapper whose width never
+        // depends on its content, so buttons stay the same size and never shift
+        // between screens. Only the button shown inside each slot changes per
+        // screen. Landscape uses the right action column instead.
+        if !root.landscape: Rectangle {
             height: 108px;
             background: @linear-gradient(180deg, #0c141d 0%, #0a1017 100%);
             HorizontalLayout {
@@ -6206,6 +6464,135 @@ export component MainWindow inherits Window {
                     }
                 }
             }
+        }
+    }
+
+    // ===== Landscape left nav rail (overlay in the content's left inset) =====
+    if root.landscape: Rectangle {
+        x: 0;
+        y: 70px;
+        width: 150px;
+        height: root.height - 70px;
+        background: @linear-gradient(180deg, #0c141d 0%, #0a1017 100%);
+        Rectangle {
+            x: parent.width - 1px;
+            width: 1px;
+            height: 100%;
+            background: Palette.line2;
+        }
+        VerticalLayout {
+            padding: 12px;
+            spacing: 8px;
+            if root.screen != Screen.Home: NavItem {
+                icon: Icons.back;
+                label: "Back";
+                clicked => {
+                    root.nav-back();
+                }
+            }
+            NavItem {
+                icon: Icons.home;
+                label: "Home";
+                selected: root.screen == Screen.Home;
+                clicked => {
+                    root.screen = Screen.Home;
+                }
+            }
+            NavItem {
+                icon: Icons.folder;
+                label: "Groups";
+                selected: root.screen == Screen.Folders;
+                clicked => {
+                    root.screen = Screen.Folders;
+                }
+            }
+            NavItem {
+                icon: Icons.phone;
+                label: "Dialer";
+                selected: root.screen == Screen.Dialer;
+                clicked => {
+                    root.screen = Screen.Dialer;
+                }
+            }
+            NavItem {
+                icon: Icons.message;
+                label: "Messages";
+                badge-count: root.msg-unread;
+                selected: root.screen == Screen.Messages;
+                clicked => {
+                    root.open-messages();
+                    root.screen = Screen.Messages;
+                }
+            }
+            Rectangle { vertical-stretch: 1; }
+            NavItem {
+                icon: Icons.gear;
+                label: "Menu";
+                selected: root.screen == Screen.Menu;
+                clicked => {
+                    root.screen = Screen.Menu;
+                }
+            }
+        }
+    }
+
+    // ===== Landscape right action column (context softkeys) =====
+    if root.landscape: Rectangle {
+        x: root.width - 250px;
+        y: 70px;
+        width: 250px;
+        height: root.height - 70px;
+        background: @linear-gradient(180deg, #0b1119 0%, #080d13 100%);
+        Rectangle {
+            x: 0;
+            width: 1px;
+            height: 100%;
+            background: Palette.line2;
+        }
+        VerticalLayout {
+            padding: 16px;
+            spacing: 12px;
+            // HOME: select/cancel talkgroup, or hang up a live group call.
+            if root.screen == Screen.Home && !root.group-call-active && root.select-enabled: Softkey {
+                height: 82px;
+                text: root.show-cancel-select ? "Cancel" : "Select group";
+                icon: root.show-cancel-select ? Icons.close : Icons.check;
+                clicked => {
+                    if (root.show-cancel-select) {
+                        root.cancel-select();
+                    } else {
+                        root.select-talkgroup();
+                    }
+                }
+            }
+            if root.screen == Screen.Home && root.group-call-active: Softkey {
+                height: 82px;
+                text: "Hang up";
+                icon: Icons.phone-off;
+                danger: true;
+                clicked => {
+                    root.hangup-group();
+                }
+            }
+            // IN CALL: mute + hang up.
+            if root.screen == Screen.InCall: Softkey {
+                height: 82px;
+                text: root.call-muted ? "Unmute" : "Mute";
+                icon: root.call-muted ? Icons.mic-off : Icons.mic;
+                clicked => {
+                    root.toggle-mute();
+                }
+            }
+            if root.screen == Screen.InCall: Softkey {
+                height: 82px;
+                text: "Hang up";
+                icon: Icons.phone-off;
+                danger: true;
+                clicked => {
+                    root.hangup-call();
+                }
+            }
+            Rectangle { vertical-stretch: 1; }
         }
     }
 

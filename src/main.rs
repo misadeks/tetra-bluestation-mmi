@@ -121,6 +121,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         InputKind::Touch => DeviceInput::Touch,
         InputKind::Keypad => DeviceInput::Keypad,
     });
+    // Landscape panels (wider than tall, e.g. pi-1280x720) use the MTM-style wide
+    // shell: status strip + left nav rail + content + right action column.
+    window.set_landscape(ui.width > ui.height);
 
     // --- Wire the network + app event loop --------------------------------
     let (events_tx, events_rx) = crossbeam_channel::unbounded::<app::AppEvent>();
