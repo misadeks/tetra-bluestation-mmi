@@ -4699,9 +4699,11 @@ component InCallScreen inherits Rectangle {
                 }
             }
         }
-        // RIGHT column: only present when there is a keypad or PTT to show.
+        // RIGHT column: fixed width so its content (PTT label changing to ON AIR /
+        // Requesting, or the DTMF pad) never reflows the split and shifts the left
+        // column. Present only when there is a keypad or PTT to show.
         if root.show-dtmf || root.can-ptt: VerticalLayout {
-            horizontal-stretch: 4;
+            width: 460px;
             spacing: 12px;
             if root.show-dtmf: Rectangle {
                 height: 72px;
@@ -4732,19 +4734,23 @@ component InCallScreen inherits Rectangle {
                     }
                 }
             }
-            if !root.show-dtmf && root.can-ptt: Ptt {
+            if !root.show-dtmf && root.can-ptt: VerticalLayout {
                 vertical-stretch: 1;
-                text: root.ptt-state == 2 ? "ON AIR"
-                    : root.ptt-state == 1 ? "Requesting..."
-                    : "Push to talk";
-                enabled: root.ptt-enabled;
-                state: root.ptt-state;
-                press-down => {
-                    root.ptt-down();
+                Rectangle { vertical-stretch: 1; }
+                Ptt {
+                    text: root.ptt-state == 2 ? "ON AIR"
+                        : root.ptt-state == 1 ? "Requesting..."
+                        : "Push to talk";
+                    enabled: root.ptt-enabled;
+                    state: root.ptt-state;
+                    press-down => {
+                        root.ptt-down();
+                    }
+                    release => {
+                        root.ptt-up();
+                    }
                 }
-                release => {
-                    root.ptt-up();
-                }
+                Rectangle { vertical-stretch: 1; }
             }
         }
     }
