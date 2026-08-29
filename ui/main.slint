@@ -2525,14 +2525,15 @@ component ConvRowView inherits Rectangle {
     in property <string> snippet;
     in property <int> unread;
     in property <string> ts;
+    in property <bool> selected;
     callback open;
     callback long-press;
     property <bool> held: false;
     height: 106px;
     border-radius: 16px;
     border-width: 1px;
-    border-color: Palette.line;
-    background: touch.pressed ? #16202b : Palette.surface;
+    border-color: root.selected ? #33a7dd80 : Palette.line;
+    background: touch.pressed ? #16202b : (root.selected ? #33a7dd1a : Palette.surface);
     hold-timer := Timer {
         interval: 500ms;
         running: false;
@@ -2626,6 +2627,7 @@ component ConvRowView inherits Rectangle {
 
 component MessagesScreen inherits Rectangle {
     in property <[ConvRow]> conversations;
+    in property <int> selected-peer: -1;
     callback open-thread(int);
     callback new-message;
     callback delete-thread(int, bool);
@@ -2654,6 +2656,7 @@ component MessagesScreen inherits Rectangle {
                     snippet: c.snippet;
                     unread: c.unread;
                     ts: c.ts;
+                    selected: c.peer == root.selected-peer;
                     open => {
                         root.open-thread(c.peer);
                     }
@@ -5663,6 +5666,8 @@ export component MainWindow inherits Window {
     in property <[ConvRow]> conversations;
     in property <[MsgRow]> msg-thread;
     in property <string> msg-thread-title;
+    // Landscape two-pane: which conversation is shown on the right (for highlight).
+    property <int> msg-sel-peer: -1;
     in property <string> msg-draft;
     in property <bool> msg-shift;
     in property <string> msg-new-issi;
@@ -6608,7 +6613,8 @@ export component MainWindow inherits Window {
             }
         }
 
-        if root.device-input == DeviceInput.Touch && root.screen == Screen.Messages: MessagesScreen {
+        // Portrait: separate conversation list and thread screens.
+        if root.device-input == DeviceInput.Touch && !root.landscape && root.screen == Screen.Messages: MessagesScreen {
             vertical-stretch: 1;
             conversations: root.conversations;
             open-thread(p) => {
@@ -6624,7 +6630,7 @@ export component MainWindow inherits Window {
             }
         }
 
-        if root.device-input == DeviceInput.Touch && root.screen == Screen.MsgThread: MsgThreadScreen {
+        if root.device-input == DeviceInput.Touch && !root.landscape && root.screen == Screen.MsgThread: MsgThreadScreen {
             vertical-stretch: 1;
             messages: root.msg-thread;
             scroll-tick: root.msg-scroll-tick;
@@ -6644,6 +6650,107 @@ export component MainWindow inherits Window {
             }
             delete-message(id) => {
                 root.msg-delete(id);
+            }
+        }
+
+        // Landscape: two-pane master/detail - conversation list on the left, the
+        // open thread (or a prompt) on the right, so messaging fits the wide screen.
+        if root.device-input == DeviceInput.Touch && root.landscape && (root.screen == Screen.Messages || root.screen == Screen.MsgThread): HorizontalLayout {
+            vertical-stretch: 1;
+            spacing: 0px;
+            Rectangle {
+                width: 400px;
+                MessagesScreen {
+                    width: 100%;
+                    height: 100%;
+                    conversations: root.conversations;
+                    selected-peer: root.msg-sel-peer;
+                    open-thread(p) => {
+                        root.msg-sel-peer = p;
+                        root.open-thread(p);
+                    }
+                    new-message => {
+                        root.msg-new();
+                        root.screen = Screen.MsgNew;
+                    }
+                    delete-thread(p, g) => {
+                        root.msg-delete-thread(p, g);
+                    }
+                }
+                Rectangle {
+                    x: parent.width - 1px;
+                    width: 1px;
+                    height: 100%;
+                    background: Palette.line2;
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+                if root.msg-thread-title != "": VerticalLayout {
+                    Rectangle {
+                        height: 58px;
+                        background: @linear-gradient(180deg, #0e1822 0%, #0b131b 100%);
+                        HorizontalLayout {
+                            padding-left: 18px;
+                            padding-right: 14px;
+                            spacing: 12px;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 40px;
+                                    height: 40px;
+                                    border-radius: 12px;
+                                    background: #33a7dd1f;
+                                    Icon { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; d: Icons.message; tint: Palette.accent; size: 22px; }
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                Text {
+                                    text: root.msg-thread-title;
+                                    color: Palette.txt;
+                                    font-size: 22px;
+                                    font-weight: 700;
+                                    overflow: elide;
+                                }
+                            }
+                        }
+                        Rectangle { y: parent.height - 1px; height: 1px; width: 100%; background: Palette.line2; }
+                    }
+                    MsgThreadScreen {
+                        vertical-stretch: 1;
+                        messages: root.msg-thread;
+                        scroll-tick: root.msg-scroll-tick;
+                        draft: root.msg-draft;
+                        shift: root.msg-shift;
+                        key(c) => {
+                            root.msg-key(c);
+                        }
+                        backspace => {
+                            root.msg-backspace();
+                        }
+                        shift-toggle => {
+                            root.msg-shift-toggle();
+                        }
+                        send => {
+                            root.msg-send();
+                        }
+                        delete-message(id) => {
+                            root.msg-delete(id);
+                        }
+                    }
+                }
+                if root.msg-thread-title == "": Rectangle {
+                    Text {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        text: "Select a conversation";
+                        color: Palette.muted;
+                        font-size: 24px;
+                        font-weight: 600;
+                    }
+                }
             }
         }
 
