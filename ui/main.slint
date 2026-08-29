@@ -4670,22 +4670,31 @@ component InCallScreen inherits Rectangle {
             }
             HorizontalLayout {
                 spacing: 14px;
-                SecondaryButton {
+                // Equal-width slots so the button never resizes when Mute<->Unmute.
+                Rectangle {
                     horizontal-stretch: 1;
                     height: 82px;
-                    icon: root.muted ? Icons.mic-off : Icons.mic;
-                    text: root.muted ? "Unmute" : "Mute";
-                    clicked => {
-                        root.toggle-mute();
+                    SecondaryButton {
+                        width: 100%;
+                        height: 100%;
+                        icon: root.muted ? Icons.mic-off : Icons.mic;
+                        text: root.muted ? "Unmute" : "Mute";
+                        clicked => {
+                            root.toggle-mute();
+                        }
                     }
                 }
-                DangerButton {
+                Rectangle {
                     horizontal-stretch: 1;
                     height: 82px;
-                    icon: Icons.phone-off;
-                    text: "Hang up";
-                    clicked => {
-                        root.hangup();
+                    DangerButton {
+                        width: 100%;
+                        height: 100%;
+                        icon: Icons.phone-off;
+                        text: "Hang up";
+                        clicked => {
+                            root.hangup();
+                        }
                     }
                 }
             }
