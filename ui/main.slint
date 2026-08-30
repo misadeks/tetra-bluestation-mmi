@@ -280,15 +280,15 @@ global Icons {
 component SignalBars inherits Rectangle {
     in property <int> bars;
     in property <bool> registered;
-    width: 32px;
-    height: 20px;
+    width: 42px;
+    height: 26px;
     HorizontalLayout {
-        spacing: 2.5px;
+        spacing: 3px;
         alignment: start;
-        for h[i] in [6, 9, 13, 16, 20]: VerticalLayout {
+        for h[i] in [8, 12, 17, 21, 26]: VerticalLayout {
             alignment: end;
             Rectangle {
-                width: 4px;
+                width: 5px;
                 height: h * 1px;
                 border-radius: 1px;
                 background: i < root.bars ? (root.registered ? #55d98a : Palette.red) : #35424c;
@@ -301,14 +301,14 @@ component SignalBars inherits Rectangle {
 component LinkBadge inherits Rectangle {
     in property <string> label;
     in property <bool> on;
-    width: 24px;
-    height: 22px;
-    border-radius: 7px;
+    width: 30px;
+    height: 27px;
+    border-radius: 9px;
     background: root.on ? #37c06a2e : #f0555a24;
     Text {
         text: root.label;
         color: root.on ? Palette.greentx : Palette.redtx;
-        font-size: 12px;
+        font-size: 15px;
         font-weight: 700;
         horizontal-alignment: center;
         vertical-alignment: center;
@@ -316,30 +316,30 @@ component LinkBadge inherits Rectangle {
 }
 
 component Battery inherits Rectangle {
-    width: 32px;
-    height: 16px;
+    width: 40px;
+    height: 20px;
     Rectangle {
         x: 0;
         y: 0;
-        width: 28px;
-        height: 16px;
+        width: 35px;
+        height: 20px;
         border-width: 1.5px;
         border-color: #7f8f9b;
         border-radius: 3px;
         Rectangle {
-            x: 2.5px;
-            y: 2.5px;
-            width: 17px;
-            height: 11px;
+            x: 3px;
+            y: 3px;
+            width: 21px;
+            height: 14px;
             background: Palette.green;
             border-radius: 1px;
         }
     }
     Rectangle {
-        x: 28px;
-        y: 4.5px;
-        width: 3px;
-        height: 7px;
+        x: 35px;
+        y: 5px;
+        width: 4px;
+        height: 10px;
         background: #7f8f9b;
         border-radius: 1px;
     }
@@ -371,7 +371,7 @@ component StatusBar inherits Rectangle {
             alignment: center;
             Icon {
                 d: Icons.antenna;
-                size: 30px;
+                size: 34px;
                 weight: 2.2;
                 // Registering: steady amber. Otherwise green when OK, red when
                 // not. No blink: a periodic repaint would keep presenting to the
@@ -387,7 +387,7 @@ component StatusBar inherits Rectangle {
             Text {
                 text: root.network;
                 color: Palette.muted;
-                font-size: 15px;
+                font-size: 18px;
                 font-weight: 500;
                 vertical-alignment: center;
             }
@@ -399,7 +399,7 @@ component StatusBar inherits Rectangle {
             Text {
                 text: "SCAN";
                 color: Palette.accent;
-                font-size: 13px;
+                font-size: 15px;
                 font-weight: 800;
                 letter-spacing: 1.5px;
                 vertical-alignment: center;
@@ -414,7 +414,7 @@ component StatusBar inherits Rectangle {
             Text {
                 text: root.clock;
                 color: Palette.txt;
-                font-size: 17px;
+                font-size: 20px;
                 font-weight: 700;
                 vertical-alignment: center;
             }
