@@ -3088,8 +3088,9 @@ component MsgNewScreen inherits Rectangle {
     callback cancel;
     // Collapsible keyboard (landscape): Done hides it, tapping the field reopens it.
     property <bool> kb-open: true;
+    in property <bool> wide;
     background: transparent;
-    VerticalLayout {
+    if !root.wide: VerticalLayout {
         padding: 14px;
         spacing: 14px;
         EditFieldRow {
@@ -3138,6 +3139,61 @@ component MsgNewScreen inherits Rectangle {
                     root.start();
                 }
             }
+        }
+    }
+
+    // Wide (landscape): field + actions left, docked numeric keyboard right.
+    if root.wide: HorizontalLayout {
+        padding: 16px;
+        spacing: 18px;
+        VerticalLayout {
+            width: 500px;
+            spacing: 14px;
+            EditFieldRow {
+                label: "To (ISSI)";
+                text: root.issi;
+                placeholder: "Recipient number";
+                focused: true;
+            }
+            Rectangle { vertical-stretch: 1; min-height: 6px; }
+            HorizontalLayout {
+                spacing: 10px;
+                SecondaryButton {
+                    text: "Cancel";
+                    icon: Icons.close;
+                    horizontal-stretch: 1;
+                    clicked => {
+                        root.cancel();
+                    }
+                }
+                PrimaryButton {
+                    text: "Start";
+                    icon: Icons.check;
+                    enabled: root.issi != "";
+                    horizontal-stretch: 1;
+                    clicked => {
+                        root.start();
+                    }
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            Rectangle { vertical-stretch: 1; }
+            OnScreenKeyboard {
+                numeric: true;
+                digits-only: true;
+                resizable: false;
+                key(c) => {
+                    root.key(c);
+                }
+                backspace => {
+                    root.backspace();
+                }
+                done => {
+                }
+            }
+            Rectangle { vertical-stretch: 1; }
         }
     }
 }
@@ -7059,6 +7115,7 @@ export component MainWindow inherits Window {
         if root.device-input == DeviceInput.Touch && root.screen == Screen.MsgNew: MsgNewScreen {
             vertical-stretch: 1;
             issi: root.msg-new-issi;
+            wide: root.landscape;
             key(c) => {
                 root.msg-new-key(c);
             }
