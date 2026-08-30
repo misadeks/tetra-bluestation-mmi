@@ -1515,7 +1515,11 @@ component InfoScreen inherits Rectangle {
     in property <int> attached-count;
     in property <bool> restart-required;
     background: transparent;
-    VerticalLayout {
+    Rectangle {
+        width: min(parent.width, 760px);
+        x: (parent.width - self.width) / 2;
+        height: 100%;
+        VerticalLayout {
         padding: 18px;
         spacing: 12px;
         alignment: start;
@@ -1551,6 +1555,7 @@ component InfoScreen inherits Rectangle {
             font-size: 14px;
             wrap: word-wrap;
         }
+        }
     }
 }
 
@@ -1571,7 +1576,11 @@ component NetworkScreen inherits Rectangle {
     callback register;
     callback deregister;
     background: transparent;
-    VerticalLayout {
+    Rectangle {
+        width: min(parent.width, 760px);
+        x: (parent.width - self.width) / 2;
+        height: 100%;
+        VerticalLayout {
         padding: 18px;
         spacing: 12px;
         alignment: start;
@@ -1628,6 +1637,7 @@ component NetworkScreen inherits Rectangle {
                     root.register();
                 }
             }
+        }
         }
     }
 }
