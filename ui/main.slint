@@ -5574,22 +5574,27 @@ component DialerScreen inherits Rectangle {
                     horizontal-stretch: 1;
                     border-radius: 16px;
                     border-width: 1px;
-                    border-color: #2bb76880;
-                    background: root.number == "" ? Palette.surface : (wcall.pressed ? #17402a : #2bb768);
-                    opacity: root.number == "" ? 0.5 : 1.0;
-                    wcall := TouchArea { enabled: root.number != ""; clicked => { root.place-call(root.sel, true); } }
-                    Icon { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; d: Icons.phone; tint: root.number == "" ? Palette.muted : #ffffff; size: 32px; }
-                }
-                Rectangle {
-                    height: 76px;
-                    horizontal-stretch: 1;
-                    border-radius: 16px;
-                    border-width: 1px;
                     border-color: Palette.line2;
                     background: wbs.pressed ? Palette.press2 : Palette.surface;
                     opacity: root.number == "" ? 0.4 : 1.0;
                     wbs := TouchArea { enabled: root.number != ""; clicked => { root.key("back"); } }
                     Icon { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; d: Icons.backspace; tint: Palette.muted; size: 30px; }
+                }
+            }
+            // Larger Call button on its own row below Clear / Delete.
+            Rectangle {
+                height: 96px;
+                border-radius: 16px;
+                border-width: 1px;
+                border-color: #2bb76880;
+                background: root.number == "" ? Palette.surface : (wcall.pressed ? #17402a : #2bb768);
+                opacity: root.number == "" ? 0.5 : 1.0;
+                wcall := TouchArea { enabled: root.number != ""; clicked => { root.place-call(root.sel, true); } }
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 12px;
+                    VerticalLayout { alignment: center; Icon { d: Icons.phone; tint: root.number == "" ? Palette.muted : #ffffff; size: 34px; } }
+                    VerticalLayout { alignment: center; Text { text: "Call"; color: root.number == "" ? Palette.muted : #ffffff; font-size: 26px; font-weight: 800; } }
                 }
             }
             // Simplex private calls are started with the physical PTT (no on-screen
@@ -6182,7 +6187,7 @@ export component MainWindow inherits Window {
         // Landscape sub-screen header: screen title (portrait uses the top Header bar
         // instead). Home and the in-call view have no header (the call view carries
         // its own identity + Mute/Hang up controls).
-        if root.landscape && root.screen != Screen.Home && root.screen != Screen.InCall: Rectangle {
+        if root.landscape && root.screen != Screen.Home && root.screen != Screen.InCall && root.screen != Screen.Dialer: Rectangle {
             height: 68px;
             background: @linear-gradient(180deg, Palette.panel1 0%, Palette.panel2 100%);
             HorizontalLayout {
