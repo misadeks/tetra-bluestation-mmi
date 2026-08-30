@@ -3346,10 +3346,12 @@ component FormEditScreen inherits Rectangle {
     callback delete;
     // Collapsible keyboard (landscape): Done hides it, tapping a field reopens it.
     property <bool> kb-open: true;
+    // Wide (landscape) editor: fields + actions left, docked keyboard right.
+    in property <bool> wide;
     property <int> focus-kind: (root.focus-field >= 0 && root.focus-field < root.fields.length)
         ? root.fields[root.focus-field].kind : 0;
     background: transparent;
-    VerticalLayout {
+    if !root.wide: VerticalLayout {
         padding: 14px;
         spacing: 12px;
         Flickable {
@@ -3436,6 +3438,103 @@ component FormEditScreen inherits Rectangle {
             }
         }
     }
+
+    // Wide (landscape): fields + actions on the left, docked keyboard on the right.
+    if root.wide: HorizontalLayout {
+        padding: 16px;
+        spacing: 18px;
+        VerticalLayout {
+            width: 500px;
+            spacing: 12px;
+            Flickable {
+                vertical-stretch: 1;
+                viewport-height: wcol.preferred-height;
+                wcol := VerticalLayout {
+                    spacing: 10px;
+                    alignment: start;
+                    for f[i] in root.fields: Rectangle {
+                        height: 58px;
+                        if f.kind == 3: ToggleRow {
+                            width: 100%;
+                            label: f.label;
+                            on: f.on;
+                            toggled => {
+                                root.toggle(i);
+                            }
+                        }
+                        if f.kind == 4: CycleRow {
+                            width: 100%;
+                            label: f.label;
+                            value: f.value;
+                            tapped => {
+                                root.cycle(i);
+                            }
+                        }
+                        if f.kind == 0 || f.kind == 1 || f.kind == 2: EditFieldRow {
+                            width: 100%;
+                            label: f.label;
+                            text: f.value;
+                            placeholder: "";
+                            focused: root.focus-field == i;
+                            pick => {
+                                root.pick(i);
+                            }
+                        }
+                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: 10px;
+                if root.can-delete: DangerButton {
+                    text: "Delete";
+                    icon: Icons.trash;
+                    horizontal-stretch: 1;
+                    clicked => {
+                        root.del-confirm = true;
+                    }
+                }
+                SecondaryButton {
+                    text: "Cancel";
+                    icon: Icons.close;
+                    horizontal-stretch: 1;
+                    clicked => {
+                        root.cancel();
+                    }
+                }
+                PrimaryButton {
+                    text: "Save";
+                    icon: Icons.check;
+                    horizontal-stretch: 1;
+                    clicked => {
+                        root.save();
+                    }
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            Rectangle { vertical-stretch: 1; }
+            OnScreenKeyboard {
+                numeric: root.focus-kind == 1 || root.focus-kind == 2;
+                digits-only: root.focus-kind == 1;
+                shift: root.shift;
+                resizable: false;
+                key(c) => {
+                    root.key(c);
+                }
+                backspace => {
+                    root.backspace();
+                }
+                shift-toggle => {
+                    root.shift-toggle();
+                }
+                done => {
+                }
+            }
+            Rectangle { vertical-stretch: 1; }
+        }
+    }
+
     if root.del-confirm: ConfirmOverlay {
         title: "Delete";
         message: "Delete " + root.title + "? This cannot be undone.";
@@ -6760,6 +6859,7 @@ export component MainWindow inherits Window {
             shift: root.form-shift;
             can-delete: root.form-can-delete;
             title: root.form-title;
+            wide: root.landscape;
             pick(i) => {
                 root.form-pick(i);
             }
