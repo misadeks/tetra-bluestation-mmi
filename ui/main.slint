@@ -375,6 +375,14 @@ component StatusBar inherits Rectangle {
     height: 70px;
     background: @linear-gradient(180deg, Palette.panel1 0%, Palette.panel2 100%);
 
+    // Thin separator line along the bottom edge.
+    Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        width: 100%;
+        background: Palette.line2;
+    }
+
     HorizontalLayout {
         padding-left: 18px;
         padding-right: 14px;
