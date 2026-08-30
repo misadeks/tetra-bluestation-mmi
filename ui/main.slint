@@ -454,7 +454,7 @@ component CyclerArrow inherits Rectangle {
     border-radius: 20px;
     border-width: 1px;
     border-color: Palette.line2;
-    background: touch.pressed ? Palette.press2 : @linear-gradient(160deg, Palette.surface2 0%, Palette.key1 100%);
+    background: touch.pressed ? Palette.press2 : Palette.surface2;
     opacity: root.enabled ? 1.0 : 0.3;
     touch := TouchArea {
         enabled: root.enabled;
@@ -535,7 +535,7 @@ component PrimaryButton inherits Rectangle {
     border-width: 1px;
     border-color: root.enabled ? Palette.pbtnbd : Palette.line;
     background: root.enabled
-        ? (touch.pressed ? Palette.pbtnpress : @linear-gradient(180deg, Palette.pbtn1 0%, Palette.pbtn2 100%))
+        ? (touch.pressed ? Palette.pbtnpress : Palette.pbtn1)
         : Palette.surface;
     opacity: root.enabled ? 1.0 : 0.45;
     touch := TouchArea {
@@ -571,7 +571,7 @@ component DangerButton inherits Rectangle {
     border-width: 1px;
     border-color: root.enabled ? Palette.dbtnbd : Palette.line;
     background: root.enabled
-        ? (touch.pressed ? Palette.dbtnpress : @linear-gradient(180deg, Palette.dbtn1 0%, Palette.dbtn2 100%))
+        ? (touch.pressed ? Palette.dbtnpress : Palette.dbtn1)
         : Palette.surface;
     opacity: root.enabled ? 1.0 : 0.45;
     touch := TouchArea {
@@ -645,13 +645,12 @@ component Ptt inherits Rectangle {
         : root.state == 1 ? #e6b53f
         : (root.enabled ? Palette.line2 : #ffffff1f);
     background: root.state == 2
-        ? @linear-gradient(180deg, #d23b41 0%, #a82a2f 100%)
+        ? #cf3a40
         : root.state == 1
-            ? @linear-gradient(180deg, #7a5f1e 0%, #5c470f 100%)
+            ? #6f5615
             : (root.enabled
-                ? (touch.pressed ? @linear-gradient(180deg, Palette.pttpress 0%, Palette.ptt1 100%)
-                                 : @linear-gradient(180deg, Palette.ptt1 0%, Palette.ptt2 100%))
-                : @linear-gradient(180deg, #1b1d22 0%, #141519 100%));
+                ? (touch.pressed ? Palette.pttpress : Palette.ptt1)
+                : Palette.surface);
     opacity: root.enabled ? 1.0 : 0.7;
     touch := TouchArea {
         enabled: root.enabled;
@@ -705,7 +704,7 @@ component Softkey inherits Rectangle {
     border-width: 1px;
     border-color: root.danger ? #b5343a : Palette.line;
     background: root.danger
-        ? @linear-gradient(180deg, #d23b41 0%, #a82a2f 100%)
+        ? #d13b41
         : (touch.pressed ? Palette.press : Palette.surface);
     opacity: root.enabled ? 1.0 : 0.35;
     touch := TouchArea {
@@ -2105,7 +2104,7 @@ component KeyCap inherits Rectangle {
     border-color: root.active ? Palette.accent : Palette.line2;
     background: kt.pressed
         ? Palette.press2
-        : (root.active ? #33a7dd29 : @linear-gradient(180deg, Palette.surface2 0%, Palette.key1 100%));
+        : (root.active ? #33a7dd29 : Palette.surface2);
     kt := TouchArea {
         enabled: root.enabled;
         clicked => {
@@ -4993,8 +4992,8 @@ component IncomingOverlay inherits Rectangle {
                 height: 116px;
                 border-radius: 18px;
                 background: rej.pressed
-                    ? @linear-gradient(180deg, #cf3f44 0%, #a82a2f 100%)
-                    : @linear-gradient(180deg, #ef5a5f 0%, #cf3f44 100%);
+                    ? #c5363c
+                    : #e0474d;
                 rej := TouchArea {
                     clicked => {
                         root.reject();
@@ -5021,8 +5020,8 @@ component IncomingOverlay inherits Rectangle {
                 height: 116px;
                 border-radius: 18px;
                 background: ans.pressed
-                    ? @linear-gradient(180deg, #1f9a55 0%, #178045 100%)
-                    : @linear-gradient(180deg, #2bb768 0%, #1f9a55 100%);
+                    ? #1c8f4c
+                    : #2bb768;
                 ans := TouchArea {
                     clicked => {
                         root.answer();
@@ -5058,7 +5057,7 @@ component DialKey inherits Rectangle {
     border-radius: 16px;
     border-width: 1px;
     border-color: Palette.line2;
-    background: touch.pressed ? Palette.press2 : @linear-gradient(180deg, Palette.surface2 0%, Palette.key1 100%);
+    background: touch.pressed ? Palette.press2 : Palette.surface2;
     hold-timer := Timer {
         interval: 450ms;
         running: false;
@@ -5363,7 +5362,7 @@ component DialerScreen inherits Rectangle {
                 border-radius: 16px;
                 border-width: 1px;
                 border-color: #2bb76880;
-                background: root.number == "" ? Palette.surface : (ctouch.pressed ? #17402a : @linear-gradient(180deg, #2bb768 0%, #1f9a55 100%));
+                background: root.number == "" ? Palette.surface : (ctouch.pressed ? #17402a : #2bb768);
                 opacity: root.number == "" ? 0.5 : 1.0;
                 ctouch := TouchArea {
                     enabled: root.number != "";
@@ -5568,7 +5567,7 @@ component DialerScreen inherits Rectangle {
                     border-radius: 16px;
                     border-width: 1px;
                     border-color: #2bb76880;
-                    background: root.number == "" ? Palette.surface : (wcall.pressed ? #17402a : @linear-gradient(180deg, #2bb768 0%, #1f9a55 100%));
+                    background: root.number == "" ? Palette.surface : (wcall.pressed ? #17402a : #2bb768);
                     opacity: root.number == "" ? 0.5 : 1.0;
                     wcall := TouchArea { enabled: root.number != ""; clicked => { root.place-call(root.sel, true); } }
                     Icon { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; d: Icons.phone; tint: root.number == "" ? Palette.muted : #ffffff; size: 32px; }
