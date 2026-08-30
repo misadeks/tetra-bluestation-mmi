@@ -2161,6 +2161,8 @@ component OnScreenKeyboard inherits Rectangle {
     // When false, the keyboard hides its size-toggle key (e.g. a docked keyboard
     // that is already sized to its column).
     in property <bool> resizable: true;
+    // Label for the confirm/dismiss key (e.g. "Send" for a message composer).
+    in property <string> done-label: "Done";
     callback key(string);
     callback backspace;
     callback shift-toggle;
@@ -2229,7 +2231,7 @@ component OnScreenKeyboard inherits Rectangle {
                 KeyCap { label: "space"; horizontal-stretch: 6; tapped => { root.key(" "); } }
                 KeyCap { label: "."; tapped => { root.key("."); } }
                 if root.resizable: KeyCap { icon: Kbd.compact ? Icons.chevron-up : Icons.chevron-down; horizontal-stretch: 2; tapped => { Kbd.compact = !Kbd.compact; } }
-                KeyCap { label: "Done"; active: true; horizontal-stretch: 3; tapped => { root.done(); } }
+                KeyCap { label: root.done-label; active: true; horizontal-stretch: 3; tapped => { root.done(); } }
             }
         }
         if root.numeric: VerticalLayout {
@@ -2263,7 +2265,7 @@ component OnScreenKeyboard inherits Rectangle {
                 KeyCap { label: "+"; enabled: !root.digits-only; tapped => { root.key("+"); } }
                 KeyCap { icon: Icons.backspace; horizontal-stretch: 2; tapped => { root.backspace(); } }
                 if root.resizable: KeyCap { icon: Kbd.compact ? Icons.chevron-up : Icons.chevron-down; tapped => { Kbd.compact = !Kbd.compact; } }
-                KeyCap { label: "Done"; active: true; horizontal-stretch: 2; tapped => { root.done(); } }
+                KeyCap { label: root.done-label; active: true; horizontal-stretch: 2; tapped => { root.done(); } }
             }
         }
     }
@@ -3077,7 +3079,7 @@ component MsgThreadScreen inherits Rectangle {
                 root.kb-open = false;
             }
         }
-        PrimaryButton {
+        if !root.wide: PrimaryButton {
             text: "Send";
             icon: Icons.send;
             enabled: root.draft != "";
@@ -7099,6 +7101,11 @@ export component MainWindow inherits Window {
                     }
                 }
             }
+            // Vertical separator between the thread and the keyboard.
+            Rectangle {
+                width: 1px;
+                background: Palette.line2;
+            }
             VerticalLayout {
                 horizontal-stretch: 1;
                 Rectangle { vertical-stretch: 1; }
@@ -7106,6 +7113,7 @@ export component MainWindow inherits Window {
                     numeric: false;
                     shift: root.msg-shift;
                     resizable: false;
+                    done-label: "Send";
                     key(c) => {
                         root.msg-key(c);
                     }
@@ -7116,6 +7124,7 @@ export component MainWindow inherits Window {
                         root.msg-shift-toggle();
                     }
                     done => {
+                        root.msg-send();
                     }
                 }
                 Rectangle { vertical-stretch: 1; }
