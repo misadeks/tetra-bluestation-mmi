@@ -351,7 +351,7 @@ fn synth_alert(id: &str, rate: u32) -> Vec<i16> {
     // Talk-permit: a bright rising two-tone "go ahead". Clear-to-send: a single
     // softer mid beep signalling the channel is free to transmit.
     let segs: Vec<Seg> = match id {
-        TONE_TALK_PERMIT => vec![seg(&[784.0], 80), seg(&[1046.5], 90)],
+        TONE_TALK_PERMIT => vec![seg(&[880.0], 45), seg(&[1174.7], 50)],
         TONE_CLEAR_TO_SEND => vec![seg(&[660.0], 140)],
         _ => return Vec::new(),
     };

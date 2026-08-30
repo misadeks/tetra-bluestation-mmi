@@ -15,7 +15,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -239,6 +239,9 @@ pub struct AudioEngine {
     dec_drop: Receiver<(Vec<u8>, bool)>,
     uplink_active: Arc<AtomicBool>,
     uplink_cid: Arc<AtomicU32>,
+    /// Unix-millis until which uplink frames are suppressed (masks a local alert
+    /// tone so it is not captured by the mic and transmitted).
+    uplink_mute_until: Arc<AtomicU64>,
 
     // Output (playback) stream parameters, kept so the stream can be (re)opened
     // on demand in `set_active`.
@@ -314,6 +317,7 @@ impl AudioEngine {
         let playing = Arc::new(AtomicBool::new(false));
         let uplink_active = Arc::new(AtomicBool::new(false));
         let uplink_cid = Arc::new(AtomicU32::new(0));
+        let uplink_mute_until = Arc::new(AtomicU64::new(0));
 
         // NOTE: the cpal output/input streams are intentionally NOT opened here.
         // An always-on stream runs continuous audio DMA for the whole app
@@ -369,6 +373,7 @@ impl AudioEngine {
             let enc_drop = enc_rx.clone();
             {
                 let cid = uplink_cid.clone();
+                let mute_until = uplink_mute_until.clone();
                 std::thread::Builder::new()
                     .name("acelp-enc".into())
                     .spawn(move || {
@@ -382,7 +387,11 @@ impl AudioEngine {
                             buf.copy_from_slice(&frame);
                             if let Some(bits) = encoder.encode(&buf) {
                                 let id = cid.load(Ordering::Relaxed);
-                                if id != 0 {
+                                // Suppress uplink while a local alert tone is
+                                // masked, so it isn't captured and transmitted.
+                                let masked =
+                                    crate::store::now_ms() < mute_until.load(Ordering::Relaxed);
+                                if id != 0 && !masked {
                                     if sent % 50 == 0 {
                                         tracing::info!(cid = id, sent, "audio: uplink frames encoded/sent");
                                     }
@@ -413,6 +422,7 @@ impl AudioEngine {
             dec_drop,
             uplink_active,
             uplink_cid,
+            uplink_mute_until,
             out_dev,
             out_cfg,
             out_channels,
@@ -508,6 +518,13 @@ impl AudioEngine {
         if was != active || prev != new_cid {
             tracing::info!(active, cid = new_cid, "audio: uplink state changed");
         }
+    }
+
+    /// Suppress uplink frames for the next `ms` milliseconds, masking a local alert
+    /// tone so the mic does not capture and transmit it.
+    pub fn hold_uplink(&self, ms: u64) {
+        self.uplink_mute_until
+            .store(crate::store::now_ms() + ms, Ordering::Relaxed);
     }
 }
 

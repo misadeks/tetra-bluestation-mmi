@@ -2219,7 +2219,7 @@ fn handle_telemetry(
 
     // Call-control telemetry drives the call state machine + call UI.
     if variant.starts_with("Tncc") {
-        apply_call_event(app, variant, payload, weak);
+        apply_call_event(app, variant, payload, weak, audio);
         // Signal "ringing" (U-ALERT) to the network for hook-signalling incoming
         // calls, the moment they start ringing - mirroring the reference UI's call_ring
         // step. Direct (no-hook) calls send nothing until the user answers.
@@ -2297,6 +2297,7 @@ fn apply_call_event(
     variant: &str,
     payload: &Value,
     weak: &slint::Weak<MainWindow>,
+    audio: Option<&crate::audio::AudioEngine>,
 ) {
     let Some(cid) = payload.get("call_identifier").and_then(Value::as_u64) else {
         return;
@@ -2487,14 +2488,19 @@ fn apply_call_event(
         }
     }
 
-    play_floor_alert(app, floor_alert);
+    play_floor_alert(app, floor_alert, audio);
 }
 
 /// Play the local alert tone for a floor transition, if the matching pref is on.
-fn play_floor_alert(app: &AppState, alert: FloorAlert) {
+/// The talk-permit tone briefly suppresses the mic uplink so the tone (heard on the
+/// speaker) is not captured and transmitted over the air.
+fn play_floor_alert(app: &AppState, alert: FloorAlert, audio: Option<&crate::audio::AudioEngine>) {
     let Some(player) = app.ringtone.as_ref() else { return };
     match alert {
         FloorAlert::TalkPermit if app.prefs.tone_talk_permit => {
+            if let Some(a) = audio {
+                a.hold_uplink(160);
+            }
             player.beep(crate::ringtone::TONE_TALK_PERMIT);
         }
         FloorAlert::ClearToSend if app.prefs.tone_clear_to_send => {
