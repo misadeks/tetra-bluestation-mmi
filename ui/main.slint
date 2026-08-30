@@ -4658,6 +4658,66 @@ component SurveyScreen inherits Rectangle {
     }
 }
 
+// One dialer / DTMF key. Fixed square-ish size (independent of the on-screen
+// keyboard's compact toggle) so the dialer keypad and the in-call DTMF pad match.
+component DialKey inherits Rectangle {
+    in property <string> text;
+    in property <string> sub;
+    callback clicked;
+    callback long-press;
+    property <bool> held: false;
+    height: 88px;
+    border-radius: 16px;
+    border-width: 1px;
+    border-color: Palette.line2;
+    background: touch.pressed ? Palette.press2 : Palette.surface2;
+    hold-timer := Timer {
+        interval: 450ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            root.held = true;
+            root.long-press();
+        }
+    }
+    touch := TouchArea {
+        pointer-event(ev) => {
+            if (ev.kind == PointerEventKind.down) {
+                root.held = false;
+                hold-timer.running = true;
+            }
+            if (ev.kind == PointerEventKind.up) {
+                hold-timer.running = false;
+                if (!root.held) {
+                    root.clicked();
+                }
+            }
+            if (ev.kind == PointerEventKind.cancel) {
+                hold-timer.running = false;
+            }
+        }
+    }
+    VerticalLayout {
+        alignment: center;
+        spacing: 0px;
+        Text {
+            text: root.text;
+            color: Palette.keytx;
+            font-size: 30px;
+            font-weight: 600;
+            horizontal-alignment: center;
+        }
+        if root.sub != "": Text {
+            text: root.sub;
+            color: Palette.faint;
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            horizontal-alignment: center;
+        }
+    }
+}
+
 // In-call view (individual). A proper screen: keeps the status/header/nav chrome
 // and mirrors the reference UI's .call-hero + docked PTT. Hang up lives in the nav bar.
 component InCallScreen inherits Rectangle {
@@ -4756,9 +4816,10 @@ component InCallScreen inherits Rectangle {
             Rectangle { height: 14px; }
             for row in [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["*", "0", "#"]]: HorizontalLayout {
                 spacing: 10px;
-                for d in row: KeyCap {
-                    label: d;
-                    tapped => {
+                for d in row: DialKey {
+                    text: d;
+                    horizontal-stretch: 1;
+                    clicked => {
                         root.dtmf(d);
                     }
                 }
@@ -4895,9 +4956,10 @@ component InCallScreen inherits Rectangle {
                 spacing: 10px;
                 for row in [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["*", "0", "#"]]: HorizontalLayout {
                     spacing: 10px;
-                    for d in row: KeyCap {
-                        label: d;
-                        tapped => {
+                    for d in row: DialKey {
+                        text: d;
+                        horizontal-stretch: 1;
+                        clicked => {
                             root.dtmf(d);
                         }
                     }
@@ -5047,64 +5109,6 @@ component IncomingOverlay inherits Rectangle {
                     }
                 }
             }
-        }
-    }
-}
-
-component DialKey inherits Rectangle {
-    in property <string> text;
-    in property <string> sub;
-    callback clicked;
-    callback long-press;
-    property <bool> held: false;
-    height: 88px;
-    border-radius: 16px;
-    border-width: 1px;
-    border-color: Palette.line2;
-    background: touch.pressed ? Palette.press2 : Palette.surface2;
-    hold-timer := Timer {
-        interval: 450ms;
-        running: false;
-        triggered => {
-            self.running = false;
-            root.held = true;
-            root.long-press();
-        }
-    }
-    touch := TouchArea {
-        pointer-event(ev) => {
-            if (ev.kind == PointerEventKind.down) {
-                root.held = false;
-                hold-timer.running = true;
-            }
-            if (ev.kind == PointerEventKind.up) {
-                hold-timer.running = false;
-                if (!root.held) {
-                    root.clicked();
-                }
-            }
-            if (ev.kind == PointerEventKind.cancel) {
-                hold-timer.running = false;
-            }
-        }
-    }
-    VerticalLayout {
-        alignment: center;
-        spacing: 0px;
-        Text {
-            text: root.text;
-            color: Palette.keytx;
-            font-size: 30px;
-            font-weight: 600;
-            horizontal-alignment: center;
-        }
-        if root.sub != "": Text {
-            text: root.sub;
-            color: Palette.faint;
-            font-size: 15px;
-            font-weight: 700;
-            letter-spacing: 1px;
-            horizontal-alignment: center;
         }
     }
 }
