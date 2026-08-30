@@ -660,6 +660,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     {
         let tx = events_tx.clone();
+        window.on_toggle_talk_permit(move || {
+            let _ = tx.send(app::AppEvent::UiToggleTalkPermit);
+        });
+    }
+    {
+        let tx = events_tx.clone();
+        window.on_toggle_clear_to_send(move || {
+            let _ = tx.send(app::AppEvent::UiToggleClearToSend);
+        });
+    }
+    {
+        let tx = events_tx.clone();
         window.on_set_volume(move |v| {
             let _ = tx.send(app::AppEvent::UiSetVolume(v));
         });

@@ -4144,9 +4144,13 @@ component Slider inherits Rectangle {
 // Settings hub: entry points for UI-only settings.
 component SettingsScreen inherits Rectangle {
     in property <bool> event-log-on: true;
+    in property <bool> talk-permit-on: true;
+    in property <bool> clear-to-send-on: true;
     in property <float> volume: 1.0;
     callback open-ringtones;
     callback toggle-event-log;
+    callback toggle-talk-permit;
+    callback toggle-clear-to-send;
     callback set-volume(float);
     callback volume-released;
     background: transparent;
@@ -4208,6 +4212,20 @@ component SettingsScreen inherits Rectangle {
             on: root.event-log-on;
             toggled => {
                 root.toggle-event-log();
+            }
+        }
+        ToggleRow {
+            label: "Talk permit tone";
+            on: root.talk-permit-on;
+            toggled => {
+                root.toggle-talk-permit();
+            }
+        }
+        ToggleRow {
+            label: "Clear to send tone";
+            on: root.clear-to-send-on;
+            toggled => {
+                root.toggle-clear-to-send();
             }
         }
     }
@@ -5856,6 +5874,8 @@ export component MainWindow inherits Window {
     // portrait stack. Set from Rust when the model is wider than it is tall.
     in property <bool> landscape: false;
     in property <bool> show-event-log: true;
+    in property <bool> tone-talk-permit: true;
+    in property <bool> tone-clear-to-send: true;
     in property <float> volume: 1.0;
     in-out property <Screen> screen: Screen.Home;
     // Remembered menu scroll offset (persists across leaving/returning to the menu).
@@ -6155,6 +6175,8 @@ export component MainWindow inherits Window {
     callback open-ringtones;
     callback open-settings;
     callback toggle-event-log;
+    callback toggle-talk-permit;
+    callback toggle-clear-to-send;
     callback set-volume(float);
     callback commit-volume;
     callback ring-select(int);
@@ -6790,12 +6812,20 @@ export component MainWindow inherits Window {
         if root.device-input == DeviceInput.Touch && root.screen == Screen.Settings: SettingsScreen {
             vertical-stretch: 1;
             event-log-on: root.show-event-log;
+            talk-permit-on: root.tone-talk-permit;
+            clear-to-send-on: root.tone-clear-to-send;
             volume: root.volume;
             open-ringtones => {
                 root.open-ringtones();
             }
             toggle-event-log => {
                 root.toggle-event-log();
+            }
+            toggle-talk-permit => {
+                root.toggle-talk-permit();
+            }
+            toggle-clear-to-send => {
+                root.toggle-clear-to-send();
             }
             set-volume(v) => {
                 root.set-volume(v);

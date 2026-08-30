@@ -179,6 +179,8 @@ pub enum AppEvent {
     UiOpenSettings,
     /// Toggle whether the Event Log appears in the main menu (persists).
     UiToggleEventLog,
+    UiToggleTalkPermit,
+    UiToggleClearToSend,
     /// Set the master playback volume 0.0..1.0 (applies live; not saved).
     UiSetVolume(f32),
     /// Persist the current master volume to disk (on slider release).
@@ -1800,6 +1802,18 @@ pub fn run(
                 let show = app.prefs.show_event_log;
                 let _ = weak.upgrade_in_event_loop(move |w| w.set_show_event_log(show));
             }
+            AppEvent::UiToggleTalkPermit => {
+                app.prefs.tone_talk_permit = !app.prefs.tone_talk_permit;
+                app.prefs.save();
+                let on = app.prefs.tone_talk_permit;
+                let _ = weak.upgrade_in_event_loop(move |w| w.set_tone_talk_permit(on));
+            }
+            AppEvent::UiToggleClearToSend => {
+                app.prefs.tone_clear_to_send = !app.prefs.tone_clear_to_send;
+                app.prefs.save();
+                let on = app.prefs.tone_clear_to_send;
+                let _ = weak.upgrade_in_event_loop(move |w| w.set_tone_clear_to_send(on));
+            }
             AppEvent::UiSetVolume(v) => {
                 let v = v.clamp(0.0, 1.0);
                 // Apply live (audio + ringtone); persist only on release to avoid
@@ -2239,9 +2253,22 @@ fn call_body(payload: &Value) -> &Value {
     payload
 }
 
-/// Set a call's floor state from a TNCC transmission status + talker SSI.
-fn apply_floor(c: &mut Call, status: Option<&str>, talker: Option<u32>, own_issi: u32) {
-    let Some(status) = status else { return };
+/// A floor transition worth signalling with a local alert tone.
+#[derive(Clone, Copy, PartialEq)]
+enum FloorAlert {
+    None,
+    /// We were just granted the floor (talk permit).
+    TalkPermit,
+    /// The channel just became free to transmit (clear to send).
+    ClearToSend,
+}
+
+/// Set a call's floor state from a TNCC transmission status + talker SSI. Returns
+/// a floor transition (if any) so the caller can play the matching alert tone.
+fn apply_floor(c: &mut Call, status: Option<&str>, talker: Option<u32>, own_issi: u32) -> FloorAlert {
+    let Some(status) = status else { return FloorAlert::None };
+    let was_floor = c.holds_floor;
+    let was_can_tx = c.can_request_tx;
     c.tx_status = Some(status.to_string());
     let own_echo = talker.is_some() && own_issi != 0 && talker == Some(own_issi);
     if status == "TransmissionGrantedToAnotherUser" && !own_echo {
@@ -2253,6 +2280,16 @@ fn apply_floor(c: &mut Call, status: Option<&str>, talker: Option<u32>, own_issi
         c.can_request_tx = true;
         c.holds_floor = status == "TransmissionGranted" || own_echo;
     }
+    // We just acquired the floor -> talk permit.
+    if !was_floor && c.holds_floor {
+        return FloorAlert::TalkPermit;
+    }
+    // The channel just freed (another user stopped and we can transmit) -> clear
+    // to send. Not while we already hold the floor.
+    if !was_can_tx && c.can_request_tx && !c.holds_floor {
+        return FloorAlert::ClearToSend;
+    }
+    FloorAlert::None
 }
 
 fn apply_call_event(
@@ -2339,6 +2376,7 @@ fn apply_call_event(
             .map(|g| g.name.clone())
     });
 
+    let mut floor_alert = FloorAlert::None;
     let c = app.calls.entry(cid).or_insert_with(|| Call {
         cid,
         can_request_tx: true,
@@ -2381,7 +2419,7 @@ fn apply_call_event(
             let caller = body.get("calling_party_ssi").and_then(Value::as_u64).map(|v| v as u32);
             if caller.is_some() && caller != Some(own_issi) {
                 let grant = body.get("transmission_grant").and_then(Value::as_str);
-                apply_floor(c, grant, caller, own_issi);
+                floor_alert = apply_floor(c, grant, caller, own_issi);
             }
             c.state = if c.group { CallState::Active } else { CallState::Incoming };
         }
@@ -2424,7 +2462,7 @@ fn apply_call_event(
                 .or_else(|| body.get("transmission_grant"))
                 .and_then(Value::as_str);
             let who = body.get("transmitting_party_ssi").and_then(Value::as_u64).map(|v| v as u32);
-            apply_floor(c, st, who, own_issi);
+            floor_alert = apply_floor(c, st, who, own_issi);
             if matches!(c.state, CallState::Setup) {
                 c.state = CallState::Active;
             }
@@ -2447,6 +2485,22 @@ fn apply_call_event(
                 }
             }
         }
+    }
+
+    play_floor_alert(app, floor_alert);
+}
+
+/// Play the local alert tone for a floor transition, if the matching pref is on.
+fn play_floor_alert(app: &AppState, alert: FloorAlert) {
+    let Some(player) = app.ringtone.as_ref() else { return };
+    match alert {
+        FloorAlert::TalkPermit if app.prefs.tone_talk_permit => {
+            player.beep(crate::ringtone::TONE_TALK_PERMIT);
+        }
+        FloorAlert::ClearToSend if app.prefs.tone_clear_to_send => {
+            player.beep(crate::ringtone::TONE_CLEAR_TO_SEND);
+        }
+        _ => {}
     }
 }
 
@@ -3367,6 +3421,8 @@ fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
     .to_string();
     let restart_required = s.restart_required;
     let show_event_log = app.prefs.show_event_log;
+    let tone_talk_permit = app.prefs.tone_talk_permit;
+    let tone_clear_to_send = app.prefs.tone_clear_to_send;
     let volume = app.prefs.volume;
     let home_display_text = {
         let hd_enabled = app
@@ -3414,6 +3470,8 @@ fn push_ui(app: &AppState, weak: &slint::Weak<MainWindow>) {
         w.set_ptt_label(ptt_label.into());
         w.set_restart_required(restart_required);
         w.set_show_event_log(show_event_log);
+        w.set_tone_talk_permit(tone_talk_permit);
+        w.set_tone_clear_to_send(tone_clear_to_send);
         w.set_volume(volume);
 
         let rows: Vec<FolderRow> = folder_rows

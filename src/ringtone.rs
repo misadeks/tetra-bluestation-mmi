@@ -44,6 +44,10 @@ struct Shared {
     pos: AtomicUsize,
     /// Master playback gain (0.0..1.0) as f32 bits.
     volume: AtomicU32,
+    /// One-shot alert tone (plays `buf` once, then self-silences) vs a looping ring.
+    oneshot: AtomicBool,
+    /// Samples left to emit for the current one-shot tone.
+    remaining: AtomicUsize,
 }
 
 pub struct RingtonePlayer {
@@ -86,6 +90,8 @@ impl RingtonePlayer {
                 active: AtomicBool::new(false),
                 pos: AtomicUsize::new(0),
                 volume: AtomicU32::new(1.0f32.to_bits()),
+                oneshot: AtomicBool::new(false),
+                remaining: AtomicUsize::new(0),
             }),
             current: Mutex::new(None),
             stream: Mutex::new(None),
@@ -105,18 +111,32 @@ impl RingtonePlayer {
                         move |data: &mut [$t], _| {
                             let active = shared.active.load(Ordering::Relaxed);
                             let gain = f32::from_bits(shared.volume.load(Ordering::Relaxed));
+                            let oneshot = shared.oneshot.load(Ordering::Relaxed);
                             let wave = if active {
                                 Some(shared.buf.lock().unwrap().clone())
                             } else {
                                 None
                             };
                             let mut pos = shared.pos.load(Ordering::Relaxed);
+                            let mut rem = shared.remaining.load(Ordering::Relaxed);
                             for frame in data.chunks_mut(channels) {
                                 let s = match &wave {
                                     Some(w) if !w.is_empty() => {
-                                        let v = w[pos % w.len()];
-                                        pos = (pos + 1) % w.len();
-                                        v
+                                        if oneshot {
+                                            // Play the buffer once, then emit silence.
+                                            if rem == 0 {
+                                                0
+                                            } else {
+                                                let v = w[pos.min(w.len() - 1)];
+                                                pos += 1;
+                                                rem -= 1;
+                                                v
+                                            }
+                                        } else {
+                                            let v = w[pos % w.len()];
+                                            pos = (pos + 1) % w.len();
+                                            v
+                                        }
                                     }
                                     _ => 0,
                                 };
@@ -127,6 +147,16 @@ impl RingtonePlayer {
                                 }
                             }
                             shared.pos.store(pos, Ordering::Relaxed);
+                            if oneshot {
+                                shared.remaining.store(rem, Ordering::Relaxed);
+                                if rem == 0 {
+                                    // One-shot finished: go silent. stop() (called
+                                    // from the app's ringtone sync) then closes the
+                                    // stream on the next pass.
+                                    shared.active.store(false, Ordering::Relaxed);
+                                    shared.oneshot.store(false, Ordering::Relaxed);
+                                }
+                            }
                         },
                         err,
                         None,
@@ -160,6 +190,7 @@ impl RingtonePlayer {
         let wave = Arc::new(synth(id, self.rate));
         *self.shared.buf.lock().unwrap() = wave;
         self.shared.pos.store(0, Ordering::Relaxed);
+        self.shared.oneshot.store(false, Ordering::Relaxed);
         self.shared.active.store(true, Ordering::Relaxed);
         *self.current.lock().unwrap() = Some(id.to_string());
         // Open the stream lazily so it only exists (and contends with the radio's
@@ -170,9 +201,41 @@ impl RingtonePlayer {
         }
     }
 
+    /// Play a short one-shot alert tone once (e.g. talk-permit / clear-to-send).
+    /// Skipped while a ringtone is sounding; the tone self-silences when done and
+    /// the stream is closed by the next `stop()` from the ringtone sync.
+    pub fn beep(&self, id: &str) {
+        // Never talk over a ringtone.
+        if self.shared.active.load(Ordering::Relaxed) {
+            return;
+        }
+        let wave = synth_alert(id, self.rate);
+        if wave.is_empty() {
+            return;
+        }
+        let len = wave.len();
+        *self.shared.buf.lock().unwrap() = Arc::new(wave);
+        self.shared.pos.store(0, Ordering::Relaxed);
+        self.shared.remaining.store(len, Ordering::Relaxed);
+        self.shared.oneshot.store(true, Ordering::Relaxed);
+        self.shared.active.store(true, Ordering::Relaxed);
+        *self.current.lock().unwrap() = Some(id.to_string());
+        let mut st = self.stream.lock().unwrap();
+        if st.is_none() {
+            *st = self.open_stream();
+        }
+    }
+
     /// Stop playback and close the output stream (silent + no DMA until next play).
     pub fn stop(&self) {
+        // Do not cut off a one-shot alert tone that is still sounding; it silences
+        // itself and a later stop() then closes the stream.
+        if self.shared.oneshot.load(Ordering::Relaxed) && self.shared.active.load(Ordering::Relaxed)
+        {
+            return;
+        }
         self.shared.active.store(false, Ordering::Relaxed);
+        self.shared.oneshot.store(false, Ordering::Relaxed);
         *self.current.lock().unwrap() = None;
         // Drop the stream so it stops running and no longer contends with the SDR.
         *self.stream.lock().unwrap() = None;
@@ -266,6 +329,46 @@ fn synth(id: &str, rate: u32) -> Vec<i16> {
             let env = if bell && !s.freqs.is_empty() {
                 (-3.0 * (i as f32 / n.max(1) as f32)).exp()
             } else if i < fade {
+                i as f32 / fade as f32
+            } else if i + fade > n {
+                (n - i) as f32 / fade as f32
+            } else {
+                1.0
+            };
+            out.push((sample * env * AMP) as i16);
+        }
+    }
+    out
+}
+
+/// Alert-tone ids (short one-shot cues played via `beep`).
+pub const TONE_TALK_PERMIT: &str = "talk-permit";
+pub const TONE_CLEAR_TO_SEND: &str = "clear-to-send";
+
+/// Synthesize a short one-shot alert tone (no trailing cadence gap).
+fn synth_alert(id: &str, rate: u32) -> Vec<i16> {
+    const AMP: f32 = 8000.0;
+    // Talk-permit: a bright rising two-tone "go ahead". Clear-to-send: a single
+    // softer mid beep signalling the channel is free to transmit.
+    let segs: Vec<Seg> = match id {
+        TONE_TALK_PERMIT => vec![seg(&[784.0], 80), seg(&[1046.5], 90)],
+        TONE_CLEAR_TO_SEND => vec![seg(&[660.0], 140)],
+        _ => return Vec::new(),
+    };
+    let mut out: Vec<i16> = Vec::new();
+    for s in &segs {
+        let n = (rate as u64 * s.ms as u64 / 1000) as usize;
+        let fade = ((rate as usize) * 5 / 1000).max(1);
+        for i in 0..n {
+            let t = i as f32 / rate as f32;
+            let mut sample = 0.0f32;
+            if !s.freqs.is_empty() {
+                for &f in s.freqs {
+                    sample += (2.0 * std::f32::consts::PI * f * t).sin();
+                }
+                sample /= s.freqs.len() as f32;
+            }
+            let env = if i < fade {
                 i as f32 / fade as f32
             } else if i + fade > n {
                 (n - i) as f32 / fade as f32

@@ -51,6 +51,12 @@ pub struct UiPrefs {
     /// Whether the Event Log entry is shown in the main menu (UI-only setting).
     #[serde(default = "default_true")]
     pub show_event_log: bool,
+    /// Play a talk-permit tone when we are granted the floor.
+    #[serde(default = "default_true")]
+    pub tone_talk_permit: bool,
+    /// Play a clear-to-send tone when the channel becomes free to transmit.
+    #[serde(default = "default_true")]
+    pub tone_clear_to_send: bool,
     /// Master playback volume (0.0..1.0) for call audio and ringtones.
     #[serde(default = "default_volume")]
     pub volume: f32,
@@ -69,6 +75,8 @@ impl Default for UiPrefs {
             ring_duplex: default_ringtone(),
             ring_gateway: default_ringtone(),
             show_event_log: true,
+            tone_talk_permit: true,
+            tone_clear_to_send: true,
             volume: 1.0,
             ringtone: None,
             path: PathBuf::new(),
