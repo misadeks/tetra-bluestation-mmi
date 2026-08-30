@@ -219,6 +219,19 @@ global Kbd {
     out property <length> keyfs: root.compact ? 22px : 28px;
 }
 
+// Centralised confirmation dialog state. Screens set the text + a `what` action id
+// and open it; MainWindow renders one full-window ConfirmOverlay and runs the action
+// on OK, so confirmations cover the whole screen rather than just the content area.
+global Confirm {
+    in-out property <bool> open;
+    in-out property <string> title;
+    in-out property <string> message;
+    in-out property <string> label: "Delete";
+    in-out property <int> what;
+    in-out property <int> arg;
+    in-out property <int> arg2;
+}
+
 // Line icon rendered from an SVG path (24x24 viewbox), like the reference UI icons.
 component Icon inherits Path {
     in property <string> d;
@@ -2076,21 +2089,13 @@ component ContactDetailScreen inherits Rectangle {
                 danger: true;
                 horizontal-stretch: 1;
                 clicked => {
-                    root.del-confirm = true;
+                    Confirm.title = "Delete contact";
+                    Confirm.message = "Delete " + root.name + "? This cannot be undone.";
+                    Confirm.label = "Delete";
+                    Confirm.what = 6;
+                    Confirm.open = true;
                 }
             }
-        }
-    }
-    if root.del-confirm: ConfirmOverlay {
-        title: "Delete contact";
-        message: "Delete " + root.name + "? This cannot be undone.";
-        confirm-label: "Delete";
-        confirm => {
-            root.del-confirm = false;
-            root.delete();
-        }
-        cancel => {
-            root.del-confirm = false;
         }
     }
 }
@@ -2841,10 +2846,13 @@ component MessagesScreen inherits Rectangle {
                         root.open-thread(c.peer);
                     }
                     long-press => {
-                        root.pending-peer = c.peer;
-                        root.pending-group = c.is-group;
-                        root.pending-name = c.name;
-                        root.confirm-visible = true;
+                        Confirm.title = "Delete conversation";
+                        Confirm.message = "Delete all messages with " + c.name + "? This cannot be undone.";
+                        Confirm.label = "Delete";
+                        Confirm.what = 2;
+                        Confirm.arg = c.peer;
+                        Confirm.arg2 = c.is-group ? 1 : 0;
+                        Confirm.open = true;
                     }
                 }
             }
@@ -2855,18 +2863,6 @@ component MessagesScreen inherits Rectangle {
             clicked => {
                 root.new-message();
             }
-        }
-    }
-    if root.confirm-visible: ConfirmOverlay {
-        title: "Delete conversation";
-        message: "Delete all messages with " + root.pending-name + "? This cannot be undone.";
-        confirm-label: "Delete";
-        confirm => {
-            root.confirm-visible = false;
-            root.delete-thread(root.pending-peer, root.pending-group);
-        }
-        cancel => {
-            root.confirm-visible = false;
         }
     }
 }
@@ -3009,9 +3005,12 @@ component MsgThreadScreen inherits Rectangle {
                     state: m.state;
                     ts: m.ts;
                     long-press => {
-                        root.pending-id = m.id;
-                        root.pending-text = m.text;
-                        root.confirm-visible = true;
+                        Confirm.title = "Delete message";
+                        Confirm.message = "Delete this message? This cannot be undone.";
+                        Confirm.label = "Delete";
+                        Confirm.what = 1;
+                        Confirm.arg = m.id;
+                        Confirm.open = true;
                     }
                 }
             }
@@ -3074,18 +3073,6 @@ component MsgThreadScreen inherits Rectangle {
             clicked => {
                 root.send();
             }
-        }
-    }
-    if root.confirm-visible: ConfirmOverlay {
-        title: "Delete message";
-        message: "Delete this message? This cannot be undone.";
-        confirm-label: "Delete";
-        confirm => {
-            root.confirm-visible = false;
-            root.delete-message(root.pending-id);
-        }
-        cancel => {
-            root.confirm-visible = false;
         }
     }
 }
@@ -3483,7 +3470,7 @@ component FormEditScreen inherits Rectangle {
                 icon: Icons.trash;
                 horizontal-stretch: 1;
                 clicked => {
-                    root.del-confirm = true;
+                    Confirm.title = "Delete"; Confirm.message = "Delete " + root.title + "? This cannot be undone."; Confirm.label = "Delete"; Confirm.what = 7; Confirm.open = true;
                 }
             }
             SecondaryButton {
@@ -3556,7 +3543,7 @@ component FormEditScreen inherits Rectangle {
                     icon: Icons.trash;
                     horizontal-stretch: 1;
                     clicked => {
-                        root.del-confirm = true;
+                        Confirm.title = "Delete"; Confirm.message = "Delete " + root.title + "? This cannot be undone."; Confirm.label = "Delete"; Confirm.what = 7; Confirm.open = true;
                     }
                 }
                 SecondaryButton {
@@ -3598,19 +3585,6 @@ component FormEditScreen inherits Rectangle {
                 }
             }
             Rectangle { vertical-stretch: 1; }
-        }
-    }
-
-    if root.del-confirm: ConfirmOverlay {
-        title: "Delete";
-        message: "Delete " + root.title + "? This cannot be undone.";
-        confirm-label: "Delete";
-        confirm => {
-            root.del-confirm = false;
-            root.delete();
-        }
-        cancel => {
-            root.del-confirm = false;
         }
     }
 }
@@ -4436,9 +4410,12 @@ component RecentsScreen inherits Rectangle {
                         root.call(r.id);
                     }
                     long-press => {
-                        root.pending-id = r.id;
-                        root.pending-title = r.title;
-                        root.confirm-del = true;
+                        Confirm.title = "Delete call";
+                        Confirm.message = "Remove this entry from Recents?";
+                        Confirm.label = "Delete";
+                        Confirm.what = 5;
+                        Confirm.arg = r.id;
+                        Confirm.open = true;
                     }
                 }
             }
@@ -4448,32 +4425,12 @@ component RecentsScreen inherits Rectangle {
             icon: Icons.trash;
             danger: true;
             clicked => {
-                root.confirm-clear = true;
+                Confirm.title = "Clear Recents";
+                Confirm.message = "Delete the entire call log? This cannot be undone.";
+                Confirm.label = "Clear all";
+                Confirm.what = 3;
+                Confirm.open = true;
             }
-        }
-    }
-    if root.confirm-del: ConfirmOverlay {
-        title: "Delete call";
-        message: "Remove this entry from Recents?";
-        confirm-label: "Delete";
-        confirm => {
-            root.confirm-del = false;
-            root.delete(root.pending-id);
-        }
-        cancel => {
-            root.confirm-del = false;
-        }
-    }
-    if root.confirm-clear: ConfirmOverlay {
-        title: "Clear Recents";
-        message: "Delete the entire call log? This cannot be undone.";
-        confirm-label: "Clear all";
-        confirm => {
-            root.confirm-clear = false;
-            root.clear-all();
-        }
-        cancel => {
-            root.confirm-clear = false;
         }
     }
 }
@@ -4579,20 +4536,12 @@ component RecentDetailScreen inherits Rectangle {
             text: "Delete";
             icon: Icons.trash;
             clicked => {
-                root.confirm-del = true;
+                Confirm.title = "Delete call";
+                Confirm.message = "Remove this entry from Recents?";
+                Confirm.label = "Delete";
+                Confirm.what = 4;
+                Confirm.open = true;
             }
-        }
-    }
-    if root.confirm-del: ConfirmOverlay {
-        title: "Delete call";
-        message: "Remove this entry from Recents?";
-        confirm-label: "Delete";
-        confirm => {
-            root.confirm-del = false;
-            root.delete();
-        }
-        cancel => {
-            root.confirm-del = false;
         }
     }
 }
@@ -7588,6 +7537,40 @@ export component MainWindow inherits Window {
         kind: root.alert-kind;
         dismiss => {
             root.alert-dismiss();
+        }
+    }
+
+    // Full-window confirmation dialog (any screen opens it via the Confirm global).
+    if Confirm.open: ConfirmOverlay {
+        title: Confirm.title;
+        message: Confirm.message;
+        confirm-label: Confirm.label;
+        confirm => {
+            Confirm.open = false;
+            if (Confirm.what == 1) {
+                root.msg-delete(Confirm.arg);
+            }
+            if (Confirm.what == 2) {
+                root.msg-delete-thread(Confirm.arg, Confirm.arg2 == 1);
+            }
+            if (Confirm.what == 3) {
+                root.recents-clear();
+            }
+            if (Confirm.what == 4) {
+                root.recent-delete();
+            }
+            if (Confirm.what == 5) {
+                root.recents-delete(Confirm.arg);
+            }
+            if (Confirm.what == 6) {
+                root.contact-delete(root.detail-index);
+            }
+            if (Confirm.what == 7) {
+                root.form-delete();
+            }
+        }
+        cancel => {
+            Confirm.open = false;
         }
     }
 }
