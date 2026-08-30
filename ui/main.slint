@@ -2928,7 +2928,7 @@ component MsgBubble inherits Rectangle {
                     Text {
                         text: root.ts;
                         color: #9fb4c4;
-                        font-size: 12px;
+                        font-size: 15px;
                     }
                     if root.outgoing: Text {
                         text: root.state == 3 ? "failed"
@@ -2936,7 +2936,7 @@ component MsgBubble inherits Rectangle {
                             : root.state == 1 ? "delivered"
                             : "sending";
                         color: root.state == 3 ? #ff9a9d : (root.state == 2 ? #7fe0a6 : #9fb4c4);
-                        font-size: 12px;
+                        font-size: 15px;
                         font-weight: 700;
                     }
                 }
@@ -7074,7 +7074,7 @@ export component MainWindow inherits Window {
             vertical-stretch: 1;
             spacing: 0px;
             MsgThreadScreen {
-                horizontal-stretch: 1;
+                width: 500px;
                 wide: true;
                 messages: root.msg-thread;
                 scroll-tick: root.msg-scroll-tick;
