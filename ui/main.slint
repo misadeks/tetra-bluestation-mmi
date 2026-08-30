@@ -1344,7 +1344,7 @@ component AlertOverlay inherits Rectangle {
     Rectangle {
         width: Math.min(parent.width - 32px, 480px);
         height: card.preferred-height;
-        background: #16212e;
+        background: Palette.surface;
         border-radius: 24px;
         border-width: 2px;
         border-color: root.tint;
@@ -1401,7 +1401,7 @@ component AlertOverlay inherits Rectangle {
                 }
                 Text {
                     text: "OK";
-                    color: #0b131c;
+                    color: Palette.dark ? #0b131c : #ffffff;
                     font-size: 22px;
                     font-weight: 800;
                     horizontal-alignment: center;
@@ -1433,7 +1433,7 @@ component ConfirmOverlay inherits Rectangle {
     Rectangle {
         width: Math.min(parent.width - 32px, 480px);
         height: card.preferred-height;
-        background: #16212e;
+        background: Palette.surface;
         border-radius: 24px;
         border-width: 2px;
         border-color: Palette.red;
