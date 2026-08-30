@@ -214,7 +214,7 @@ export global Palette {
 // room (useful in landscape); a key on the keyboard toggles it. Shared globally so
 // every keyboard (search, contact editor, ...) tracks the same choice.
 global Kbd {
-    in-out property <bool> compact: false;
+    in-out property <bool> compact: true;
     out property <length> keyh: root.compact ? 58px : 86px;
     out property <length> keyfs: root.compact ? 22px : 28px;
 }
@@ -2135,6 +2135,9 @@ component OnScreenKeyboard inherits Rectangle {
     in property <bool> shift;
     // When true (ISSI field), the *, # and + keys are disabled (digits only).
     in property <bool> digits-only;
+    // When false, the keyboard hides its size-toggle key (e.g. a docked keyboard
+    // that is already sized to its column).
+    in property <bool> resizable: true;
     callback key(string);
     callback backspace;
     callback shift-toggle;
@@ -2202,7 +2205,7 @@ component OnScreenKeyboard inherits Rectangle {
                 KeyCap { label: "-"; tapped => { root.key("-"); } }
                 KeyCap { label: "space"; horizontal-stretch: 6; tapped => { root.key(" "); } }
                 KeyCap { label: "."; tapped => { root.key("."); } }
-                KeyCap { icon: Kbd.compact ? Icons.chevron-up : Icons.chevron-down; horizontal-stretch: 2; tapped => { Kbd.compact = !Kbd.compact; } }
+                if root.resizable: KeyCap { icon: Kbd.compact ? Icons.chevron-up : Icons.chevron-down; horizontal-stretch: 2; tapped => { Kbd.compact = !Kbd.compact; } }
                 KeyCap { label: "Done"; active: true; horizontal-stretch: 3; tapped => { root.done(); } }
             }
         }
@@ -2236,7 +2239,7 @@ component OnScreenKeyboard inherits Rectangle {
                 spacing: 6px;
                 KeyCap { label: "+"; enabled: !root.digits-only; tapped => { root.key("+"); } }
                 KeyCap { icon: Icons.backspace; horizontal-stretch: 2; tapped => { root.backspace(); } }
-                KeyCap { icon: Kbd.compact ? Icons.chevron-up : Icons.chevron-down; tapped => { Kbd.compact = !Kbd.compact; } }
+                if root.resizable: KeyCap { icon: Kbd.compact ? Icons.chevron-up : Icons.chevron-down; tapped => { Kbd.compact = !Kbd.compact; } }
                 KeyCap { label: "Done"; active: true; horizontal-stretch: 2; tapped => { root.done(); } }
             }
         }
@@ -2668,6 +2671,7 @@ component ContactEditScreen inherits Rectangle {
                 numeric: root.numeric;
                 shift: root.shift;
                 digits-only: root.numeric && !root.is-phone;
+                resizable: false;
                 key(c) => {
                     root.key(c);
                 }
