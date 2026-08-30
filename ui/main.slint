@@ -6317,7 +6317,7 @@ export component MainWindow inherits Window {
         // Landscape sub-screen header: screen title (portrait uses the top Header bar
         // instead). Home and the in-call view have no header (the call view carries
         // its own identity + Mute/Hang up controls).
-        if root.landscape && root.screen != Screen.Home && root.screen != Screen.InCall && root.screen != Screen.Dialer && root.screen != Screen.Contacts && root.screen != Screen.Folders: Rectangle {
+        if root.landscape && root.screen != Screen.Home && root.screen != Screen.InCall && root.screen != Screen.Dialer && root.screen != Screen.Contacts && root.screen != Screen.Folders && root.screen != Screen.Menu: Rectangle {
             height: 68px;
             background: @linear-gradient(180deg, Palette.panel1 0%, Palette.panel2 100%);
             HorizontalLayout {
@@ -7074,27 +7074,29 @@ export component MainWindow inherits Window {
             vertical-stretch: 1;
             padding: 16px;
             spacing: 18px;
-            MsgThreadScreen {
+            VerticalLayout {
                 width: 500px;
-                wide: true;
-                messages: root.msg-thread;
-                scroll-tick: root.msg-scroll-tick;
-                draft: root.msg-draft;
-                shift: root.msg-shift;
-                key(c) => {
-                    root.msg-key(c);
-                }
-                backspace => {
-                    root.msg-backspace();
-                }
-                shift-toggle => {
-                    root.msg-shift-toggle();
-                }
-                send => {
-                    root.msg-send();
-                }
-                delete-message(id) => {
-                    root.msg-delete(id);
+                MsgThreadScreen {
+                    wide: true;
+                    messages: root.msg-thread;
+                    scroll-tick: root.msg-scroll-tick;
+                    draft: root.msg-draft;
+                    shift: root.msg-shift;
+                    key(c) => {
+                        root.msg-key(c);
+                    }
+                    backspace => {
+                        root.msg-backspace();
+                    }
+                    shift-toggle => {
+                        root.msg-shift-toggle();
+                    }
+                    send => {
+                        root.msg-send();
+                    }
+                    delete-message(id) => {
+                        root.msg-delete(id);
+                    }
                 }
             }
             VerticalLayout {
