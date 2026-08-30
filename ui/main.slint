@@ -4235,6 +4235,7 @@ component RecentRowView inherits Rectangle {
     in property <int> kind; // 0 answered,1 missed,2 rejected,3 no-answer,4 failed
     in property <bool> outgoing;
     in property <bool> can-call;
+    in property <bool> selected;
     callback open;
     callback call;
     callback long-press;
@@ -4243,9 +4244,9 @@ component RecentRowView inherits Rectangle {
     height: 106px;
     border-radius: 16px;
     border-width: 1px;
-    border-color: Palette.line;
+    border-color: root.selected ? #33a7dd80 : Palette.line;
     clip: true;
-    background: touch.pressed ? Palette.press : Palette.surface;
+    background: touch.pressed ? Palette.press : (root.selected ? #33a7dd1a : Palette.surface);
     hold-timer := Timer {
         interval: 500ms;
         running: false;
@@ -4347,6 +4348,7 @@ component RecentRowView inherits Rectangle {
 component RecentsScreen inherits Rectangle {
     in property <[RecentRow]> rows;
     in property <bool> missed-only;
+    in property <int> selected-id: -1;
     callback open(int);
     callback call(int);
     callback delete(int);
@@ -4426,6 +4428,7 @@ component RecentsScreen inherits Rectangle {
                     kind: r.kind;
                     outgoing: r.outgoing;
                     can-call: r.can-call;
+                    selected: r.id == root.selected-id;
                     open => {
                         root.open(r.id);
                     }
@@ -6029,6 +6032,8 @@ export component MainWindow inherits Window {
     in property <string> msg-thread-title;
     // Landscape two-pane: which conversation is shown on the right (for highlight).
     property <int> msg-sel-peer: -1;
+    // Landscape two-pane: which recents entry is shown on the right (for highlight).
+    property <int> recents-sel-id: -1;
     in property <string> msg-draft;
     in property <bool> msg-shift;
     in property <string> msg-new-issi;
@@ -6838,7 +6843,8 @@ export component MainWindow inherits Window {
             }
         }
 
-        if root.device-input == DeviceInput.Touch && root.screen == Screen.Recents: RecentsScreen {
+        // Portrait: separate recents list and call detail.
+        if root.device-input == DeviceInput.Touch && !root.landscape && root.screen == Screen.Recents: RecentsScreen {
             vertical-stretch: 1;
             rows: root.recents;
             missed-only: root.recents-missed-only;
@@ -6860,7 +6866,7 @@ export component MainWindow inherits Window {
             }
         }
 
-        if root.device-input == DeviceInput.Touch && root.screen == Screen.RecentDetail: RecentDetailScreen {
+        if root.device-input == DeviceInput.Touch && !root.landscape && root.screen == Screen.RecentDetail: RecentDetailScreen {
             vertical-stretch: 1;
             title: root.recent-detail-title;
             sub: root.recent-detail-sub;
@@ -6885,6 +6891,86 @@ export component MainWindow inherits Window {
             }
             delete => {
                 root.recent-delete();
+            }
+        }
+
+        // Landscape: two-pane master/detail - call list on the left, the selected
+        // call's detail (or a prompt) on the right.
+        if root.device-input == DeviceInput.Touch && root.landscape && (root.screen == Screen.Recents || root.screen == Screen.RecentDetail): HorizontalLayout {
+            vertical-stretch: 1;
+            spacing: 0px;
+            Rectangle {
+                width: 440px;
+                RecentsScreen {
+                    width: 100%;
+                    height: 100%;
+                    rows: root.recents;
+                    missed-only: root.recents-missed-only;
+                    selected-id: root.recents-sel-id;
+                    open(id) => {
+                        root.recents-sel-id = id;
+                        root.recents-open(id);
+                    }
+                    call(id) => {
+                        root.recents-call(id);
+                    }
+                    delete(id) => {
+                        root.recents-delete(id);
+                    }
+                    set-filter(m) => {
+                        root.recents-filter(m);
+                    }
+                    clear-all => {
+                        root.recents-clear();
+                    }
+                }
+                Rectangle {
+                    x: parent.width - 1px;
+                    width: 1px;
+                    height: 100%;
+                    background: Palette.line2;
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+                if root.recent-detail-title != "": RecentDetailScreen {
+                    width: 100%;
+                    height: 100%;
+                    title: root.recent-detail-title;
+                    sub: root.recent-detail-sub;
+                    time: root.recent-detail-time;
+                    kind: root.recent-detail-kind;
+                    outgoing: root.recent-detail-outgoing;
+                    can-call: root.recent-detail-can-call;
+                    can-ptt: root.recent-detail-can-ptt;
+                    can-message: root.recent-detail-can-message;
+                    can-add: root.recent-detail-can-add;
+                    call-duplex => {
+                        root.recent-call-duplex();
+                    }
+                    call-ptt => {
+                        root.recent-call-ptt();
+                    }
+                    message => {
+                        root.recent-message();
+                    }
+                    add-contact => {
+                        root.recent-add-contact();
+                    }
+                    delete => {
+                        root.recent-delete();
+                    }
+                }
+                if root.recent-detail-title == "": Rectangle {
+                    Text {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        text: "Select a call";
+                        color: Palette.muted;
+                        font-size: 24px;
+                        font-weight: 600;
+                    }
+                }
             }
         }
 
