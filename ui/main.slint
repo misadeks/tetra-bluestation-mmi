@@ -293,6 +293,7 @@ global Icons {
 component SignalBars inherits Rectangle {
     in property <int> bars;
     in property <bool> registered;
+    in property <bool> monitor;
     width: 42px;
     height: 26px;
     HorizontalLayout {
@@ -304,7 +305,9 @@ component SignalBars inherits Rectangle {
                 width: 5px;
                 height: h * 1px;
                 border-radius: 1px;
-                background: i < root.bars ? (root.registered ? #55d98a : Palette.red) : Palette.faint;
+                background: i < root.bars
+                    ? (root.monitor ? Palette.amber : (root.registered ? #55d98a : Palette.red))
+                    : Palette.faint;
             }
         }
     }
@@ -367,6 +370,7 @@ component StatusBar inherits Rectangle {
     in property <bool> scan;
     in property <bool> control-on;
     in property <bool> telemetry-on;
+    in property <bool> monitor;
     // Optional clock (landscape status strip shows it; portrait leaves it empty
     // because the header carries the clock instead).
     in property <string> clock: "";
@@ -402,7 +406,7 @@ component StatusBar inherits Rectangle {
                     : (root.ok ? #55d98a : Palette.red);
             }
         }
-        VerticalLayout { alignment: center; SignalBars { bars: root.bars; registered: root.ok; } }
+        VerticalLayout { alignment: center; SignalBars { bars: root.bars; registered: root.ok; monitor: root.monitor; } }
         VerticalLayout {
             alignment: center;
             Text {
@@ -880,6 +884,7 @@ component HomeScreen inherits Rectangle {
     in property <bool> has-codeplug;
     in property <string> folder-name;
     in property <string> home-display;
+    in property <bool> monitor;
     in property <string> talkgroup-name;
     in property <string> tg-sub;
     in property <string> badge;
@@ -914,6 +919,40 @@ component HomeScreen inherits Rectangle {
     VerticalLayout {
         padding: 22px;
         spacing: 18px;
+
+        // Monitor mode: the stack only receives and emits data (RX-only). Amber
+        // banner so the operator knows the MS is listening, not transmitting.
+        if root.monitor: HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: mon-row.preferred-width;
+                height: mon-row.preferred-height;
+                border-radius: 14px;
+                border-width: 1px;
+                border-color: #e7a72b66;
+                background: #e7a72b1f;
+                mon-row := HorizontalLayout {
+                    padding-left: 18px;
+                    padding-right: 18px;
+                    padding-top: 12px;
+                    padding-bottom: 12px;
+                    spacing: 12px;
+                    alignment: center;
+                    VerticalLayout {
+                        alignment: center;
+                        Icon { d: Icons.info; tint: Palette.amber; size: 22px; }
+                    }
+                    Text {
+                        text: "Monitor mode";
+                        color: Palette.amber;
+                        font-size: 20px;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                    }
+                }
+            }
+        }
 
         // Home-mode display: operator banner pushed by the network, shown above
         // the selected talkgroup. Only present when the network has sent text.
@@ -6003,6 +6042,9 @@ export component MainWindow inherits Window {
     in property <string> ptt-label: "Register to talk";
     in property <string> folder-name: "Talkgroups";
     in property <string> home-display: "";
+    // Monitor mode: stack_mode = "Mon" (RX-only). Drives the amber banner and
+    // yellow signal bars.
+    in property <bool> monitor-mode: false;
     in property <int> sel-folder;
     in property <[FolderRow]> folders;
     in property <[PickRow]> picker-rows;
@@ -6314,6 +6356,7 @@ export component MainWindow inherits Window {
             scan: root.scan-active;
             control-on: root.control-connected;
             telemetry-on: root.telemetry-connected;
+            monitor: root.monitor-mode;
             // Landscape shows the clock in the status strip (no header below).
             clock: root.landscape ? root.clock : "";
         }
@@ -6369,6 +6412,7 @@ export component MainWindow inherits Window {
             has-codeplug: root.has-codeplug;
             folder-name: root.folder-name;
             home-display: root.home-display;
+            monitor: root.monitor-mode;
             talkgroup-name: root.talkgroup-name;
             tg-sub: root.tg-sub;
             badge: root.badge;
@@ -6422,6 +6466,38 @@ export component MainWindow inherits Window {
             VerticalLayout {
                 padding: 26px;
                 spacing: 18px;
+                // Monitor mode: RX-only. Amber banner in the wide hero too.
+                if root.monitor-mode: HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: mon2.preferred-width;
+                        height: mon2.preferred-height;
+                        border-radius: 14px;
+                        border-width: 1px;
+                        border-color: #e7a72b66;
+                        background: #e7a72b1f;
+                        mon2 := HorizontalLayout {
+                            padding-left: 18px;
+                            padding-right: 18px;
+                            padding-top: 12px;
+                            padding-bottom: 12px;
+                            spacing: 12px;
+                            alignment: center;
+                            VerticalLayout {
+                                alignment: center;
+                                Icon { d: Icons.info; tint: Palette.amber; size: 22px; }
+                            }
+                            Text {
+                                text: "Monitor mode";
+                                color: Palette.amber;
+                                font-size: 20px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                                horizontal-alignment: center;
+                            }
+                        }
+                    }
+                }
                 // Operator banner pushed by the network (home-mode display SDS).
                 if root.home-display != "": HorizontalLayout {
                     alignment: center;

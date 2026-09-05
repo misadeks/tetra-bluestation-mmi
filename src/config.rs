@@ -23,6 +23,11 @@ pub struct Config {
     pub audio: AudioConfig,
     #[serde(default)]
     pub ui: UiConfig,
+    /// Stack operating mode. "Mon" (monitor) means the MS only receives and emits
+    /// all data; the UI reflects this (yellow banner + signal bars). Anything else
+    /// is normal operation.
+    #[serde(default)]
+    pub stack_mode: String,
     /// Local persistence (SDS messages, etc.).
     #[serde(default)]
     pub storage: StorageConfig,
@@ -200,6 +205,8 @@ pub struct ResolvedUi {
     pub rotation: u32,
     pub theme: String,
     pub model: Option<String>,
+    /// True when the stack is in monitor mode (`stack_mode = "Mon"`).
+    pub monitor: bool,
 }
 
 impl Config {
@@ -275,6 +282,7 @@ impl Config {
             rotation,
             theme: self.ui.theme.clone(),
             model: self.ui.model.clone(),
+            monitor: self.stack_mode.eq_ignore_ascii_case("Mon"),
         }
     }
 }
@@ -404,6 +412,7 @@ impl Default for Config {
             log: LogConfig::default(),
             audio: AudioConfig::default(),
             ui: UiConfig::default(),
+            stack_mode: String::new(),
             storage: StorageConfig::default(),
             device: Vec::new(),
         }

@@ -129,6 +129,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     window
         .global::<Palette>()
         .set_dark(!ui.theme.eq_ignore_ascii_case("light"));
+    // Monitor mode (stack_mode = "Mon"): RX-only, surface a yellow banner and
+    // yellow signal bars so the operator knows the MS is only listening.
+    window.set_monitor_mode(ui.monitor);
 
     // --- Wire the network + app event loop --------------------------------
     let (events_tx, events_rx) = crossbeam_channel::unbounded::<app::AppEvent>();

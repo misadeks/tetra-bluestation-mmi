@@ -4,6 +4,12 @@
 # stack (or a simulator) is the WebSocket client and dials OUT to the host and
 # ports below.
 
+# Stack operating mode. "Mon" (monitor) means the MS only receives and emits
+# all data (RX-only, no transmit); the UI reflects this with an amber "Monitor
+# mode" banner on the home screen and yellow signal bars. Leave empty (or any
+# other value) for normal operation.
+# stack_mode = "Mon"
+
 [command]     # control channel (subprotocol bluestation-control-v1)
 host = "0.0.0.0"
 port = 9102
@@ -59,7 +65,7 @@ scale  = 1.0
 # matching libinput calibration matrix - see PI_SETUP.md.
 # rotation = 90         # overrides the model's rotation
 # theme: "classic" (dark, default) or "light" for the light colour scheme.
-theme  = "classic"
+theme  = "light"
 
 # Device model catalog. Add your own panels here and select one via [ui].model.
 # A profile defined here overrides a built-in of the same name. These example
